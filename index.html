@@ -1404,15 +1404,21 @@ function loadApprovalPage(permitId){
   }
   window._approvePermitId=permitId;
   det.innerHTML=`
-    <table class="permit-form-table">
-      <tr><td width="150"><b>ชื่อพนักงาน</b></td><td>${p.name}</td><td width="100"><b>แผนก</b></td><td>${p.dept}</td></tr>
-      <tr><td><b>สถานที่ปฏิบัติงาน</b></td><td>${p.location}</td><td><b>เหตุผล</b></td><td>${p.reason}</td></tr>
-      <tr><td colspan="4"><b>รายละเอียด:</b> ${p.detail}</td></tr>
-      <tr><td><b>ทะเบียนรถ</b></td><td>${p.car}</td><td><b>น้ำมัน</b></td><td>${p.fuel} บาท</td></tr>
-      <tr><td><b>วันที่</b></td><td colspan="3">${p.date}</td></tr>
-      <tr><td><b>ลายเซ็นพนักงาน</b></td><td colspan="3"><img src="${p.empSig}" style="height:50px"></td></tr>
-    </table>`;
-  setTimeout(()=>initCanvas('canvas-manager'),100);
+    <div style="background:var(--g50);border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><span style="color:var(--g600)">ชื่อพนักงาน:</span> <b>${p.name}</b></div>
+        <div><span style="color:var(--g600)">แผนก:</span> <b>${p.dept}</b></div>
+        <div><span style="color:var(--g600)">สถานที่:</span> ${p.location}</div>
+        <div><span style="color:var(--g600)">เหตุผล:</span> ${p.reason}</div>
+        <div style="grid-column:1/-1"><span style="color:var(--g600)">รายละเอียด:</span> ${p.detail}</div>
+        <div><span style="color:var(--g600)">ทะเบียนรถ:</span> ${p.car}</div>
+        <div><span style="color:var(--g600)">น้ำมัน:</span> <b>${p.fuel} บาท</b></div>
+        <div><span style="color:var(--g600)">วันที่:</span> ${p.date}</div>
+      </div>
+      ${p.empSig?`<div style="margin-top:10px"><span style="color:var(--g600)">ลายเซ็นพนักงาน:</span><br><img src="${p.empSig}" style="height:50px;margin-top:4px;border:1px solid var(--g200);border-radius:6px;background:#fff;padding:4px"></div>`:''}
+    </div>`;
+  // init canvas after DOM update
+  requestAnimationFrame(()=>{ initCanvas('canvas-manager'); });
 }
 
 function submitApproval(){
@@ -1525,11 +1531,42 @@ function showPrintPage(permitId){
   </div>`;
 }
 
-// Check approve param on load
+// Check approve param on load — pull from Sheet first
 window.addEventListener('load',function(){
   const params=new URLSearchParams(location.search);
-  if(params.get('approve')){
-    loadApprovalPage(params.get('approve'));
+  const approveId=params.get('approve');
+  if(!approveId)return;
+
+  // Show loading state immediately
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-approve').classList.add('active');
+  document.getElementById('approve-detail').innerHTML=`
+    <div style="text-align:center;padding:30px;color:var(--g600)">
+      <div style="font-size:32px;margin-bottom:10px">⏳</div>
+      <div>กำลังโหลดข้อมูล...</div>
+    </div>`;
+
+  // Pull from Sheet first, then render
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl){
+    fetch(gsUrl+'?action=get&t='+Date.now())
+      .then(r=>r.json())
+      .then(data=>{
+        if(data&&data.permits) db.permits=data.permits;
+        if(data&&data.cars) db.cars=data.cars;
+        if(data&&data.bookings) db.bookings=data.bookings;
+        if(data&&data.staff) db.staff=data.staff;
+        if(data&&data.adminPass) db.adminPass=data.adminPass;
+        db.syncEnabled=true;
+        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        loadApprovalPage(approveId);
+      })
+      .catch(()=>{
+        // fallback to local
+        loadApprovalPage(approveId);
+      });
+  } else {
+    loadApprovalPage(approveId);
   }
 });
 
