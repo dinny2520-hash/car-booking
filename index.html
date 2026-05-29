@@ -338,9 +338,12 @@ tr:hover td{background:var(--g50)}
       <div class="form-row"><label>รายละเอียด *</label><input type="text" id="pf-detail" placeholder="เช่น สอบทฤษฎีของตรีเพชร"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
         <div class="form-row"><label>ทะเบียนรถ *</label>
-          <select id="pf-car" style="width:100%;padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
-            <option value="">-- เลือกรถ --</option>
+          <select id="pf-car-select" onchange="onCarSelectChange()" style="width:100%;padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none;margin-bottom:6px">
+            <option value="">-- เลือกรถบริษัท --</option>
+            <option value="__other__">🚗 รถส่วนตัว (กรอกเอง)</option>
           </select>
+          <input type="text" id="pf-car-custom" placeholder="พิมพ์ทะเบียนรถ เช่น กข 1234 กทม." style="display:none">
+          <input type="hidden" id="pf-car">
         </div>
         <div class="form-row"><label>ประเภทรถ</label><input type="text" id="pf-cartype" placeholder="เช่น กระบะ, 4 ประตู"></div>
         <div class="form-row"><label>จำนวนเงินน้ำมัน (บาท) *</label><input type="number" id="pf-fuel" placeholder="เช่น 330" min="0"></div>
@@ -1250,10 +1253,11 @@ function hardReset(){
 
 function initPermitPage(){
   // populate car select
-  const sel=document.getElementById('pf-car');
+  const sel=document.getElementById('pf-car-select');
   if(sel){
-    sel.innerHTML='<option value="">-- เลือกรถ --</option>'+
-      db.cars.filter(c=>c.active).map(c=>`<option value="${c.plate}">${c.plate}</option>`).join('');
+    sel.innerHTML='<option value="">-- เลือกรถบริษัท --</option>'+
+      db.cars.filter(c=>c.active).map(c=>`<option value="${c.plate}">${c.plate}</option>`).join('')+
+      '<option value="__other__">🚗 รถส่วนตัว (กรอกเอง)</option>';
   }
   // set today
   const di=document.getElementById('pf-date');
@@ -1306,13 +1310,35 @@ function isCanvasEmpty(id){
   return !d.some(v=>v!==0);
 }
 
+function onCarSelectChange(){
+  const sel=document.getElementById('pf-car-select');
+  const custom=document.getElementById('pf-car-custom');
+  const hidden=document.getElementById('pf-car');
+  if(sel.value==='__other__'){
+    custom.style.display='block';
+    custom.focus();
+    hidden.value='';
+  } else {
+    custom.style.display='none';
+    hidden.value=sel.value;
+  }
+}
+
+function getSelectedCar(){
+  const sel=document.getElementById('pf-car-select');
+  if(sel.value==='__other__'){
+    return document.getElementById('pf-car-custom').value.trim();
+  }
+  return sel.value;
+}
+
 function submitPermitForm(){
   const name=document.getElementById('pf-name').value.trim();
   const dept=document.getElementById('pf-dept').value.trim();
   const loc=document.getElementById('pf-location').value.trim();
   const reason=document.getElementById('pf-reason').value.trim();
   const detail=document.getElementById('pf-detail').value.trim();
-  const car=document.getElementById('pf-car').value;
+  const car=getSelectedCar();
   const cartype=document.getElementById('pf-cartype').value.trim();
   const fuel=document.getElementById('pf-fuel').value;
   const date=document.getElementById('pf-date').value;
@@ -1336,6 +1362,9 @@ function submitPermitForm(){
   ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
+  document.getElementById('pf-car-select').value='';
+  document.getElementById('pf-car-custom').value='';
+  document.getElementById('pf-car-custom').style.display='none';
   document.getElementById('pf-car').value='';
   renderPermitList();
   // Show link
