@@ -105,6 +105,7 @@ tr:hover td{background:var(--g50)}
   <span class="nav-logo">🚗 ระบบจองรถบริษัท</span>
   <button class="nav-btn active" id="nav-booking" onclick="showPage('booking',this)">จองรถ</button>
   <button class="nav-btn" id="nav-history" onclick="showPage('history',this)">ประวัติ</button>
+  <button class="nav-btn" id="nav-carschedule" onclick="showPage('carschedule',this)">ตารางจอง</button>
   <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">คืนรถ</button>
   <button class="nav-btn" id="nav-settings" onclick="showAdminLogin()">⚙️ ตั้งค่า</button>
 </nav>
@@ -150,6 +151,46 @@ tr:hover td{background:var(--g50)}
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="submitBooking()">✅ ยืนยันการจอง</button>
         <button class="btn btn-gray" onclick="cancelBookingForm()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CAR SCHEDULE PAGE -->
+<div id="page-carschedule" class="page">
+  <div class="container">
+    <div class="card">
+      <div class="card-title">📅 ตารางการจองรายคัน</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+        <label style="font-size:13px;font-weight:600;color:var(--g600)">เลือกรถ:</label>
+        <select id="cs-car-select" onchange="renderCarSchedule()" style="padding:7px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+        </select>
+        <select id="cs-filter" onchange="renderCarSchedule()" style="padding:7px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+          <option value="all">ทุกสถานะ</option>
+          <option value="active">ที่ยังใช้งาน/จองอยู่</option>
+          <option value="upcoming">รอใช้งาน</option>
+          <option value="returned">คืนแล้ว</option>
+          <option value="cancelled">ยกเลิก</option>
+        </select>
+      </div>
+      <div id="cs-car-header"></div>
+      <div id="cs-timeline"></div>
+      <div class="table-wrap" style="margin-top:16px">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>ผู้จอง</th>
+              <th>วันที่เริ่ม</th>
+              <th>วันที่คืน</th>
+              <th>จำนวน</th>
+              <th>สถานที่</th>
+              <th>เหตุผล</th>
+              <th>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody id="cs-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -439,6 +480,7 @@ function showPage(name,btn){
   if(btn)btn.classList.add('active');
   if(name==='booking')renderCars();
   if(name==='history')renderHistory();
+  if(name==='carschedule')initCarSchedule();
   if(name==='return')renderReturnList();
   if(name==='settings'){if(!adminLoggedIn){showAdminLogin();return;}renderSettings();}
 }
@@ -835,6 +877,90 @@ function pullFromGSheet(){
       updateSync(false,true);renderCars();
     })
     .catch(()=>updateSync(false,false));
+}
+
+
+// ---- CAR SCHEDULE ----
+function initCarSchedule(){
+  const sel=document.getElementById('cs-car-select');
+  sel.innerHTML=db.cars.filter(c=>c.active).map(c=>`<option value="${c.id}">${c.plate}</option>`).join('');
+  renderCarSchedule();
+}
+
+function renderCarSchedule(){
+  const carId=document.getElementById('cs-car-select').value;
+  const filter=document.getElementById('cs-filter').value;
+  const car=db.cars.find(c=>c.id===carId);
+  if(!car){return;}
+
+  // Header card
+  const st=getCarStatus(carId);
+  document.getElementById('cs-car-header').innerHTML=`
+    <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--g50);border-radius:10px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="font-size:36px">🚗</div>
+      <div>
+        <div style="font-size:20px;font-weight:700;letter-spacing:1px">${car.plate}</div>
+        <span class="car-status ${stClass(st)}">${stLabel(st)}</span>
+      </div>
+      <div style="margin-left:auto;text-align:right;font-size:13px;color:var(--g600)">
+        <div>การจองทั้งหมด: <b>${db.bookings.filter(b=>b.carId===carId).length}</b> ครั้ง</div>
+        <div>ที่ยังใช้งาน: <b>${db.bookings.filter(b=>b.carId===carId&&b.status!=='returned'&&b.status!=='cancelled').length}</b> ครั้ง</div>
+      </div>
+    </div>`;
+
+  let bks=db.bookings.filter(b=>b.carId===carId);
+  if(filter==='active') bks=bks.filter(b=>b.status!=='returned'&&b.status!=='cancelled');
+  if(filter==='upcoming') bks=bks.filter(b=>getBkStatus(b)==='upcoming');
+  if(filter==='returned') bks=bks.filter(b=>b.status==='returned');
+  if(filter==='cancelled') bks=bks.filter(b=>b.status==='cancelled');
+  bks=[...bks].sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
+
+  // Timeline bar (next 30 days)
+  const now=new Date();
+  const end30=new Date(now.getTime()+30*24*3600*1000);
+  const upcomingBks=db.bookings.filter(b=>b.carId===carId&&b.status!=='returned'&&b.status!=='cancelled'&&new Date(b.endDt)>now&&new Date(b.startDt)<end30);
+  let timelineHtml='';
+  if(upcomingBks.length){
+    timelineHtml=`<div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:8px">📊 ไทม์ไลน์ 30 วันข้างหน้า</div>
+      <div style="position:relative;height:36px;background:var(--success-light);border-radius:8px;overflow:hidden;border:1px solid #b7ddc7">`;
+    upcomingBks.forEach((b,i)=>{
+      const s=Math.max(0,(new Date(b.startDt)-now)/(end30-now)*100);
+      const e=Math.min(100,(new Date(b.endDt)-now)/(end30-now)*100);
+      const w=Math.max(0.5,e-s);
+      const colors=['#3b7dd8','#e67e22','#8e44ad','#16a085','#c0392b'];
+      const col=colors[i%colors.length];
+      timelineHtml+=`<div title="${b.name} | ${fmt(b.startDt)} – ${fmt(b.endDt)}" style="position:absolute;top:4px;bottom:4px;left:${s.toFixed(1)}%;width:${w.toFixed(1)}%;background:${col};border-radius:4px;cursor:default;min-width:4px"></div>`;
+    });
+    timelineHtml+=`</div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--g400);margin-top:3px"><span>วันนี้</span><span>+30 วัน</span></div>
+    </div>`;
+  }
+  document.getElementById('cs-timeline').innerHTML=timelineHtml;
+
+  // Table
+  const tbody=document.getElementById('cs-tbody');
+  if(!bks.length){
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูลการจอง</td></tr>`;
+    return;
+  }
+  tbody.innerHTML=bks.map((b,i)=>{
+    const st=getBkStatus(b);
+    const s=new Date(b.startDt), e=new Date(b.endDt);
+    const hrs=Math.round((e-s)/3600000*10)/10;
+    const dur=hrs<24?`${hrs} ชม.`:`${Math.round(hrs/24*10)/10} วัน`;
+    const isNow=st==='in-use'||st==='pending-return';
+    return `<tr style="${isNow?'background:#fff8f7;':''}">
+      <td style="color:var(--g400);font-size:12px">${i+1}</td>
+      <td><b>${b.name}</b></td>
+      <td style="white-space:nowrap;${st==='overdue'?'color:var(--danger);font-weight:600':''}">${fmt(b.startDt)}</td>
+      <td style="white-space:nowrap;${st==='overdue'?'color:var(--danger);font-weight:600':''}">${fmt(b.endDt)}</td>
+      <td style="white-space:nowrap;font-size:13px;color:var(--g600)">${dur}</td>
+      <td>${b.dest}</td>
+      <td style="font-size:12px;color:var(--g600)">${b.reason}</td>
+      <td><span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></td>
+    </tr>`;
+  }).join('');
 }
 
 // Auto sync every 15s
