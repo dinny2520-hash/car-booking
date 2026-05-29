@@ -362,7 +362,10 @@ tr:hover td{background:var(--g50)}
 
     <!-- รายการรออนุมัติ -->
     <div class="card">
-      <div class="card-title">⏳ รายการรออนุมัติ / อนุมัติแล้ว</div>
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>⏳ รายการรออนุมัติ / อนุมัติแล้ว</span>
+        <button class="btn btn-outline btn-sm" onclick="refreshPermitList()">🔄 ตรวจสอบสถานะ</button>
+      </div>
       <div id="permit-list"></div>
     </div>
 
@@ -653,7 +656,8 @@ function showPage(name,btn){
   if(name==='history')renderHistory();
   if(name==='carschedule')initCarSchedule();
   if(name==='return')renderReturnList();
-  if(name==='permit'){initPermitPage();}
+  if(name==='permit'){initPermitPage();startPermitPoll();}
+  else{stopPermitPoll();}
   if(name==='settings'){if(!adminLoggedIn){showAdminLogin();return;}renderSettings();}
 }
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -1484,9 +1488,17 @@ function submitApproval(){
   const sig=document.getElementById('canvas-manager').toDataURL('image/png');
   const p=db.permits.find(x=>x.id===id);
   if(p){p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();}
-  saveDB();
-  alert('✅ อนุมัติสำเร็จ! ผู้ยืมสามารถพิมพ์ฟอร์มได้แล้ว');
-  // remove ?approve from URL
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // Push ขึ้น Sheet ทันที
+  const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(_gsUrl){
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({
+      cars:db.cars,bookings:db.bookings,staff:db.staff,
+      adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()
+    })});
+    fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body,mode:'no-cors'}).catch(()=>{});
+  }
+  alert('✅ อนุมัติสำเร็จ! ผู้ยืมสามารถพิมพ์ฟอร์มได้แล้ว\n(ผู้ยืมกด 🔄 ตรวจสอบสถานะ หรือรอ 10 วินาที)');
   history.replaceState({},'',location.pathname);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-permit').classList.add('active');
@@ -1604,6 +1616,33 @@ function showPrintPage(permitId){
   </div>`;
 }
 
+
+// ---- PERMIT AUTO REFRESH ----
+let _permitPollTimer = null;
+
+function startPermitPoll(){
+  stopPermitPoll();
+  _permitPollTimer = setInterval(refreshPermitList, 10000);
+}
+function stopPermitPoll(){
+  if(_permitPollTimer){ clearInterval(_permitPollTimer); _permitPollTimer=null; }
+}
+
+function refreshPermitList(){
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(!gsUrl) return;
+  fetch(gsUrl+'?action=get&t='+Date.now())
+    .then(r=>r.json())
+    .then(data=>{
+      if(data&&data.permits) db.permits=data.permits;
+      if(data&&data.bookings) db.bookings=data.bookings;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      renderPermitList();
+    })
+    .catch(()=>{});
+}
+
+// Auto stop poll when leaving permit page
 // Auto sync every 15s
 setInterval(pullFromGSheet,15000);
 updateSync(false,null);
