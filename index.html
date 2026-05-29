@@ -1357,7 +1357,9 @@ function submitPermitForm(){
   };
   if(!db.permits)db.permits=[];
   db.permits.unshift(permit);
-  saveDB();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+
+  // clear form
   document.getElementById('pf-emp-sig-name').value='';
   ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
@@ -1366,10 +1368,34 @@ function submitPermitForm(){
   document.getElementById('pf-car-custom').value='';
   document.getElementById('pf-car-custom').style.display='none';
   document.getElementById('pf-car').value='';
-  renderPermitList();
-  // Show link
+
   const link=location.origin+location.pathname+'?approve='+permit.id;
-  alert('✅ สร้างฟอร์มสำเร็จ!\n\nคัดลอกลิงก์นี้ส่งให้หัวหน้าเพื่อเซ็นอนุมัติ:\n\n'+link);
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  const syncBody=JSON.stringify({action:'sync',data:JSON.stringify({
+    cars:db.cars,bookings:db.bookings,staff:db.staff,
+    adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()
+  })});
+
+  // แสดง loading
+  errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet กรุณารอสักครู่...';
+  errEl.style.background='var(--warning-light)';
+  errEl.style.color='var(--warning)';
+  errEl.style.display='flex';
+
+  fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:syncBody,mode:'no-cors'})
+    .then(()=>{
+      db.syncEnabled=true;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      errEl.style.display='none';
+      renderPermitList();
+      copyLink(link);
+      alert('✅ สร้างฟอร์มและซิงค์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+    })
+    .catch(()=>{
+      errEl.style.display='none';
+      renderPermitList();
+      alert('⚠️ บันทึกแล้ว แต่ซิงค์ไม่ได้\nกรุณากด รีเซ็ต แล้วลองใหม่\n\nลิงก์:\n'+link);
+    });
 }
 
 function renderPermitList(){
