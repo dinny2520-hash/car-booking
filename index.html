@@ -154,7 +154,8 @@ tr:hover td{background:var(--g50)}
     <div class="sync-bar">
       <div class="sync-dot" id="sync-dot"></div>
       <span id="sync-status">ข้อมูลเป็นปัจจุบัน (local)</span>
-      <span style="margin-left:auto;font-size:12px;color:var(--g600)" id="last-sync"></span>
+      <button onclick="hardReset()" style="margin-left:auto;background:#e53935;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer;font-weight:600">🔄 รีเซ็ต</button>
+      <span style="font-size:12px;color:var(--g600);margin-left:8px" id="last-sync"></span>
     </div>
     <div class="card">
       <div class="card-title">🚘 เลือกรถที่ต้องการจอง</div>
@@ -1036,6 +1037,53 @@ function renderCarSchedule(){
       <td><span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></td>
     </tr>`;
   }).join('');
+}
+
+
+function hardReset(){
+  if(!confirm('รีเซ็ตข้อมูลในเครื่องนี้และดึงข้อมูลล่าสุดจาก Sheet?\nการจองที่ยังไม่ได้ซิงค์จะหายไป')) return;
+  // เก็บ config ไว้
+  const gsUrl = db.gsUrl || '';
+  const adminPass = db.adminPass || 'admin1234';
+  const staff = db.staff || [];
+  // ล้าง localStorage
+  try { localStorage.removeItem(DB_KEY); } catch(e){}
+  // reset db กลับ default แต่เก็บ config
+  db = {
+    adminPass: adminPass,
+    gsUrl: gsUrl,
+    syncEnabled: !!gsUrl,
+    cars: [],
+    staff: staff,
+    bookings: []
+  };
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch(e){}
+  updateSync(true);
+  if(!gsUrl){
+    updateSync(false, null);
+    renderCars();
+    alert('ล้างข้อมูลแล้ว แต่ยังไม่มี URL Sheet — กรุณาตั้งค่าก่อน');
+    return;
+  }
+  // ดึงจาก Sheet ทันที
+  fetch(gsUrl + '?action=get&t=' + Date.now())
+    .then(r => { if(!r.ok) throw new Error(); return r.json(); })
+    .then(data => {
+      if(data && data.cars) db.cars = data.cars;
+      if(data && data.bookings) db.bookings = data.bookings;
+      if(data && data.adminPass) db.adminPass = data.adminPass;
+      if(data && data.staff) db.staff = data.staff;
+      db.syncEnabled = true;
+      try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch(e){}
+      updateSync(false, true);
+      renderCars();
+      alert('✅ รีเซ็ตสำเร็จ! ดึงข้อมูลล่าสุดจาก Sheet แล้ว');
+    })
+    .catch(() => {
+      updateSync(false, false);
+      renderCars();
+      alert('❌ ดึงข้อมูลจาก Sheet ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ');
+    });
 }
 
 // Auto sync every 15s
