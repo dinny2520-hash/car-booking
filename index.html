@@ -142,6 +142,18 @@ tr:hover td{background:var(--g50)}
 .bk-detail{font-size:12px;margin-top:8px;color:var(--g600)}
 .bk-detail div{margin-bottom:3px}
 .empty-state{text-align:center;padding:36px 20px;color:var(--g400)}
+/* PERMIT */
+.permit-form-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+.permit-form-table td,.permit-form-table th{border:1px solid #333;padding:6px 10px;vertical-align:top}
+.permit-form-table .sig-cell{height:60px;vertical-align:bottom;font-size:11px}
+@media print{
+  .nav,.btn,#permit-form-card,.card:not(#print-card){display:none!important}
+  body{background:#fff}
+  #page-print{display:block!important}
+  #print-content{padding:0}
+  .no-print{display:none!important}
+}
+
 .sync-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(30,40,60,0.92);color:#fff;padding:10px 20px;border-radius:24px;font-size:13px;z-index:9999;display:none;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
 .sync-toast.show{display:flex}
 .pin-hint{text-align:center;font-size:12px;color:var(--g600);margin-top:6px}
@@ -169,6 +181,9 @@ tr:hover td{background:var(--g50)}
     </button>
     <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">
       <span class="nav-icon">🔑</span><span class="nav-label">คืนรถ</span>
+    </button>
+    <button class="nav-btn" id="nav-permit" onclick="showPage('permit',this)">
+      <span class="nav-icon">📋</span><span class="nav-label">ขออนุมัติ</span>
     </button>
     <button class="nav-btn" id="nav-settings" onclick="showAdminLogin()">
       <span class="nav-icon">⚙️</span><span class="nav-label">ตั้งค่า</span>
@@ -305,6 +320,90 @@ tr:hover td{background:var(--g50)}
 
   </div>
 </div>
+
+<!-- PERMIT PAGE -->
+<div id="page-permit" class="page">
+  <div class="container">
+
+    <!-- ฟอร์มขออนุมัติ -->
+    <div class="card" id="permit-form-card">
+      <div class="card-title">📋 แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row"><label>ชื่อพนักงาน *</label><input type="text" id="pf-name" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="form-row"><label>แผนก *</label><input type="text" id="pf-dept" placeholder="เช่น HR, ฝ่ายผลิต"></div>
+        <div class="form-row"><label>สถานที่ปฏิบัติงาน *</label><input type="text" id="pf-location" placeholder="เช่น ปลวกแดง"></div>
+        <div class="form-row"><label>เหตุผล *</label><input type="text" id="pf-reason" placeholder="เช่น สอบ SC"></div>
+      </div>
+      <div class="form-row"><label>รายละเอียด *</label><input type="text" id="pf-detail" placeholder="เช่น สอบทฤษฎีของตรีเพชร"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="form-row"><label>ทะเบียนรถ *</label>
+          <select id="pf-car" style="width:100%;padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+            <option value="">-- เลือกรถ --</option>
+          </select>
+        </div>
+        <div class="form-row"><label>ประเภทรถ</label><input type="text" id="pf-cartype" placeholder="เช่น กระบะ, 4 ประตู"></div>
+        <div class="form-row"><label>จำนวนเงินน้ำมัน (บาท) *</label><input type="number" id="pf-fuel" placeholder="เช่น 330" min="0"></div>
+      </div>
+      <div class="form-row"><label>วันที่</label><input type="date" id="pf-date"></div>
+
+      <hr class="divider">
+      <div style="font-size:14px;font-weight:600;color:var(--g600);margin-bottom:10px">✍️ ลายเซ็นพนักงาน</div>
+      <div style="border:2px solid var(--g200);border-radius:10px;background:#fafafa;position:relative;touch-action:none">
+        <canvas id="canvas-employee" width="600" height="120" style="width:100%;height:120px;display:block;cursor:crosshair;border-radius:8px"></canvas>
+        <button onclick="clearCanvas('canvas-employee')" style="position:absolute;top:6px;right:8px;background:var(--g100);border:none;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">ล้าง</button>
+      </div>
+      <div style="font-size:12px;color:var(--g400);margin-top:4px;margin-bottom:16px">วาดลายเซ็นในกล่องด้านบน</div>
+
+      <div id="permit-form-err" class="alert alert-danger" style="display:none"></div>
+      <button class="btn btn-primary" onclick="submitPermitForm()">📤 สร้างลิงก์ส่งหัวหน้าอนุมัติ</button>
+    </div>
+
+    <!-- รายการรออนุมัติ -->
+    <div class="card">
+      <div class="card-title">⏳ รายการรออนุมัติ / อนุมัติแล้ว</div>
+      <div id="permit-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- APPROVE PAGE (หัวหน้าเปิดลิงก์) -->
+<div id="page-approve" class="page">
+  <div class="container" style="max-width:700px">
+    <div class="card">
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:36px">📋</div>
+        <div style="font-size:18px;font-weight:700;color:var(--primary)">แบบฟอร์มขออนุมัติออกนอกสถานที่</div>
+        <div style="font-size:13px;color:var(--g600)">กรุณาตรวจสอบข้อมูลและลงลายเซ็นอนุมัติ</div>
+      </div>
+      <div id="approve-detail"></div>
+      <hr class="divider">
+      <div style="font-size:14px;font-weight:600;color:var(--g600);margin-bottom:10px">✍️ ลายเซ็นผู้จัดการแผนก/หัวหน้าแผนก</div>
+      <div style="border:2px solid var(--g200);border-radius:10px;background:#fafafa;position:relative;touch-action:none">
+        <canvas id="canvas-manager" width="600" height="150" style="width:100%;height:150px;display:block;cursor:crosshair;border-radius:8px"></canvas>
+        <button onclick="clearCanvas('canvas-manager')" style="position:absolute;top:6px;right:8px;background:var(--g100);border:none;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">ล้าง</button>
+      </div>
+      <div style="font-size:12px;color:var(--g400);margin-top:4px;margin-bottom:16px">วาดลายเซ็นในกล่องด้านบน</div>
+      <div id="approve-err" class="alert alert-danger" style="display:none"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-success" onclick="submitApproval()">✅ อนุมัติและบันทึกลายเซ็น</button>
+        <button class="btn btn-danger" onclick="submitReject()">❌ ไม่อนุมัติ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRINT PAGE -->
+<div id="page-print" class="page">
+  <div class="container" style="max-width:800px">
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="window.print()">🖨️ พิมพ์ / บันทึก PDF</button>
+      <button class="btn btn-gray" onclick="showPage('permit',document.getElementById('nav-permit'))">← กลับ</button>
+    </div>
+    <div id="print-content"></div>
+  </div>
+</div>
+
 
 <!-- SETTINGS PAGE (admin only) -->
 <div id="page-settings" class="page">
@@ -552,6 +651,7 @@ function showPage(name,btn){
   if(name==='history')renderHistory();
   if(name==='carschedule')initCarSchedule();
   if(name==='return')renderReturnList();
+  if(name==='permit'){initPermitPage();}
   if(name==='settings'){if(!adminLoggedIn){showAdminLogin();return;}renderSettings();}
 }
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -989,7 +1089,7 @@ function showSyncToast(){
 function syncToGSheet(){
   if(!db.gsUrl){updateSync(false,null);return;}
   // mode no-cors = ส่งได้แต่ไม่ได้รับ response จริง — ถือว่าสำเร็จเสมอ
-  fetch(db.gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,ts:new Date().toISOString()})}),mode:'no-cors'})
+  fetch(db.gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits||[],ts:new Date().toISOString()})}),mode:'no-cors'})
     .then(()=>updateSync(false,true)).catch(()=>updateSync(false,false));
 }
 
@@ -1003,6 +1103,7 @@ function pullFromGSheet(){
       if(data&&data.cars&&data.cars.length) db.cars=data.cars;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
+      if(data&&data.permits) db.permits=data.permits;
       // คง gsUrl ของเครื่องนี้ไว้ (ไม่ทับ)
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1144,6 +1245,293 @@ function hardReset(){
       alert('❌ ดึงข้อมูลจาก Sheet ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ');
     });
 }
+
+
+// ===== PERMIT / APPROVAL SYSTEM =====
+
+function initPermitPage(){
+  // populate car select
+  const sel=document.getElementById('pf-car');
+  if(sel){
+    sel.innerHTML='<option value="">-- เลือกรถ --</option>'+
+      db.cars.filter(c=>c.active).map(c=>`<option value="${c.plate}">${c.plate}</option>`).join('');
+  }
+  // set today
+  const di=document.getElementById('pf-date');
+  if(di&&!di.value) di.value=new Date().toISOString().slice(0,10);
+  renderPermitList();
+  initCanvas('canvas-employee');
+  // check if approval link ?approve=ID
+  const params=new URLSearchParams(location.search);
+  if(params.get('approve')){
+    loadApprovalPage(params.get('approve'));
+  }
+}
+
+// Canvas drawing
+function initCanvas(id){
+  const canvas=document.getElementById(id);
+  if(!canvas||canvas._init)return;
+  canvas._init=true;
+  let drawing=false, lastX=0, lastY=0;
+  const ctx=canvas.getContext('2d');
+  ctx.strokeStyle='#1a4f8a';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';
+  function getPos(e){
+    const r=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/r.width, scaleY=canvas.height/r.height;
+    if(e.touches){return{x:(e.touches[0].clientX-r.left)*scaleX,y:(e.touches[0].clientY-r.top)*scaleY};}
+    return{x:(e.clientX-r.left)*scaleX,y:(e.clientY-r.top)*scaleY};
+  }
+  function start(e){e.preventDefault();drawing=true;const p=getPos(e);lastX=p.x;lastY=p.y;}
+  function draw(e){
+    if(!drawing)return;e.preventDefault();
+    const p=getPos(e);
+    ctx.beginPath();ctx.moveTo(lastX,lastY);ctx.lineTo(p.x,p.y);ctx.stroke();
+    lastX=p.x;lastY=p.y;
+  }
+  function stop(){drawing=false;}
+  canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',draw);
+  canvas.addEventListener('mouseup',stop);canvas.addEventListener('mouseleave',stop);
+  canvas.addEventListener('touchstart',start,{passive:false});
+  canvas.addEventListener('touchmove',draw,{passive:false});
+  canvas.addEventListener('touchend',stop);
+}
+
+function clearCanvas(id){
+  const c=document.getElementById(id);if(!c)return;
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+function isCanvasEmpty(id){
+  const c=document.getElementById(id);if(!c)return true;
+  const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  return !d.some(v=>v!==0);
+}
+
+function submitPermitForm(){
+  const name=document.getElementById('pf-name').value.trim();
+  const dept=document.getElementById('pf-dept').value.trim();
+  const loc=document.getElementById('pf-location').value.trim();
+  const reason=document.getElementById('pf-reason').value.trim();
+  const detail=document.getElementById('pf-detail').value.trim();
+  const car=document.getElementById('pf-car').value;
+  const cartype=document.getElementById('pf-cartype').value.trim();
+  const fuel=document.getElementById('pf-fuel').value;
+  const date=document.getElementById('pf-date').value;
+  const errEl=document.getElementById('permit-form-err');
+  errEl.style.display='none';
+  if(!name||!dept||!loc||!reason||!detail||!car||!fuel||!date)
+    {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
+  if(isCanvasEmpty('canvas-employee'))
+    {errEl.textContent='กรุณาลงลายเซ็นพนักงานก่อน';errEl.style.display='flex';return;}
+  const empSig=document.getElementById('canvas-employee').toDataURL('image/png');
+  const permit={
+    id:'p'+Date.now(),name,dept,location:loc,reason,detail,
+    car,cartype,fuel,date,empSig,
+    status:'pending',createdAt:new Date().toISOString(),
+    managerSig:null,approvedAt:null
+  };
+  if(!db.permits)db.permits=[];
+  db.permits.unshift(permit);
+  saveDB();
+  clearCanvas('canvas-employee');
+  ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  document.getElementById('pf-car').value='';
+  renderPermitList();
+  // Show link
+  const link=location.origin+location.pathname+'?approve='+permit.id;
+  alert('✅ สร้างฟอร์มสำเร็จ!\n\nคัดลอกลิงก์นี้ส่งให้หัวหน้าเพื่อเซ็นอนุมัติ:\n\n'+link);
+}
+
+function renderPermitList(){
+  const list=document.getElementById('permit-list');
+  if(!list)return;
+  if(!db.permits||!db.permits.length){
+    list.innerHTML='<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';return;
+  }
+  list.innerHTML=db.permits.map(p=>{
+    const stColor=p.status==='approved'?'var(--success)':p.status==='rejected'?'var(--danger)':'var(--warning)';
+    const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
+    const link=location.origin+location.pathname+'?approve='+p.id;
+    return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;font-size:15px">${p.name} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px;font-weight:600">${stLabel}</span></div>
+          <div style="font-size:13px;color:var(--g600);margin-top:4px">
+            <div>📅 ${p.date} &nbsp;|&nbsp; 🚗 ${p.car} &nbsp;|&nbsp; ⛽ ${p.fuel} บาท</div>
+            <div>📍 ${p.location} &nbsp;|&nbsp; 📝 ${p.detail}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
+          ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
+          <button class="btn btn-danger btn-sm" onclick="deletePermit('${p.id}')">ลบ</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function copyLink(link){
+  navigator.clipboard.writeText(link).then(()=>alert('✅ คัดลอกลิงก์แล้ว!\n\nส่งลิงก์นี้ให้หัวหน้าเปิดใน Line หรือ browser\n\n'+link))
+  .catch(()=>{
+    const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    alert('✅ คัดลอกลิงก์แล้ว!\n\n'+link);
+  });
+}
+
+function deletePermit(id){
+  if(!confirm('ลบคำขออนุมัตินี้?'))return;
+  db.permits=db.permits.filter(p=>p.id!==id);
+  saveDB();renderPermitList();
+}
+
+// Approval page (หัวหน้าเปิดลิงก์)
+function loadApprovalPage(permitId){
+  // hide all pages, show approve
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-approve').classList.add('active');
+  const p=db.permits&&db.permits.find(x=>x.id===permitId);
+  const det=document.getElementById('approve-detail');
+  if(!p){det.innerHTML='<div class="alert alert-danger">ไม่พบคำขออนุมัตินี้ หรืออาจถูกลบไปแล้ว</div>';return;}
+  if(p.status==='approved'){
+    det.innerHTML=`<div class="alert alert-success">✅ อนุมัติแล้วเมื่อ ${new Date(p.approvedAt).toLocaleString('th-TH')}</div>`;
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    return;
+  }
+  window._approvePermitId=permitId;
+  det.innerHTML=`
+    <table class="permit-form-table">
+      <tr><td width="150"><b>ชื่อพนักงาน</b></td><td>${p.name}</td><td width="100"><b>แผนก</b></td><td>${p.dept}</td></tr>
+      <tr><td><b>สถานที่ปฏิบัติงาน</b></td><td>${p.location}</td><td><b>เหตุผล</b></td><td>${p.reason}</td></tr>
+      <tr><td colspan="4"><b>รายละเอียด:</b> ${p.detail}</td></tr>
+      <tr><td><b>ทะเบียนรถ</b></td><td>${p.car}</td><td><b>น้ำมัน</b></td><td>${p.fuel} บาท</td></tr>
+      <tr><td><b>วันที่</b></td><td colspan="3">${p.date}</td></tr>
+      <tr><td><b>ลายเซ็นพนักงาน</b></td><td colspan="3"><img src="${p.empSig}" style="height:50px"></td></tr>
+    </table>`;
+  setTimeout(()=>initCanvas('canvas-manager'),100);
+}
+
+function submitApproval(){
+  const id=window._approvePermitId;
+  if(!id)return;
+  if(isCanvasEmpty('canvas-manager')){
+    document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อนอนุมัติ';
+    document.getElementById('approve-err').style.display='flex';return;
+  }
+  const sig=document.getElementById('canvas-manager').toDataURL('image/png');
+  const p=db.permits.find(x=>x.id===id);
+  if(p){p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();}
+  saveDB();
+  alert('✅ อนุมัติสำเร็จ! ผู้ยืมสามารถพิมพ์ฟอร์มได้แล้ว');
+  // remove ?approve from URL
+  history.replaceState({},'',location.pathname);
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-permit').classList.add('active');
+  renderPermitList();
+}
+
+function submitReject(){
+  const id=window._approvePermitId;
+  if(!id)return;
+  if(!confirm('ยืนยันการไม่อนุมัติ?'))return;
+  const p=db.permits.find(x=>x.id===id);
+  if(p){p.status='rejected';p.approvedAt=new Date().toISOString();}
+  saveDB();
+  alert('บันทึกแล้ว');
+  history.replaceState({},'',location.pathname);
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-permit').classList.add('active');
+  renderPermitList();
+}
+
+function showPrintPage(permitId){
+  const p=db.permits.find(x=>x.id===permitId);
+  if(!p)return;
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
+  const approvedDate=p.approvedAt?new Date(p.approvedAt).toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'}):'';
+  document.getElementById('print-content').innerHTML=`
+  <div id="print-card" style="background:#fff;padding:24px 32px;max-width:780px;margin:0 auto;font-family:'Sarabun',sans-serif;font-size:13px;border:1px solid #ccc">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div style="font-size:11px">1452</div>
+      <div></div>
+      <div style="font-size:11px">HR-F001</div>
+    </div>
+    <div style="display:flex;align-items:center;margin-bottom:16px">
+      <div style="margin-right:20px">
+        <svg width="60" height="60" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="#1a4f8a" stroke-width="8"/><path d="M30 50 Q50 20 70 50 Q50 80 30 50Z" fill="#1a4f8a"/></svg>
+        <div style="font-size:11px;font-weight:700;color:#1a4f8a;text-align:center">ระยองอิฐซูเอลส์</div>
+      </div>
+      <div style="flex:1;text-align:center">
+        <div style="font-size:16px;font-weight:700">แบบฟอร์มขออนอกนอกสถานที่และเบิกน้ำมัน</div>
+      </div>
+      <div style="text-align:right;font-size:13px">
+        <div>วันที่ &nbsp;&nbsp;&nbsp; ${p.date}</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px">
+      <tr>
+        <td style="width:120px;padding:4px 0"><b>ชื่อพนักงาน:</b></td>
+        <td style="padding:4px 8px">${p.name}</td>
+        <td style="width:80px;padding:4px 0"><b>แผนก:</b></td>
+        <td style="padding:4px 8px">${p.dept}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 0"><b>สถานที่ปฏิบัติงาน:</b></td>
+        <td style="padding:4px 8px">${p.location}</td>
+        <td style="padding:4px 0"><b>เหตุผล:</b></td>
+        <td style="padding:4px 8px">${p.reason}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 0"><b>รายละเอียด:</b></td>
+        <td colspan="3" style="padding:4px 8px">${p.detail}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 0"><b>ทะเบียนรถ:</b></td>
+        <td style="padding:4px 8px">${p.car} &nbsp; ประเภทรถ:${p.cartype||'0'}</td>
+        <td style="padding:4px 0"><b>จำนวนเงิน:</b></td>
+        <td style="padding:4px 8px">${p.fuel} &nbsp; บาท</td>
+      </tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #333;font-size:12px">
+      <tr>
+        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>ขอแสดงความนับถือ</b></td>
+        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>อนุมัติออกนอกสถานที่</b></td>
+        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>อนุมัติน้ำมัน</b></td>
+        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>รปภ.ลงนามขาออก</b></td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #333;padding:6px;height:70px;text-align:center;vertical-align:middle">
+          <img src="${p.empSig}" style="max-height:55px;max-width:100%">
+        </td>
+        <td style="border:1px solid #333;padding:6px;height:70px;text-align:center;vertical-align:middle">
+          ${p.managerSig?`<img src="${p.managerSig}" style="max-height:55px;max-width:100%">`:''}
+        </td>
+        <td style="border:1px solid #333;padding:6px;height:70px"></td>
+        <td style="border:1px solid #333;padding:6px;height:70px"></td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">พนักงาน</td>
+        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">ผู้จัดการแผนก/หัวหน้าแผนก</td>
+        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">เจ้าหน้าที่</td>
+        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">เวลา : <input type="text" style="width:70px;border:none;border-bottom:1px solid #333;font-family:inherit;font-size:11px"></td>
+      </tr>
+    </table>
+    <div style="text-align:right;font-size:11px;margin-top:6px">สำหรับเจ้าหน้าที่ที่ปั๊ม</div>
+  </div>`;
+}
+
+// Check approve param on load
+window.addEventListener('load',function(){
+  const params=new URLSearchParams(location.search);
+  if(params.get('approve')){
+    loadApprovalPage(params.get('approve'));
+  }
+});
 
 // Auto sync every 15s
 setInterval(pullFromGSheet,15000);
