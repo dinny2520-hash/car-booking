@@ -147,11 +147,12 @@ tr:hover td{background:var(--g50)}
 .permit-form-table td,.permit-form-table th{border:1px solid #333;padding:6px 10px;vertical-align:top}
 .permit-form-table .sig-cell{height:60px;vertical-align:bottom;font-size:11px}
 @media print{
-  .nav,.btn,#permit-form-card,.card:not(#print-card){display:none!important}
-  body{background:#fff}
+  .nav,.btn,.no-print,#permit-form-card,.card:not(#print-card){display:none!important}
+  body{background:#fff!important;margin:0;padding:0}
   #page-print{display:block!important}
-  #print-content{padding:0}
-  .no-print{display:none!important}
+  #print-content{padding:0!important}
+  #print-card{border:none!important;box-shadow:none!important;width:100%!important;padding:10mm 15mm!important}
+  @page{size:A4;margin:0}
 }
 
 .sync-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(30,40,60,0.92);color:#fff;padding:10px 20px;border-radius:24px;font-size:13px;z-index:9999;display:none;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
@@ -1275,7 +1276,7 @@ function initCanvas(id){
   canvas._init=true;
   let drawing=false, lastX=0, lastY=0;
   const ctx=canvas.getContext('2d');
-  ctx.strokeStyle='#1a4f8a';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='#000';ctx.lineWidth=3.5;ctx.lineCap='round';ctx.lineJoin='round';
   function getPos(e){
     const r=canvas.getBoundingClientRect();
     const scaleX=canvas.width/r.width, scaleY=canvas.height/r.height;
@@ -1459,116 +1460,97 @@ function showPrintPage(permitId){
   if(!p)return;
   document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
   document.getElementById('page-print').classList.add('active');
-  const approvedDate=p.approvedAt?new Date(p.approvedAt).toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'}):'';
+
+  const logoSrc='data:image/png;base64,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';
+
   document.getElementById('print-content').innerHTML=`
-  <div id="print-card" style="background:#fff;padding:24px 32px;max-width:780px;margin:0 auto;font-family:'Sarabun',sans-serif;font-size:13px;border:1px solid #ccc">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-      <div style="font-size:11px">1452</div>
+  <div id="print-card" style="
+    background:#fff;
+    width:210mm;
+    min-height:297mm;
+    padding:15mm 20mm;
+    margin:0 auto;
+    font-family:'Sarabun',sans-serif;
+    font-size:13pt;
+    box-sizing:border-box;
+    border:1px solid #ddd;
+  ">
+    <!-- Header row -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2mm">
+      <div style="font-size:10pt;color:#555">1452</div>
       <div></div>
-      <div style="font-size:11px">HR-F001</div>
+      <div style="font-size:10pt;color:#555">HR-F001</div>
     </div>
-    <div style="display:flex;align-items:center;margin-bottom:16px">
-      <div style="margin-right:20px">
-        <svg width="60" height="60" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="#1a4f8a" stroke-width="8"/><path d="M30 50 Q50 20 70 50 Q50 80 30 50Z" fill="#1a4f8a"/></svg>
-        <div style="font-size:11px;font-weight:700;color:#1a4f8a;text-align:center">ระยองอิฐซูเอลส์</div>
+
+    <!-- Logo + Title row -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6mm">
+      <div style="flex:0 0 auto">
+        <img src="${logoSrc}" style="height:55px;display:block">
       </div>
       <div style="flex:1;text-align:center">
-        <div style="font-size:16px;font-weight:700">แบบฟอร์มขออนอกนอกสถานที่และเบิกน้ำมัน</div>
+        <div style="font-size:15pt;font-weight:700">แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>
       </div>
-      <div style="text-align:right;font-size:13px">
-        <div>วันที่ &nbsp;&nbsp;&nbsp; ${p.date}</div>
+      <div style="flex:0 0 auto;text-align:right;font-size:11pt">
+        <span style="color:#555">วันที่</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${p.date}
       </div>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px">
+
+    <!-- Info rows -->
+    <table style="width:100%;border-collapse:collapse;margin-bottom:5mm;font-size:12pt">
       <tr>
-        <td style="width:120px;padding:4px 0"><b>ชื่อพนักงาน:</b></td>
-        <td style="padding:4px 8px">${p.name}</td>
-        <td style="width:80px;padding:4px 0"><b>แผนก:</b></td>
-        <td style="padding:4px 8px">${p.dept}</td>
+        <td style="width:45mm;padding:2mm 0;color:#333"><b>ชื่อพนักงาน:</b></td>
+        <td style="padding:2mm 4mm">${p.name}</td>
+        <td style="width:25mm;padding:2mm 0;color:#333"><b>แผนก:</b></td>
+        <td style="padding:2mm 4mm">${p.dept}</td>
       </tr>
       <tr>
-        <td style="padding:4px 0"><b>สถานที่ปฏิบัติงาน:</b></td>
-        <td style="padding:4px 8px">${p.location}</td>
-        <td style="padding:4px 0"><b>เหตุผล:</b></td>
-        <td style="padding:4px 8px">${p.reason}</td>
+        <td style="padding:2mm 0;color:#333"><b>สถานที่ปฏิบัติงาน:</b></td>
+        <td style="padding:2mm 4mm">${p.location}</td>
+        <td style="padding:2mm 0;color:#333"><b>เหตุผล:</b></td>
+        <td style="padding:2mm 4mm">${p.reason}</td>
       </tr>
       <tr>
-        <td style="padding:4px 0"><b>รายละเอียด:</b></td>
-        <td colspan="3" style="padding:4px 8px">${p.detail}</td>
+        <td style="padding:2mm 0;color:#333"><b>รายละเอียด:</b></td>
+        <td colspan="3" style="padding:2mm 4mm">${p.detail}</td>
       </tr>
       <tr>
-        <td style="padding:4px 0"><b>ทะเบียนรถ:</b></td>
-        <td style="padding:4px 8px">${p.car} &nbsp; ประเภทรถ:${p.cartype||'0'}</td>
-        <td style="padding:4px 0"><b>จำนวนเงิน:</b></td>
-        <td style="padding:4px 8px">${p.fuel} &nbsp; บาท</td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;border:1px solid #333;font-size:12px">
-      <tr>
-        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>ขอแสดงความนับถือ</b></td>
-        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>อนุมัติออกนอกสถานที่</b></td>
-        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>อนุมัติน้ำมัน</b></td>
-        <td style="border:1px solid #333;padding:6px;width:25%;text-align:center"><b>รปภ.ลงนามขาออก</b></td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #333;padding:6px;height:70px;text-align:center;vertical-align:middle">
-          <img src="${p.empSig}" style="max-height:55px;max-width:100%">
-        </td>
-        <td style="border:1px solid #333;padding:6px;height:70px;text-align:center;vertical-align:middle">
-          ${p.managerSig?`<img src="${p.managerSig}" style="max-height:55px;max-width:100%">`:''}
-        </td>
-        <td style="border:1px solid #333;padding:6px;height:70px"></td>
-        <td style="border:1px solid #333;padding:6px;height:70px"></td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">พนักงาน</td>
-        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">ผู้จัดการแผนก/หัวหน้าแผนก</td>
-        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">เจ้าหน้าที่</td>
-        <td style="border:1px solid #333;padding:5px;text-align:center;font-size:11px">เวลา : <input type="text" style="width:70px;border:none;border-bottom:1px solid #333;font-family:inherit;font-size:11px"></td>
+        <td style="padding:2mm 0;color:#333"><b>ทะเบียนรถ:</b></td>
+        <td style="padding:2mm 4mm">${p.car}&nbsp;&nbsp;&nbsp;ประเภทรถ:${p.cartype||'0'}</td>
+        <td style="padding:2mm 0;color:#333"><b>จำนวนเงิน:</b></td>
+        <td style="padding:2mm 4mm">${p.fuel}&nbsp;&nbsp;&nbsp;บาท</td>
       </tr>
     </table>
-    <div style="text-align:right;font-size:11px;margin-top:6px">สำหรับเจ้าหน้าที่ที่ปั๊ม</div>
+
+    <!-- Signature table -->
+    <table style="width:100%;border-collapse:collapse;border:1.5px solid #333;font-size:11pt">
+      <tr>
+        <td style="border:1.5px solid #333;padding:4px 8px;width:25%;text-align:center;font-weight:700;background:#f9f9f9">ขอแสดงความนับถือ</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;width:25%;text-align:center;font-weight:700;background:#f9f9f9">อนุมัติออกนอกสถานที่</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;width:25%;text-align:center;font-weight:700;background:#f9f9f9">อนุมัติน้ำมัน</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;width:25%;text-align:center;font-weight:700;background:#f9f9f9">รปภ.ลงนามขาออก</td>
+      </tr>
+      <tr>
+        <td style="border:1.5px solid #333;height:25mm;text-align:center;vertical-align:middle;padding:4px">
+          ${p.empSig?`<img src="${p.empSig}" style="max-height:22mm;max-width:100%;filter:contrast(2) brightness(0.6)">`:''}
+        </td>
+        <td style="border:1.5px solid #333;height:25mm;text-align:center;vertical-align:middle;padding:4px">
+          ${p.managerSig?`<img src="${p.managerSig}" style="max-height:22mm;max-width:100%;filter:contrast(2) brightness(0.6)">`:''}
+        </td>
+        <td style="border:1.5px solid #333;height:25mm"></td>
+        <td style="border:1.5px solid #333;height:25mm"></td>
+      </tr>
+      <tr>
+        <td style="border:1.5px solid #333;padding:4px 8px;text-align:center;font-size:10pt">พนักงาน</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;text-align:center;font-size:10pt">ผู้จัดการแผนก/หัวหน้าแผนก</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;text-align:center;font-size:10pt">เจ้าหน้าที่</td>
+        <td style="border:1.5px solid #333;padding:4px 8px;text-align:center;font-size:10pt">
+          เวลา : <span style="border-bottom:1px solid #333;display:inline-block;width:30mm">&nbsp;</span>
+        </td>
+      </tr>
+    </table>
+    <div style="text-align:right;font-size:10pt;margin-top:3mm;color:#555">สำหรับเจ้าหน้าที่ที่ปั๊ม</div>
   </div>`;
 }
-
-// Check approve param on load — pull from Sheet first
-window.addEventListener('load',function(){
-  const params=new URLSearchParams(location.search);
-  const approveId=params.get('approve');
-  if(!approveId)return;
-
-  // Show loading state immediately
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page-approve').classList.add('active');
-  document.getElementById('approve-detail').innerHTML=`
-    <div style="text-align:center;padding:30px;color:var(--g600)">
-      <div style="font-size:32px;margin-bottom:10px">⏳</div>
-      <div>กำลังโหลดข้อมูล...</div>
-    </div>`;
-
-  // Pull from Sheet first, then render
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl){
-    fetch(gsUrl+'?action=get&t='+Date.now())
-      .then(r=>r.json())
-      .then(data=>{
-        if(data&&data.permits) db.permits=data.permits;
-        if(data&&data.cars) db.cars=data.cars;
-        if(data&&data.bookings) db.bookings=data.bookings;
-        if(data&&data.staff) db.staff=data.staff;
-        if(data&&data.adminPass) db.adminPass=data.adminPass;
-        db.syncEnabled=true;
-        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-        loadApprovalPage(approveId);
-      })
-      .catch(()=>{
-        // fallback to local
-        loadApprovalPage(approveId);
-      });
-  } else {
-    loadApprovalPage(approveId);
-  }
-});
 
 // Auto sync every 15s
 setInterval(pullFromGSheet,15000);
