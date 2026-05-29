@@ -178,11 +178,27 @@ tr:hover td{background:var(--g50)}
 <!-- RETURN PAGE -->
 <div id="page-return" class="page">
   <div class="container">
+
+    <!-- STEP 1: ผู้ยืม -->
     <div class="card">
-      <div class="card-title">🔑 ยืนยันการคืนรถ (สำหรับเจ้าหน้าที่)</div>
-      <div class="alert alert-info">ผู้ใช้รถส่งกุญแจให้เจ้าหน้าที่แล้ว — เจ้าหน้าที่กดยืนยันเพื่อเปลี่ยนสถานะ</div>
-      <div id="return-list"></div>
+      <div class="card-title">
+        <span style="background:var(--primary);color:#fff;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">1</span>
+        ผู้ยืมแจ้งคืนรถ — กรอก PIN ยืนยันตัวเอง
+      </div>
+      <div class="alert alert-info" style="margin-bottom:14px">ผู้ยืมกรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง เพื่อแจ้งคืนรถ จากนั้นส่งกุญแจให้เจ้าหน้าที่</div>
+      <div id="step1-list"></div>
     </div>
+
+    <!-- STEP 2: เจ้าหน้าที่ -->
+    <div class="card">
+      <div class="card-title">
+        <span style="background:var(--success);color:#fff;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">2</span>
+        เจ้าหน้าที่ยืนยันรับกุญแจ — ใส่รหัสเจ้าหน้าที่
+      </div>
+      <div class="alert alert-warning" style="margin-bottom:14px">รายการด้านล่างคือรถที่ผู้ยืมแจ้งคืนแล้ว รอเจ้าหน้าที่กดยืนยันรับกุญแจ</div>
+      <div id="step2-list"></div>
+    </div>
+
   </div>
 </div>
 
@@ -251,29 +267,47 @@ tr:hover td{background:var(--g50)}
   </div>
 </div>
 
-<!-- MODAL: RETURN CONFIRM -->
-<div class="modal-overlay" id="modal-return-confirm">
+<!-- MODAL: STEP 1 — ผู้ยืมแจ้งคืน -->
+<div class="modal-overlay" id="modal-step1-return">
   <div class="modal">
-    <div class="modal-title">🔑 ยืนยันรับกุญแจคืน</div>
-    <div id="return-car-info" class="alert alert-warning" style="margin-bottom:12px"></div>
-    <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
-      <select id="return-staff-select"></select>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">1</span>
+      <div class="modal-title" style="margin:0">ผู้ยืมแจ้งคืนรถ</div>
     </div>
-    <div class="form-row"><label>รหัสเจ้าหน้าที่</label>
-      <input type="password" id="return-staff-code" placeholder="รหัสของเจ้าหน้าที่">
-    </div>
-    <hr class="divider">
-    <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">รหัส PIN ของผู้จอง (4 หลัก)</div>
+    <div id="s1-car-info" class="alert alert-info" style="margin-bottom:14px"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
     <div class="pin-input">
-      <input type="password" maxlength="1" id="rpin1" inputmode="numeric" oninput="pinNext(this,'rpin2')">
-      <input type="password" maxlength="1" id="rpin2" inputmode="numeric" oninput="pinNext(this,'rpin3')" onkeydown="pinBack(event,this,'rpin1')">
-      <input type="password" maxlength="1" id="rpin3" inputmode="numeric" oninput="pinNext(this,'rpin4')" onkeydown="pinBack(event,this,'rpin2')">
-      <input type="password" maxlength="1" id="rpin4" inputmode="numeric" onkeydown="pinBack(event,this,'rpin3')">
+      <input type="password" maxlength="1" id="s1pin1" inputmode="numeric" oninput="pinNext(this,'s1pin2')">
+      <input type="password" maxlength="1" id="s1pin2" inputmode="numeric" oninput="pinNext(this,'s1pin3')" onkeydown="pinBack(event,this,'s1pin1')">
+      <input type="password" maxlength="1" id="s1pin3" inputmode="numeric" oninput="pinNext(this,'s1pin4')" onkeydown="pinBack(event,this,'s1pin2')">
+      <input type="password" maxlength="1" id="s1pin4" inputmode="numeric" onkeydown="pinBack(event,this,'s1pin3')">
     </div>
-    <div id="return-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div id="s1-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
     <div class="modal-actions">
-      <button class="btn btn-gray" onclick="closeModal('modal-return-confirm')">ยกเลิก</button>
-      <button class="btn btn-success" onclick="confirmReturn()">✅ ยืนยันคืนรถ</button>
+      <button class="btn btn-gray" onclick="closeModal('modal-step1-return')">ปิด</button>
+      <button class="btn btn-primary" onclick="submitStep1()">➡️ แจ้งคืนรถ</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: STEP 2 — เจ้าหน้าที่ยืนยัน -->
+<div class="modal-overlay" id="modal-step2-return">
+  <div class="modal">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="background:var(--success);color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">2</span>
+      <div class="modal-title" style="margin:0">เจ้าหน้าที่ยืนยันรับกุญแจ</div>
+    </div>
+    <div id="s2-car-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
+      <select id="s2-staff-select"></select>
+    </div>
+    <div class="form-row"><label>รหัสของเจ้าหน้าที่</label>
+      <input type="password" id="s2-staff-code" placeholder="ใส่รหัสเจ้าหน้าที่">
+    </div>
+    <div id="s2-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-step2-return')">ปิด</button>
+      <button class="btn btn-success" onclick="submitStep2()">✅ ยืนยันรับกุญแจคืน</button>
     </div>
   </div>
 </div>
@@ -353,7 +387,7 @@ function loadDB(){try{const d=localStorage.getItem(DB_KEY);if(d)db=JSON.parse(d)
 function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} syncToGSheet();}
 loadDB();
 
-let selectedCarId=null, adminLoggedIn=false, returnBookingId=null, cancelBookingId=null, hFilter='all';
+let selectedCarId=null, adminLoggedIn=false, cancelBookingId=null, hFilter='all';
 
 // ---- UTILS ----
 function genId(){return 'b'+Date.now()+Math.random().toString(36).slice(2,5);}
@@ -380,12 +414,13 @@ function getBkStatus(b){
   const n=new Date();
   if(b.status==='returned')return 'returned';
   if(b.status==='cancelled')return 'cancelled';
+  if(b.returnStep==='pending')return 'pending-return';
   if(new Date(b.endDt)<n)return 'overdue';
   if(new Date(b.startDt)<=n&&new Date(b.endDt)>=n)return 'in-use';
   return 'upcoming';
 }
-function stClass(s){return{available:'st-available',busy:'st-busy','in-use':'st-in-use',overdue:'st-overdue',returned:'st-returned',cancelled:'st-cancelled',upcoming:'st-busy'}[s]||'';}
-function stLabel(s){return{available:'ว่าง',busy:'ติดจอง','in-use':'กำลังใช้งาน',overdue:'เกินกำหนด!',returned:'คืนแล้ว',cancelled:'ยกเลิก',upcoming:'รอใช้งาน'}[s]||s;}
+function stClass(s){return{available:'st-available',busy:'st-busy','in-use':'st-in-use',overdue:'st-overdue',returned:'st-returned',cancelled:'st-cancelled',upcoming:'st-busy','pending-return':'st-busy'}[s]||'';}
+function stLabel(s){return{available:'ว่าง',busy:'ติดจอง','in-use':'กำลังใช้งาน',overdue:'เกินกำหนด!',returned:'คืนแล้ว',cancelled:'ยกเลิก',upcoming:'รอใช้งาน','pending-return':'รอรับกุญแจ'}[s]||s;}
 
 function isCarFreeFor(carId,startDt,endDt,excludeId){
   const s=new Date(startDt),e=new Date(endDt);
@@ -564,60 +599,126 @@ function confirmCancelAdmin(){
   alert('✅ แอดมินยกเลิกการจองสำเร็จ');
 }
 
-// ---- RETURN ----
+// ---- RETURN (2 ขั้นตอน) ----
 function renderReturnList(){
-  const list=document.getElementById('return-list');
   const n=new Date();
-  const pending=db.bookings.filter(b=>b.status!=='returned'&&b.status!=='cancelled'&&new Date(b.startDt)<=n);
-  if(!pending.length){list.innerHTML='<div class="empty-state"><div style="font-size:36px">🎉</div><div>ไม่มีรถที่รอคืนในขณะนี้</div></div>';return;}
-  const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
-  document.getElementById('return-staff-select').innerHTML='<option value="">-- เลือกชื่อเจ้าหน้าที่ --</option>'+staffOpts;
-  list.innerHTML=pending.map(b=>{
-    const car=db.cars.find(c=>c.id===b.carId);
-    const st=getBkStatus(b);
-    const isOver=st==='overdue';
-    return `<div class="card" style="border-left:4px solid ${isOver?'var(--danger)':'var(--primary-mid)'}">
-      <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px">
-          <div style="font-weight:700;font-size:15px;margin-bottom:6px">🚗 ${car?car.plate:'?'} <span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></div>
-          <div style="font-size:13px;color:var(--g600)">
-            <div>👤 ${b.name}</div><div>📍 ${b.dest}</div><div>📝 ${b.reason}</div>
-            <div style="color:${isOver?'var(--danger)':'inherit'};font-weight:${isOver?700:400}">⏰ กำหนดคืน: ${fmt(b.endDt)}${isOver?' ⚠️ เกินกำหนด':''}</div>
+  // Step1: รถที่กำลังใช้งาน/เกินกำหนด และยังไม่ได้แจ้งคืน
+  const step1Items=db.bookings.filter(b=>
+    b.status==='booked'&&b.status!=='cancelled'&&
+    new Date(b.startDt)<=n
+  );
+  // รวม status booked ที่เริ่มแล้ว และ in-use จริง ๆ
+  const activeInUse=db.bookings.filter(b=>
+    (b.status==='booked')&&b.status!=='cancelled'&&
+    new Date(b.startDt)<=n&&b.returnStep!=='pending'
+  );
+  const pendingStaff=db.bookings.filter(b=>b.returnStep==='pending');
+
+  const s1=document.getElementById('step1-list');
+  const s2=document.getElementById('step2-list');
+
+  // -- STEP 1 LIST --
+  if(!activeInUse.length){
+    s1.innerHTML='<div class="empty-state"><div style="font-size:30px">🚗</div><div>ไม่มีรถที่กำลังใช้งาน</div></div>';
+  } else {
+    s1.innerHTML=activeInUse.map(b=>{
+      const car=db.cars.find(c=>c.id===b.carId);
+      const st=getBkStatus(b);
+      const isOver=st==='overdue';
+      return `<div class="card" style="margin-bottom:12px;border-left:4px solid ${isOver?'var(--danger)':'var(--primary-mid)'}">
+        <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></div>
+            <div style="font-size:13px;color:var(--g600)">
+              <div>👤 ${b.name}</div>
+              <div>📍 ${b.dest}</div>
+              <div style="color:${isOver?'var(--danger)':'inherit'};font-weight:${isOver?700:400}">⏰ กำหนดคืน: ${fmt(b.endDt)}${isOver?' ⚠️ เกินกำหนด':''}</div>
+            </div>
           </div>
+          <button class="btn btn-primary btn-sm" onclick="openStep1Modal('${b.id}')">📋 แจ้งคืนรถ (ผู้ยืม)</button>
         </div>
-        <button class="btn btn-success btn-sm" onclick="openReturnModal('${b.id}')">🔑 ยืนยันรับกุญแจคืน</button>
-      </div>
-    </div>`;
-  }).join('');
+      </div>`;
+    }).join('');
+  }
+
+  // -- STEP 2 LIST --
+  if(!pendingStaff.length){
+    s2.innerHTML='<div class="empty-state"><div style="font-size:30px">✅</div><div>ไม่มีรายการรอเจ้าหน้าที่ยืนยัน</div></div>';
+  } else {
+    const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    document.getElementById('s2-staff-select').innerHTML='<option value="">-- เลือกชื่อ --</option>'+staffOpts;
+    s2.innerHTML=pendingStaff.map(b=>{
+      const car=db.cars.find(c=>c.id===b.carId);
+      return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--success)">
+        <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status st-busy" style="font-size:11px">รอเจ้าหน้าที่</span></div>
+            <div style="font-size:13px;color:var(--g600)">
+              <div>👤 ${b.name}</div>
+              <div>📍 ${b.dest}</div>
+              <div>⏰ กำหนดคืน: ${fmt(b.endDt)}</div>
+              <div style="color:var(--success);font-weight:600;margin-top:4px">✅ ผู้ยืมแจ้งคืนแล้ว รอรับกุญแจ</div>
+            </div>
+          </div>
+          <button class="btn btn-success btn-sm" onclick="openStep2Modal('${b.id}')">🔑 ยืนยันรับกุญแจ</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
 }
 
-function openReturnModal(bkId){
+let returnBookingId=null;
+
+function openStep1Modal(bkId){
   returnBookingId=bkId;
   const b=db.bookings.find(x=>x.id===bkId);
   const car=db.cars.find(c=>c.id===b.carId);
-  document.getElementById('return-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b> | จองโดย <b>${b.name}</b><br>📍 ${b.dest}`;
-  document.getElementById('return-staff-code').value='';
-  clearPins('rpin');
-  document.getElementById('return-err').style.display='none';
-  openModal('modal-return-confirm');
+  document.getElementById('s1-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br>⏰ กำหนดคืน: ${fmt(b.endDt)}`;
+  clearPins('s1pin');
+  document.getElementById('s1-err').style.display='none';
+  openModal('modal-step1-return');
+  setTimeout(()=>document.getElementById('s1pin1').focus(),100);
 }
 
-function confirmReturn(){
-  const staffId=document.getElementById('return-staff-select').value;
-  const staffCode=document.getElementById('return-staff-code').value.trim();
-  const pin=getModalPin('rpin');
-  const errEl=document.getElementById('return-err');
+function submitStep1(){
+  const pin=getModalPin('s1pin');
+  const b=db.bookings.find(x=>x.id===returnBookingId);
+  const errEl=document.getElementById('s1-err');
   errEl.style.display='none';
-  const showErr=msg=>{errEl.textContent=msg;errEl.style.display='flex';};
+  if(pin.length!==4){errEl.textContent='กรุณากรอก PIN ให้ครบ 4 หลัก';errEl.style.display='flex';return;}
+  if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
+  b.returnStep='pending';
+  saveDB();
+  closeModal('modal-step1-return');
+  renderReturnList();
+  alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
+}
+
+function openStep2Modal(bkId){
+  returnBookingId=bkId;
+  const b=db.bookings.find(x=>x.id===bkId);
+  const car=db.cars.find(c=>c.id===b.carId);
+  document.getElementById('s2-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br><span style="color:var(--success);font-weight:600">✅ ผู้ยืมยืนยัน PIN แล้ว</span>`;
+  document.getElementById('s2-staff-code').value='';
+  document.getElementById('s2-err').style.display='none';
+  const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('s2-staff-select').innerHTML='<option value="">-- เลือกชื่อ --</option>'+staffOpts;
+  openModal('modal-step2-return');
+}
+
+function submitStep2(){
+  const staffId=document.getElementById('s2-staff-select').value;
+  const staffCode=document.getElementById('s2-staff-code').value.trim();
+  const errEl=document.getElementById('s2-err');
+  errEl.style.display='none';
   const staff=db.staff.find(s=>s.id===staffId);
-  if(!staff){return showErr('กรุณาเลือกเจ้าหน้าที่');}
-  if(staff.code!==staffCode){return showErr('รหัสเจ้าหน้าที่ไม่ถูกต้อง');}
+  if(!staff){errEl.textContent='กรุณาเลือกเจ้าหน้าที่';errEl.style.display='flex';return;}
+  if(staff.code!==staffCode){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===returnBookingId);
   if(!b){return;}
-  if(pin!==b.pin){return showErr('รหัส PIN ของผู้จองไม่ถูกต้อง');}
-  b.status='returned';b.returnedBy=staff.name;b.returnedAt=nowISO();
-  saveDB();closeModal('modal-return-confirm');renderReturnList();
-  alert('✅ คืนรถสำเร็จ!');
+  b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
+  saveDB();closeModal('modal-step2-return');renderReturnList();renderCars();
+  alert('✅ ยืนยันคืนรถสำเร็จ! สถานะรถเปลี่ยนเป็นว่างแล้ว');
 }
 
 // ---- ADMIN ----
