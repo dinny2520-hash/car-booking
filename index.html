@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+<div class="sync-toast" id="sync-toast">
+  <div id="toast-dot" style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0"></div>
+  <span id="toast-msg">ซิงค์สำเร็จ</span>
+  <span id="toast-time" style="opacity:0.6;font-size:12px"></span>
+</div>
 <script>
 (function(){
   var ua = navigator.userAgent || '';
@@ -137,6 +142,8 @@ tr:hover td{background:var(--g50)}
 .bk-detail{font-size:12px;margin-top:8px;color:var(--g600)}
 .bk-detail div{margin-bottom:3px}
 .empty-state{text-align:center;padding:36px 20px;color:var(--g400)}
+.sync-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(30,40,60,0.92);color:#fff;padding:10px 20px;border-radius:24px;font-size:13px;z-index:9999;display:none;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
+.sync-toast.show{display:flex}
 .pin-hint{text-align:center;font-size:12px;color:var(--g600);margin-top:6px}
 .cancel-btn-row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 .divider{border:none;border-top:1px solid var(--g200);margin:14px 0}
@@ -146,6 +153,10 @@ tr:hover td{background:var(--g50)}
 
 <nav class="nav">
   <span class="nav-logo">🚗 <span class="nav-logo-text">ระบบจองรถบริษัท</span></span>
+  <div style="display:flex;align-items:center;gap:6px;margin-right:6px">
+    <div id="sync-dot" title="สถานะซิงค์" style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;cursor:pointer" onclick="showSyncToast()"></div>
+    <button onclick="hardReset()" title="รีเซ็ตข้อมูล" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0">🔄</button>
+  </div>
   <div class="nav-tabs">
     <button class="nav-btn active" id="nav-booking" onclick="showPage('booking',this)">
       <span class="nav-icon">🚘</span><span class="nav-label">จองรถ</span>
@@ -169,12 +180,7 @@ tr:hover td{background:var(--g50)}
 <div id="page-booking" class="page active">
   <div class="container">
     <div id="overdue-banner" class="overdue-banner">⚠️ มีรถที่เกินกำหนดคืน กรุณาติดต่อผู้ใช้รถ</div>
-    <div class="sync-bar">
-      <div class="sync-dot" id="sync-dot"></div>
-      <span id="sync-status">ข้อมูลเป็นปัจจุบัน (local)</span>
-      <button onclick="hardReset()" style="margin-left:auto;background:#e53935;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer;font-weight:600">🔄 รีเซ็ต</button>
-      <span style="font-size:12px;color:var(--g600);margin-left:8px" id="last-sync"></span>
-    </div>
+
     <div class="card">
       <div class="card-title">🚘 เลือกรถที่ต้องการจอง</div>
       <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">💡 รถที่มีสถานะ <b>กำลังใช้งาน</b> หรือ <b>ติดจอง</b> สามารถจองช่วงเวลาอื่นได้ — กดที่การ์ดรถเพื่อดูว่างหรือเลือกเวลาจอง</div>
@@ -941,18 +947,42 @@ function testGSheet(){
 }
 
 // ---- SYNC ----
+var _lastSyncTime='';
+var _toastTimer=null;
 function updateSync(syncing,ok){
   const dot=document.getElementById('sync-dot');
-  const status=document.getElementById('sync-status');
-  const last=document.getElementById('last-sync');
-  if(syncing){dot.style.background='#ff9800';dot.style.animation='pulse 1s infinite';status.textContent='กำลังซิงค์...';}
-  else{
+  if(!dot)return;
+  if(syncing){
+    dot.style.background='#ff9800';
+    dot.style.animation='pulse 1s infinite';
+  } else {
     dot.style.animation='';
-    if(ok===true){dot.style.background='#4caf50';status.textContent='ซิงค์ Google Sheet สำเร็จ';}
-    else if(ok===false){dot.style.background='#e53935';status.textContent='ไม่ได้เชื่อม Google Sheet (ใช้ local)';}
-    else{dot.style.background='#4caf50';status.textContent='ข้อมูลเป็นปัจจุบัน (local)';}
-    last.textContent='อัปเดต: '+new Date().toLocaleTimeString('th-TH');
+    if(ok===true){
+      dot.style.background='#4caf50';
+      _lastSyncTime=new Date().toLocaleTimeString('th-TH');
+    } else if(ok===false){
+      dot.style.background='#e53935';
+      _lastSyncTime=new Date().toLocaleTimeString('th-TH');
+    } else {
+      dot.style.background='#4caf50';
+    }
   }
+}
+function showSyncToast(){
+  const toast=document.getElementById('sync-toast');
+  const dot=document.getElementById('sync-dot');
+  const msg=document.getElementById('toast-msg');
+  const tdot=document.getElementById('toast-dot');
+  const ttime=document.getElementById('toast-time');
+  const color=dot?dot.style.background:'#4caf50';
+  tdot.style.background=color;
+  if(color.includes('4caf50'))msg.textContent='ซิงค์ Google Sheet สำเร็จ';
+  else if(color.includes('e539'))msg.textContent='ซิงค์ไม่สำเร็จ (ใช้ข้อมูล local)';
+  else msg.textContent='กำลังซิงค์...';
+  ttime.textContent=_lastSyncTime?'อัปเดต '+_lastSyncTime:'';
+  toast.classList.add('show');
+  if(_toastTimer)clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>toast.classList.remove('show'),3000);
 }
 
 function syncToGSheet(){
