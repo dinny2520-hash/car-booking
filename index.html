@@ -54,11 +54,17 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-height:100vh}
-.nav{background:var(--primary);color:#fff;padding:0 16px;display:flex;align-items:center;height:56px;gap:6px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.18)}
-.nav-logo{font-size:17px;font-weight:700;flex:1}
-.nav-btn{background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;transition:background .2s}
-.nav-btn:hover{background:rgba(255,255,255,0.25)}
-.nav-btn.active{background:rgba(255,255,255,0.3);font-weight:600}
+.nav{background:var(--primary);color:#fff;padding:0 12px;display:flex;align-items:center;height:60px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,0.22)}
+.nav-logo{font-size:16px;font-weight:700;white-space:nowrap;margin-right:8px}
+.nav-logo-text{display:none}
+@media(min-width:600px){.nav-logo-text{display:inline}}
+.nav-tabs{display:flex;align-items:center;gap:2px;margin-left:auto}
+.nav-btn{background:transparent;border:none;color:rgba(255,255,255,0.75);padding:6px 10px;border-radius:10px;cursor:pointer;font-size:12px;font-family:inherit;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px}
+.nav-btn:hover{background:rgba(255,255,255,0.15);color:#fff}
+.nav-btn.active{background:rgba(255,255,255,0.22);color:#fff;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.nav-icon{font-size:18px;line-height:1}
+.nav-label{font-size:11px;line-height:1}
+@media(min-width:480px){.nav-btn{min-width:60px;padding:6px 12px}.nav-label{font-size:12px}}
 .container{max-width:1100px;margin:0 auto;padding:20px 14px}
 .page{display:none}.page.active{display:block}
 .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:20px}
@@ -139,12 +145,24 @@ tr:hover td{background:var(--g50)}
 <body>
 
 <nav class="nav">
-  <span class="nav-logo">🚗 ระบบจองรถบริษัท</span>
-  <button class="nav-btn active" id="nav-booking" onclick="showPage('booking',this)">จองรถ</button>
-  <button class="nav-btn" id="nav-history" onclick="showPage('history',this)">ประวัติ</button>
-  <button class="nav-btn" id="nav-carschedule" onclick="showPage('carschedule',this)">ตารางจอง</button>
-  <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">คืนรถ</button>
-  <button class="nav-btn" id="nav-settings" onclick="showAdminLogin()">⚙️ ตั้งค่า</button>
+  <span class="nav-logo">🚗 <span class="nav-logo-text">ระบบจองรถบริษัท</span></span>
+  <div class="nav-tabs">
+    <button class="nav-btn active" id="nav-booking" onclick="showPage('booking',this)">
+      <span class="nav-icon">🚘</span><span class="nav-label">จองรถ</span>
+    </button>
+    <button class="nav-btn" id="nav-history" onclick="showPage('history',this)">
+      <span class="nav-icon">📜</span><span class="nav-label">ประวัติ</span>
+    </button>
+    <button class="nav-btn" id="nav-carschedule" onclick="showPage('carschedule',this)">
+      <span class="nav-icon">📅</span><span class="nav-label">ตาราง</span>
+    </button>
+    <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">
+      <span class="nav-icon">🔑</span><span class="nav-label">คืนรถ</span>
+    </button>
+    <button class="nav-btn" id="nav-settings" onclick="showAdminLogin()">
+      <span class="nav-icon">⚙️</span><span class="nav-label">ตั้งค่า</span>
+    </button>
+  </div>
 </nav>
 
 <!-- BOOKING PAGE -->
