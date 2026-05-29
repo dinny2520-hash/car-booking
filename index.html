@@ -4,47 +4,38 @@
 <script>
 (function(){
   var ua = navigator.userAgent || '';
-  var isLine = ua.indexOf('Line/') > -1;
-  if (isLine) {
-    var url = location.href;
-    // iOS: เปิดใน Safari
-    if (/iPhone|iPad|iPod/.test(ua)) {
-      location.href = 'googlechrome://' + url.replace(/^https?:\/\//, '');
-      setTimeout(function(){
-        location.href = url + (url.indexOf('?') > -1 ? '&' : '?') + 'openInBrowser=1';
-      }, 300);
-      document.write('<div style="font-family:sans-serif;text-align:center;padding:40px 20px;background:#1a4f8a;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center">'
-        + '<div style="font-size:48px;margin-bottom:16px">🚗</div>'
-        + '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>'
-        + '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">กรุณาเปิดด้วย Safari หรือ Chrome<br>เพื่อให้ระบบทำงานได้ถูกต้อง</p>'
-        + '<div style="background:rgba(255,255,255,0.15);border-radius:12px;padding:16px 20px;margin-bottom:24px;font-size:13px;line-height:1.8">'
-        + '📱 กดปุ่ม <b>···</b> มุมขวาบน<br>'
-        + '▶ เลือก <b>"เปิดใน Safari"</b>'
-        + '</div>'
-        + '<button onclick="window.open(location.href.split('?')[0])" style="background:#fff;color:#1a4f8a;border:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">เปิดใน Safari</button>'
-        + '</div>');
-      document.close();
-      return;
-    }
-    // Android: เปิดใน Chrome โดยใช้ intent
-    if (/Android/.test(ua)) {
-      location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
-      setTimeout(function(){
-        document.write('<div style="font-family:sans-serif;text-align:center;padding:40px 20px;background:#1a4f8a;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center">'
-          + '<div style="font-size:48px;margin-bottom:16px">🚗</div>'
-          + '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>'
-          + '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">กรุณาเปิดด้วย Chrome หรือ browser อื่น<br>เพื่อให้ระบบทำงานได้ถูกต้อง</p>'
-          + '<div style="background:rgba(255,255,255,0.15);border-radius:12px;padding:16px 20px;margin-bottom:24px;font-size:13px;line-height:1.8">'
-          + '📱 กดปุ่ม <b>···</b> มุมขวาบน<br>'
-          + '▶ เลือก <b>"เปิดใน Chrome"</b>'
-          + '</div>'
-          + '<button onclick="window.open(location.href.split('?')[0])" style="background:#fff;color:#1a4f8a;border:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">เปิดใน Chrome</button>'
-          + '</div>');
-        document.close();
-      }, 1500);
-      return;
-    }
+  if (ua.indexOf('Line/') < 0) return;
+  var cleanUrl = location.href.replace(/[?#].*$/, '');
+  var isIOS = /iPhone|iPad|iPod/.test(ua);
+  var isAndroid = /Android/.test(ua);
+  var msg = isIOS
+    ? '<b>···</b> มุมขวาบน &rarr; เปิดใน Safari'
+    : '<b>···</b> มุมขวาบน &rarr; เปิดใน Chrome';
+  var btnLabel = isIOS ? 'เปิดใน Safari' : 'เปิดใน Browser';
+  if (isAndroid) {
+    location.href = 'intent://' + cleanUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
   }
+  setTimeout(function(){
+    var html = [
+      '<div style="font-family:sans-serif;text-align:center;padding:40px 20px;',
+      'background:#1a4f8a;color:#fff;min-height:100vh;display:flex;',
+      'flex-direction:column;align-items:center;justify-content:center">',
+      '<div style="font-size:48px;margin-bottom:16px">&#128663;</div>',
+      '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>',
+      '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">',
+      'กรุณาเปิดด้วย browser จริง<br>เพื่อให้ข้อมูลซิงค์ถูกต้อง</p>',
+      '<div style="background:rgba(255,255,255,0.15);border-radius:12px;',
+      'padding:16px 20px;margin-bottom:24px;font-size:14px;line-height:2">',
+      '&#128241; กดปุ่ม ' + msg + '</div>',
+      '<a href="' + cleanUrl + '" style="background:#fff;color:#1a4f8a;',
+      'text-decoration:none;padding:12px 28px;border-radius:8px;',
+      'font-size:15px;font-weight:700">' + btnLabel + '</a>',
+      '</div>'
+    ].join('');
+    document.open();
+    document.write(html);
+    document.close();
+  }, isAndroid ? 1500 : 0);
 })();
 </script>
 <meta charset="UTF-8">
