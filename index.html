@@ -348,12 +348,10 @@ tr:hover td{background:var(--g50)}
       <div class="form-row"><label>วันที่</label><input type="date" id="pf-date"></div>
 
       <hr class="divider">
-      <div style="font-size:14px;font-weight:600;color:var(--g600);margin-bottom:10px">✍️ ลายเซ็นพนักงาน</div>
-      <div style="border:2px solid var(--g200);border-radius:10px;background:#fafafa;position:relative;touch-action:none">
-        <canvas id="canvas-employee" width="600" height="120" style="width:100%;height:120px;display:block;cursor:crosshair;border-radius:8px"></canvas>
-        <button onclick="clearCanvas('canvas-employee')" style="position:absolute;top:6px;right:8px;background:var(--g100);border:none;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">ล้าง</button>
+      <div class="form-row">
+        <label>✍️ ชื่อพนักงาน (สำหรับแสดงในช่องลายเซ็น) *</label>
+        <input type="text" id="pf-emp-sig-name" placeholder="พิมพ์ชื่อ-นามสกุล เช่น นายสมชาย ใจดี">
       </div>
-      <div style="font-size:12px;color:var(--g400);margin-top:4px;margin-bottom:16px">วาดลายเซ็นในกล่องด้านบน</div>
 
       <div id="permit-form-err" class="alert alert-danger" style="display:none"></div>
       <button class="btn btn-primary" onclick="submitPermitForm()">📤 สร้างลิงก์ส่งหัวหน้าอนุมัติ</button>
@@ -1261,7 +1259,6 @@ function initPermitPage(){
   const di=document.getElementById('pf-date');
   if(di&&!di.value) di.value=new Date().toISOString().slice(0,10);
   renderPermitList();
-  initCanvas('canvas-employee');
   // check if approval link ?approve=ID
   const params=new URLSearchParams(location.search);
   if(params.get('approve')){
@@ -1323,9 +1320,9 @@ function submitPermitForm(){
   errEl.style.display='none';
   if(!name||!dept||!loc||!reason||!detail||!car||!fuel||!date)
     {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
-  if(isCanvasEmpty('canvas-employee'))
-    {errEl.textContent='กรุณาลงลายเซ็นพนักงานก่อน';errEl.style.display='flex';return;}
-  const empSig=document.getElementById('canvas-employee').toDataURL('image/png');
+  const empSigName=document.getElementById('pf-emp-sig-name').value.trim();
+  if(!empSigName){errEl.textContent='กรุณาพิมพ์ชื่อพนักงานในช่องลายเซ็น';errEl.style.display='flex';return;}
+  const empSig=empSigName; // store as text
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
     car,cartype,fuel,date,empSig,
@@ -1335,7 +1332,7 @@ function submitPermitForm(){
   if(!db.permits)db.permits=[];
   db.permits.unshift(permit);
   saveDB();
-  clearCanvas('canvas-employee');
+  document.getElementById('pf-emp-sig-name').value='';
   ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
@@ -1416,7 +1413,7 @@ function loadApprovalPage(permitId){
         <div><span style="color:var(--g600)">น้ำมัน:</span> <b>${p.fuel} บาท</b></div>
         <div><span style="color:var(--g600)">วันที่:</span> ${p.date}</div>
       </div>
-      ${p.empSig?`<div style="margin-top:10px"><span style="color:var(--g600)">ลายเซ็นพนักงาน:</span><br><img src="${p.empSig}" style="height:50px;margin-top:4px;border:1px solid var(--g200);border-radius:6px;background:#fff;padding:4px"></div>`:''}
+      <div style="margin-top:6px"><span style="color:var(--g600)">ลายเซ็นพนักงาน:</span> <b>${p.empSig||''}</b></div>
     </div>`;
   // init canvas after DOM update
   requestAnimationFrame(()=>{ initCanvas('canvas-manager'); });
@@ -1531,7 +1528,7 @@ function showPrintPage(permitId){
       </tr>
       <tr>
         <td style="border:1.5px solid #333;height:25mm;text-align:center;vertical-align:middle;padding:4px">
-          ${p.empSig?`<img src="${p.empSig}" style="max-height:22mm;max-width:100%;filter:contrast(2) brightness(0.6)">`:''}
+          <div style="font-family:'Sarabun',sans-serif;font-size:13pt;color:#111;margin-top:4mm">${p.empSig||''}</div>
         </td>
         <td style="border:1.5px solid #333;height:25mm;text-align:center;vertical-align:middle;padding:4px">
           ${p.managerSig?`<img src="${p.managerSig}" style="max-height:22mm;max-width:100%;filter:contrast(2) brightness(0.6)">`:''}
