@@ -249,6 +249,7 @@ tr:hover td{background:var(--g50)}
               <th>สถานที่</th>
               <th>เหตุผล</th>
               <th>สถานะ</th>
+              <th>จัดการ</th>
             </tr>
           </thead>
           <tbody id="cs-tbody"></tbody>
@@ -1073,7 +1074,7 @@ function renderCarSchedule(){
   // Table
   const tbody=document.getElementById('cs-tbody');
   if(!bks.length){
-    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูลการจอง</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูลการจอง</td></tr>`;
     return;
   }
   tbody.innerHTML=bks.map((b,i)=>{
@@ -1082,6 +1083,7 @@ function renderCarSchedule(){
     const hrs=Math.round((e-s)/3600000*10)/10;
     const dur=hrs<24?`${hrs} ชม.`:`${Math.round(hrs/24*10)/10} วัน`;
     const isNow=st==='in-use'||st==='pending-return';
+    const canCancel=st!=='returned'&&st!=='cancelled';
     return `<tr style="${isNow?'background:#fff8f7;':''}">
       <td style="color:var(--g400);font-size:12px">${i+1}</td>
       <td><b>${b.name}</b></td>
@@ -1091,6 +1093,7 @@ function renderCarSchedule(){
       <td>${b.dest}</td>
       <td style="font-size:12px;color:var(--g600)">${b.reason}</td>
       <td><span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></td>
+      <td>${canCancel?`<button class="btn btn-danger btn-sm" onclick="openCancelModal('${b.id}')">ยกเลิก</button>`:'—'}</td>
     </tr>`;
   }).join('');
 }
