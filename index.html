@@ -1494,27 +1494,42 @@ function submitApproval(){
   }
   const sig=document.getElementById('canvas-manager').toDataURL('image/png');
   const p=db.permits.find(x=>x.id===id);
-  if(p){p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();}
+  if(!p)return;
+  p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  // Push ขึ้น Sheet ทันที
+
+  const errEl=document.getElementById('approve-err');
+  errEl.textContent='⏳ กำลังบันทึก กรุณารอสักครู่...';
+  errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';
+  errEl.style.display='flex';
+  document.querySelector('#page-approve .btn-success').disabled=true;
+  document.querySelector('#page-approve .btn-danger').disabled=true;
+
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(_gsUrl){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({
-      cars:db.cars,bookings:db.bookings,staff:db.staff,
-      adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()
-    })});
-    fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body,mode:'no-cors'}).catch(()=>{});
+  const _body=JSON.stringify({action:'sync',data:JSON.stringify({
+    cars:db.cars,bookings:db.bookings,staff:db.staff,
+    adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()
+  })});
+
+  function showSuccess(){
+    errEl.style.display='none';
+    history.replaceState({},'',location.pathname);
+    document.getElementById('approve-detail').innerHTML=
+      '<div style="text-align:center;padding:20px">'
+      +'<div style="font-size:48px;margin-bottom:12px">✅</div>'
+      +'<div style="font-size:18px;font-weight:700;color:var(--success);margin-bottom:8px">อนุมัติสำเร็จ!</div>'
+      +'<div style="font-size:14px;color:var(--g600)">ผู้ยืมสามารถเปิดแอปและพิมพ์ฟอร์มได้แล้ว</div>'
+      +'</div>';
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
   }
-  history.replaceState({},'',location.pathname);
-  // แสดงหน้ายืนยันอนุมัติ
-  document.getElementById('approve-detail').innerHTML=`
-    <div style="text-align:center;padding:20px">
-      <div style="font-size:48px;margin-bottom:12px">✅</div>
-      <div style="font-size:18px;font-weight:700;color:var(--success);margin-bottom:8px">อนุมัติสำเร็จ!</div>
-      <div style="font-size:14px;color:var(--g600)">ผู้ยืมสามารถเปิดแอปและพิมพ์ฟอร์มได้แล้ว</div>
-    </div>`;
-  document.querySelector('#page-approve .btn-success').style.display='none';
-  document.querySelector('#page-approve .btn-danger').style.display='none';
+
+  fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body})
+    .then(r=>r.text()).then(showSuccess)
+    .catch(()=>{
+      fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body,mode:'no-cors'})
+        .then(showSuccess).catch(showSuccess);
+    });
 }
 
 function submitReject(){
