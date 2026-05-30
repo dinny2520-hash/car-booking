@@ -763,7 +763,7 @@ function renderHistory(){
   tbody.innerHTML=bks.map(b=>{
     const car=db.cars.find(c=>c.id===b.carId);
     const st=getBkStatus(b);
-    const canCancel=st!=='returned'&&st!=='cancelled';
+    const canCancel=st!=='returned'&&st!=='cancelled'&&st!=='in-use'&&st!=='overdue'&&st!=='pending-return';
     return `<tr>
       <td><b>${car?car.plate:'?'}</b></td>
       <td>${b.name}</td>
