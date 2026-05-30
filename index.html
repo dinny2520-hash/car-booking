@@ -1680,16 +1680,19 @@ function showPrintPage(permitId){
 
 function refreshPermitList(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(!gsUrl) return;
+  if(!gsUrl){ renderPermitList(); return; }
   fetch(gsUrl+'?action=get&t='+Date.now())
     .then(r=>r.json())
     .then(data=>{
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
+      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+      if(data&&data.adminPass) db.adminPass=data.adminPass;
+      db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       renderPermitList();
     })
-    .catch(()=>{});
+    .catch(()=>{ renderPermitList(); });
 }
 
 // Auto stop poll when leaving permit page
@@ -1705,16 +1708,19 @@ function stopPermitPoll(){
 }
 function refreshPermitList(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(!gsUrl) return;
+  if(!gsUrl){ renderPermitList(); return; }
   fetch(gsUrl+'?action=get&t='+Date.now())
     .then(r=>r.json())
     .then(data=>{
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
+      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+      if(data&&data.adminPass) db.adminPass=data.adminPass;
+      db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       renderPermitList();
     })
-    .catch(()=>{});
+    .catch(()=>{ renderPermitList(); });
 }
 
 // Auto sync every 15s
