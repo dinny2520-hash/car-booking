@@ -10,26 +10,20 @@
 (function(){
   var ua = navigator.userAgent || '';
   if (ua.indexOf('Line/') < 0) return;
-  var cleanUrl = location.href.replace(/[?#].*$/, '');
+  // เก็บ URL เต็มรวม query string ไว้
+  var fullUrl = location.href;
   var isIOS = /iPhone|iPad|iPod/.test(ua);
   var isAndroid = /Android/.test(ua);
 
   if (isIOS) {
-    // เปิดใน Safari
-    location.href = 'x-safari-' + cleanUrl;
-    setTimeout(function(){
-      location.href = cleanUrl;
-    }, 500);
+    location.href = 'x-safari-' + fullUrl;
+    setTimeout(function(){ location.href = fullUrl; }, 500);
     return;
   }
 
   if (isAndroid) {
-    // เปิดใน Chrome
-    location.href = 'intent://' + cleanUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
-    setTimeout(function(){
-      // fallback เปิด browser default
-      location.href = cleanUrl;
-    }, 1500);
+    location.href = 'intent://' + fullUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+    setTimeout(function(){ location.href = fullUrl; }, 1500);
     return;
   }
 })();
