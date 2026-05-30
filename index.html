@@ -11,36 +11,30 @@
   var ua = navigator.userAgent || '';
   if (ua.indexOf('Line/') < 0) return;
   var cleanUrl = location.href.replace(/[?#].*$/, '');
-  var isIOS = /iPhone|iPad|iPod/.test(ua);
-  var isAndroid = /Android/.test(ua);
-  var msg = isIOS
-    ? '<b>···</b> มุมขวาบน &rarr; เปิดใน Safari'
-    : '<b>···</b> มุมขวาบน &rarr; เปิดใน Chrome';
-  var btnLabel = isIOS ? 'เปิดใน Safari' : 'เปิดใน Browser';
-  if (isAndroid) {
-    location.href = 'intent://' + cleanUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
-  }
-  setTimeout(function(){
-    var html = [
-      '<div style="font-family:sans-serif;text-align:center;padding:40px 20px;',
-      'background:#1a4f8a;color:#fff;min-height:100vh;display:flex;',
-      'flex-direction:column;align-items:center;justify-content:center">',
-      '<div style="font-size:48px;margin-bottom:16px">&#128663;</div>',
-      '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>',
-      '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">',
-      'กรุณาเปิดด้วย browser จริง<br>เพื่อให้ข้อมูลซิงค์ถูกต้อง</p>',
-      '<div style="background:rgba(255,255,255,0.15);border-radius:12px;',
-      'padding:16px 20px;margin-bottom:24px;font-size:14px;line-height:2">',
-      '&#128241; กดปุ่ม ' + msg + '</div>',
-      '<a href="' + cleanUrl + '" style="background:#fff;color:#1a4f8a;',
-      'text-decoration:none;padding:12px 28px;border-radius:8px;',
-      'font-size:15px;font-weight:700">' + btnLabel + '</a>',
-      '</div>'
-    ].join('');
-    document.open();
-    document.write(html);
-    document.close();
-  }, isAndroid ? 1500 : 0);
+  // แสดงหน้าเลือก browser แทนการ redirect อัตโนมัติ
+  var html = [
+    '<div style="font-family:sans-serif;text-align:center;padding:40px 20px;',
+    'background:#1a4f8a;color:#fff;min-height:100vh;display:flex;',
+    'flex-direction:column;align-items:center;justify-content:center">',
+    '<div style="font-size:48px;margin-bottom:16px">&#128663;</div>',
+    '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>',
+    '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">',
+    'กรุณาเปิดด้วย browser จริง<br>เพื่อให้ข้อมูลซิงค์ถูกต้อง</p>',
+    '<div style="background:rgba(255,255,255,0.15);border-radius:12px;',
+    'padding:16px 20px;margin-bottom:20px;font-size:14px;line-height:2;text-align:left">',
+    '&#128241; กดปุ่ม <b>&#183;&#183;&#183;</b> มุมขวาบน<br>',
+    '&#9654; เลือก <b>เปิดในเบราว์เซอร์</b></div>',
+    '<p style="font-size:13px;opacity:0.8;margin-bottom:16px">',
+    '&#9888;&#65039; แนะนำ Samsung Browser หรือ Firefox<br>',
+    'หลีกเลี่ยงการใช้ Chrome บนมือถือ</p>',
+    '<a href="' + cleanUrl + '" style="background:#fff;color:#1a4f8a;',
+    'text-decoration:none;padding:12px 28px;border-radius:8px;',
+    'font-size:15px;font-weight:700;margin-top:8px">เปิดลิงก์</a>',
+    '</div>'
+  ].join('');
+  document.open();
+  document.write(html);
+  document.close();
 })();
 </script>
 <meta charset="UTF-8">
@@ -576,7 +570,7 @@ tr:hover td{background:var(--g50)}
 <script>
 const DB_KEY = 'cbsys_v2';
 // *** ใส่ URL Apps Script ตรงนี้ — จะใช้เป็น default ในทุกเครื่อง ***
-const DEFAULT_GS_URL = 'https://script.google.com/macros/s/AKfycby8wbVTtTMM7c_npPygw4-xxYHBBKu63ONhgmkmtKf1aG1VL0e2DIBKaqDWh8IZI5CxXA/exec';
+const DEFAULT_GS_URL = 'https://shiny-art-0686.chitsanu1977.workers.dev';
 let db = {
   adminPass: 'admin1234',
   gsUrl: '',
@@ -1015,21 +1009,22 @@ function saveGSheetURL(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   updateSync(false,null);
   // ping ก่อนเพื่อทดสอบ แล้วค่อย pull ข้อมูล
-  jsonpFetch(url+'?action=ping', function(err, res){
-    if(err||!res||res.status!=='ok'){
-      updateSync(false,false);
-      alert('❌ เชื่อมต่อไม่ได้ กรุณาตรวจสอบ URL อีกครั้ง');
-      return;
-    }
-    // ping สำเร็จ บันทึก URL
-    db.gsUrl=url;
-    db.syncEnabled=true;
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    updateSync(false,true);
-    alert('✅ บันทึก URL สำเร็จ! กำลังดึงข้อมูลจาก Sheet...');
-    // pull ข้อมูลในพื้นหลัง
-    pullFromGSheet();
-  });
+  fetch(url+'?action=ping')
+    .then(r=>r.json())
+    .then(res=>{
+      if(res.status==='ok'){
+        db.gsUrl=url;
+        db.syncEnabled=true;
+        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        updateSync(false,true);
+        alert('✅ บันทึก URL สำเร็จ! กำลังดึงข้อมูลจาก Sheet...');
+        pullFromGSheet();
+      } else {
+        updateSync(false,false);
+        alert('❌ เชื่อมต่อไม่ได้ กรุณาตรวจสอบ URL อีกครั้ง');
+      }
+    })
+    .catch(()=>{ updateSync(false,false); alert('❌ เชื่อมต่อไม่ได้'); });
 }
 
 function enableSync(){
@@ -1041,10 +1036,10 @@ function enableSync(){
 function testGSheet(){
   if(!db.gsUrl)return alert('กรุณาใส่ URL ก่อน');
   updateSync(true);
-  jsonpFetch(db.gsUrl+'?action=ping', function(err,res){
-    if(!err&&res&&res.status==='ok'){ updateSync(false,true); alert('✅ เชื่อมต่อสำเร็จ!'); }
-    else { updateSync(false,false); alert('❌ ไม่สามารถเชื่อมต่อได้'); }
-  });
+  fetch(db.gsUrl+'?action=ping')
+    .then(r=>r.json())
+    .then(res=>{ if(res.status==='ok'){updateSync(false,true);alert('✅ เชื่อมต่อสำเร็จ!');}else{updateSync(false,false);alert('❌ เชื่อมต่อไม่ได้');} })
+    .catch(()=>{ updateSync(false,false); alert('❌ เชื่อมต่อไม่ได้'); });
 }
 
 // ---- SYNC ----
@@ -1097,18 +1092,20 @@ function pullFromGSheet(){
   const gsUrl = db.gsUrl || DEFAULT_GS_URL;
   if(!gsUrl) return;
   updateSync(true);
-  jsonpFetch(gsUrl + '?action=get', function(err, data){
-    if(err){ updateSync(false, false); return; }
-    if(data&&data.bookings) db.bookings=data.bookings;
-    if(data&&data.cars&&data.cars.length) db.cars=data.cars;
-    if(data&&data.staff&&data.staff.length) db.staff=data.staff;
-    if(data&&data.adminPass) db.adminPass=data.adminPass;
-    if(data&&data.permits) db.permits=data.permits;
-    db.syncEnabled=true;
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    updateSync(false,true); renderCars();
-    if(adminLoggedIn) renderSettings();
-  });
+  fetch(gsUrl + '?action=get&t=' + Date.now())
+    .then(r=>r.json())
+    .then(data=>{
+      if(data&&data.bookings) db.bookings=data.bookings;
+      if(data&&data.cars&&data.cars.length) db.cars=data.cars;
+      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+      if(data&&data.adminPass) db.adminPass=data.adminPass;
+      if(data&&data.permits) db.permits=data.permits;
+      db.syncEnabled=true;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      updateSync(false,true); renderCars();
+      if(adminLoggedIn) renderSettings();
+    })
+    .catch(()=>updateSync(false,false));
 }
 
 
@@ -1266,17 +1263,18 @@ function stopPermitPoll(){
 function refreshPermitList(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(!gsUrl){ renderPermitList(); return; }
-  jsonpFetch(gsUrl+'?action=get', function(err,data){
-    if(!err){
+  fetch(gsUrl+'?action=get&t='+Date.now())
+    .then(r=>r.json())
+    .then(data=>{
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    }
-    renderPermitList();
-  });
+      renderPermitList();
+    })
+    .catch(()=>renderPermitList());
 }
 
 
@@ -1312,11 +1310,14 @@ function jsonpFetch(url, callback){
 function syncViaGet(data, onSuccess, onFail){
   const gsUrl = db.gsUrl || DEFAULT_GS_URL;
   if(!gsUrl){ if(onFail) onFail(); return; }
-  const encoded = encodeURIComponent(JSON.stringify(data));
-  jsonpFetch(gsUrl + '?action=sync&data=' + encoded, function(err, res){
-    if(!err && res && res.status === 'ok'){ if(onSuccess) onSuccess(); }
-    else { if(onFail) onFail(); }
-  });
+  fetch(gsUrl, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({action:'sync', data: JSON.stringify(data)})
+  })
+  .then(r=>r.json())
+  .then(res=>{ if(res.status==='ok'){ if(onSuccess) onSuccess(); } else { if(onFail) onFail(); } })
+  .catch(()=>{ if(onFail) onFail(); });
 }
 
 // Auto sync every 15s
@@ -1342,8 +1343,9 @@ window.addEventListener('load', function(){
   const gsUrl = db.gsUrl || DEFAULT_GS_URL;
   if(!gsUrl){ loadApprovalPage(approveId); return; }
 
-  jsonpFetch(gsUrl + '?action=get', function(err, data){
-    if(!err && data){
+  fetch(gsUrl + '?action=get&t=' + Date.now())
+    .then(r=>r.json())
+    .then(data=>{
       if(data.permits) db.permits = data.permits;
       if(data.cars) db.cars = data.cars;
       if(data.bookings) db.bookings = data.bookings;
@@ -1351,9 +1353,9 @@ window.addEventListener('load', function(){
       if(data.adminPass) db.adminPass = data.adminPass;
       db.syncEnabled = true;
       try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
-    }
-    loadApprovalPage(approveId);
-  });
+      loadApprovalPage(approveId);
+    })
+    .catch(()=>loadApprovalPage(approveId));
 });
 // ===== PERMIT / APPROVAL SYSTEM =====
 
