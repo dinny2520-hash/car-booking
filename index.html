@@ -596,8 +596,8 @@ let db = {
 
 function loadDB(){
   try{const d=localStorage.getItem(DB_KEY);if(d)db=JSON.parse(d);}catch(e){}
-  // ถ้ายังไม่มี URL ให้ใช้ default ที่ฝังไว้
-  if(!db.gsUrl && DEFAULT_GS_URL) db.gsUrl=DEFAULT_GS_URL;
+  // อัปเดต URL เป็น DEFAULT_GS_URL เสมอ เพื่อให้ทุกเครื่องใช้ URL เดียวกัน
+  if(DEFAULT_GS_URL) db.gsUrl=DEFAULT_GS_URL;
 }
 function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} if(db.syncEnabled)syncToGSheet();}
 loadDB();
