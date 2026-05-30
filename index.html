@@ -1090,7 +1090,18 @@ function pullFromGSheet(){
       if(data&&data.cars&&data.cars.length) db.cars=data.cars;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
-      if(data&&data.permits) db.permits=data.permits;
+      if(data&&data.permits){
+        // restore local signatures that were stripped during sync
+        const localPermits = db.permits || [];
+        db.permits = data.permits.map(p=>{
+          const local = localPermits.find(lp=>lp.id===p.id);
+          return {
+            ...p,
+            managerSig: (p.managerSig==='[sig]' && local) ? local.managerSig : p.managerSig,
+            empSig: (p.empSig==='[sig]' && local) ? local.empSig : p.empSig
+          };
+        });
+      }
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       updateSync(false,true); renderCars();
@@ -1298,13 +1309,22 @@ function jsonpFetch(url, callback){
   }, 10000);
 }
 
+function stripSigs(permits){
+  return (permits||[]).map(p=>({...p,
+    managerSig: p.managerSig && p.managerSig.length > 100 ? '[sig]' : p.managerSig,
+    empSig: p.empSig && p.empSig.length > 100 ? '[sig]' : p.empSig
+  }));
+}
+
 function syncViaGet(data, onSuccess, onFail){
   const gsUrl = db.gsUrl || DEFAULT_GS_URL;
   if(!gsUrl){ if(onFail) onFail(); return; }
+  // ตัดลายเซ็นออกก่อน sync เพื่อลดขนาดข้อมูล
+  const cleanData = {...data, permits: stripSigs(data.permits)};
   fetch(gsUrl, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({action:'sync', data: JSON.stringify(data)})
+    body: JSON.stringify({action:'sync', data: JSON.stringify(cleanData)})
   })
   .then(r=>r.json())
   .then(res=>{ if(res.status==='ok'){ if(onSuccess) onSuccess(); } else { if(onFail) onFail(); } })
