@@ -11,30 +11,27 @@
   var ua = navigator.userAgent || '';
   if (ua.indexOf('Line/') < 0) return;
   var cleanUrl = location.href.replace(/[?#].*$/, '');
-  // แสดงหน้าเลือก browser แทนการ redirect อัตโนมัติ
-  var html = [
-    '<div style="font-family:sans-serif;text-align:center;padding:40px 20px;',
-    'background:#1a4f8a;color:#fff;min-height:100vh;display:flex;',
-    'flex-direction:column;align-items:center;justify-content:center">',
-    '<div style="font-size:48px;margin-bottom:16px">&#128663;</div>',
-    '<h2 style="font-size:20px;margin-bottom:12px">ระบบจองรถบริษัท</h2>',
-    '<p style="font-size:15px;margin-bottom:24px;opacity:0.9">',
-    'กรุณาเปิดด้วย browser จริง<br>เพื่อให้ข้อมูลซิงค์ถูกต้อง</p>',
-    '<div style="background:rgba(255,255,255,0.15);border-radius:12px;',
-    'padding:16px 20px;margin-bottom:20px;font-size:14px;line-height:2;text-align:left">',
-    '&#128241; กดปุ่ม <b>&#183;&#183;&#183;</b> มุมขวาบน<br>',
-    '&#9654; เลือก <b>เปิดในเบราว์เซอร์</b></div>',
-    '<p style="font-size:13px;opacity:0.8;margin-bottom:16px">',
-    '&#9888;&#65039; แนะนำ Samsung Browser หรือ Firefox<br>',
-    'หลีกเลี่ยงการใช้ Chrome บนมือถือ</p>',
-    '<a href="' + cleanUrl + '" style="background:#fff;color:#1a4f8a;',
-    'text-decoration:none;padding:12px 28px;border-radius:8px;',
-    'font-size:15px;font-weight:700;margin-top:8px">เปิดลิงก์</a>',
-    '</div>'
-  ].join('');
-  document.open();
-  document.write(html);
-  document.close();
+  var isIOS = /iPhone|iPad|iPod/.test(ua);
+  var isAndroid = /Android/.test(ua);
+
+  if (isIOS) {
+    // เปิดใน Safari
+    location.href = 'x-safari-' + cleanUrl;
+    setTimeout(function(){
+      location.href = cleanUrl;
+    }, 500);
+    return;
+  }
+
+  if (isAndroid) {
+    // เปิดใน Chrome
+    location.href = 'intent://' + cleanUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+    setTimeout(function(){
+      // fallback เปิด browser default
+      location.href = cleanUrl;
+    }, 1500);
+    return;
+  }
 })();
 </script>
 <meta charset="UTF-8">
