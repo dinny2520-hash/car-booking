@@ -1331,6 +1331,17 @@ function syncViaGet(data, onSuccess, onFail){
   .catch(()=>{ if(onFail) onFail(); });
 }
 
+function saveSigToSheet(permitId, sigData){
+  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
+  if(!gsUrl || !sigData) return;
+  fetch(gsUrl, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({action:'savesig', id: permitId+'_mgr', sig: sigData})
+  }).catch(()=>{});
+}
+
+// Also update pullFromGSheet to get sigs
 // Auto sync every 15s
 setInterval(pullFromGSheet,15000);
 updateSync(false,null);
@@ -1579,8 +1590,14 @@ function submitApproval(){
     document.querySelector('#page-approve .btn-success').style.display='none';
     document.querySelector('#page-approve .btn-danger').style.display='none';
   }
+  // sync ข้อมูลหลักก่อน
   syncViaGet({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()},
-    showSuccess, showSuccess);
+    function(){
+      showSuccess();
+      // แล้วค่อย sync ลายเซ็นแยกต่างหาก
+      saveSigToSheet(id, sig);
+    },
+    showSuccess);
 }
 
 function submitReject(){
