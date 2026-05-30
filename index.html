@@ -1241,6 +1241,21 @@ function hardReset(){
     }
   });
 }
+
+function initPermitPage(){
+  const sel=document.getElementById('pf-car-select');
+  if(sel){
+    sel.innerHTML='<option value="">-- เลือกรถบริษัท --</option>'+
+      db.cars.filter(c=>c.active).map(c=>`<option value="${c.plate}">${c.plate}</option>`).join('')+
+      '<option value="__other__">🚗 รถส่วนตัว (กรอกเอง)</option>';
+  }
+  const di=document.getElementById('pf-date');
+  if(di&&!di.value) di.value=new Date().toISOString().slice(0,10);
+  refreshPermitList();
+}
+
+let _permitPollTimer = null;
+
 function startPermitPoll(){
   stopPermitPoll();
   _permitPollTimer = setInterval(refreshPermitList, 10000);
