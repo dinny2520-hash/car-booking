@@ -576,7 +576,7 @@ tr:hover td{background:var(--g50)}
 <script>
 const DB_KEY = 'cbsys_v2';
 // *** ใส่ URL Apps Script ตรงนี้ — จะใช้เป็น default ในทุกเครื่อง ***
-const DEFAULT_GS_URL = 'https://script.google.com/macros/s/AKfycbwfgPvdh10D5aOzge5gHCCxnd_mUcQxKLAPepJ9woEHCuQrQSMTJBvQIDgpUwwe6i1EfQ/exec';
+const DEFAULT_GS_URL = 'https://script.google.com/macros/s/AKfycby1N9VuN2cNDO0YWNj73sAmM4LgdgyvsXB5uIqqa0jIx47lRrYFMAQqTECi-fJfD9wEFA/exec';
 let db = {
   adminPass: 'admin1234',
   gsUrl: '',
@@ -1015,9 +1015,9 @@ function saveGSheetURL(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   updateSync(false,null);
   // ดึงจาก Sheet ก่อน
-  fetch(url+'?action=get&t='+Date.now())
-    .then(r=>{if(!r.ok)throw new Error();return r.json();})
-    .then(data=>{
+  jsonpFetch(url+'?action=get', function(err, data){
+    if(err){ updateSync(false,false); alert('❌ เชื่อมต่อไม่ได้ กรุณาตรวจสอบ URL อีกครั้ง'); return; }
+    {
       const hasData=data&&data.cars&&data.cars.length>0;
       if(hasData){
         // Sheet มีข้อมูล — ดึงมาใช้
@@ -1034,11 +1034,8 @@ function saveGSheetURL(){
         updateSync(false,null);
         alert('✅ บันทึก URL สำเร็จ\nSheet ยังว่างอยู่\nกรุณาตั้งค่าทะเบียนและเจ้าหน้าที่ให้ครบ แล้วกดปุ่ม "Push ข้อมูลขึ้น Sheet"');
       }
-    })
-    .catch(()=>{
-      updateSync(false,false);
-      alert('❌ เชื่อมต่อไม่ได้ กรุณาตรวจสอบ URL อีกครั้ง');
-    });
+    }
+  });
 }
 
 function enableSync(){
@@ -1050,7 +1047,10 @@ function enableSync(){
 function testGSheet(){
   if(!db.gsUrl)return alert('กรุณาใส่ URL ก่อน');
   updateSync(true);
-  fetch(db.gsUrl+'?action=ping').then(r=>r.text()).then(()=>{updateSync(false,true);alert('✅ เชื่อมต่อสำเร็จ!');}).catch(()=>{updateSync(false,false);alert('❌ ไม่สามารถเชื่อมต่อได้');});
+  jsonpFetch(db.gsUrl+'?action=ping', function(err,res){
+    if(!err&&res&&res.status==='ok'){ updateSync(false,true); alert('✅ เชื่อมต่อสำเร็จ!'); }
+    else { updateSync(false,false); alert('❌ ไม่สามารถเชื่อมต่อได้'); }
+  });
 }
 
 // ---- SYNC ----
@@ -1100,23 +1100,21 @@ function syncToGSheet(){
 }
 
 function pullFromGSheet(){
-  if(!db.gsUrl)return;
+  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
+  if(!gsUrl) return;
   updateSync(true);
-  fetch(db.gsUrl+'?action=get&t='+Date.now())
-    .then(r=>{if(!r.ok)throw new Error();return r.json();})
-    .then(data=>{
-      if(data&&data.bookings) db.bookings=data.bookings;
-      if(data&&data.cars&&data.cars.length) db.cars=data.cars;
-      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
-      if(data&&data.adminPass) db.adminPass=data.adminPass;
-      if(data&&data.permits) db.permits=data.permits;
-      // คง gsUrl ของเครื่องนี้ไว้ (ไม่ทับ)
-      db.syncEnabled=true;
-      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      updateSync(false,true);renderCars();
-      if(adminLoggedIn) renderSettings();
-    })
-    .catch(()=>updateSync(false,false));
+  jsonpFetch(gsUrl + '?action=get', function(err, data){
+    if(err){ updateSync(false, false); return; }
+    if(data&&data.bookings) db.bookings=data.bookings;
+    if(data&&data.cars&&data.cars.length) db.cars=data.cars;
+    if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+    if(data&&data.adminPass) db.adminPass=data.adminPass;
+    if(data&&data.permits) db.permits=data.permits;
+    db.syncEnabled=true;
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    updateSync(false,true); renderCars();
+    if(adminLoggedIn) renderSettings();
+  });
 }
 
 
@@ -1252,17 +1250,6 @@ function hardReset(){
     });
 }
 
-
-// sync via GET to avoid CORS issues (used in approval page)
-function syncViaGet(data, onSuccess, onFail){
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(!gsUrl){ if(onFail)onFail(); return; }
-  const encoded=encodeURIComponent(JSON.stringify(data));
-  fetch(gsUrl+'?action=sync&data='+encoded)
-    .then(r=>r.json())
-    .then(res=>{ if(res.status==='ok'&&onSuccess)onSuccess(); else if(onFail)onFail(); })
-    .catch(()=>{ if(onFail)onFail(); });
-}
 
 // ===== PERMIT / APPROVAL SYSTEM =====
 
@@ -1691,18 +1678,17 @@ function showPrintPage(permitId){
 function refreshPermitList(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(!gsUrl){ renderPermitList(); return; }
-  fetch(gsUrl+'?action=get&t='+Date.now())
-    .then(r=>r.json())
-    .then(data=>{
+  jsonpFetch(gsUrl+'?action=get', function(err,data){
+    if(!err){
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      renderPermitList();
-    })
-    .catch(()=>{ renderPermitList(); });
+    }
+    renderPermitList();
+  });
 }
 
 // Auto stop poll when leaving permit page
@@ -1719,18 +1705,57 @@ function stopPermitPoll(){
 function refreshPermitList(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(!gsUrl){ renderPermitList(); return; }
-  fetch(gsUrl+'?action=get&t='+Date.now())
-    .then(r=>r.json())
-    .then(data=>{
+  jsonpFetch(gsUrl+'?action=get', function(err,data){
+    if(!err){
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      renderPermitList();
-    })
-    .catch(()=>{ renderPermitList(); });
+    }
+    renderPermitList();
+  });
+}
+
+
+// ---- JSONP fetch (bypasses CORS) ----
+function jsonpFetch(url, callback){
+  const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
+  const script = document.createElement('script');
+  let done = false;
+  window[cbName] = function(data){
+    if(done) return; done = true;
+    delete window[cbName];
+    document.body.removeChild(script);
+    callback(null, data);
+  };
+  script.onerror = function(){
+    if(done) return; done = true;
+    delete window[cbName];
+    if(document.body.contains(script)) document.body.removeChild(script);
+    callback(new Error('jsonp error'), null);
+  };
+  const sep = url.indexOf('?') > -1 ? '&' : '?';
+  script.src = url + sep + 'callback=' + cbName + '&t=' + Date.now();
+  document.body.appendChild(script);
+  // timeout 10s
+  setTimeout(function(){
+    if(!done){ done=true; delete window[cbName];
+      if(document.body.contains(script)) document.body.removeChild(script);
+      callback(new Error('timeout'), null);
+    }
+  }, 10000);
+}
+
+function syncViaGet(data, onSuccess, onFail){
+  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
+  if(!gsUrl){ if(onFail) onFail(); return; }
+  const encoded = encodeURIComponent(JSON.stringify(data));
+  jsonpFetch(gsUrl + '?action=sync&data=' + encoded, function(err, res){
+    if(!err && res && res.status === 'ok'){ if(onSuccess) onSuccess(); }
+    else { if(onFail) onFail(); }
+  });
 }
 
 // Auto sync every 15s
@@ -1756,19 +1781,18 @@ window.addEventListener('load', function(){
   const gsUrl = db.gsUrl || DEFAULT_GS_URL;
   if(!gsUrl){ loadApprovalPage(approveId); return; }
 
-  fetch(gsUrl + '?action=get&t=' + Date.now())
-    .then(r => { if(!r.ok) throw new Error(); return r.json(); })
-    .then(data => {
-      if(data && data.permits) db.permits = data.permits;
-      if(data && data.cars) db.cars = data.cars;
-      if(data && data.bookings) db.bookings = data.bookings;
-      if(data && data.staff) db.staff = data.staff;
-      if(data && data.adminPass) db.adminPass = data.adminPass;
+  jsonpFetch(gsUrl + '?action=get', function(err, data){
+    if(!err && data){
+      if(data.permits) db.permits = data.permits;
+      if(data.cars) db.cars = data.cars;
+      if(data.bookings) db.bookings = data.bookings;
+      if(data.staff) db.staff = data.staff;
+      if(data.adminPass) db.adminPass = data.adminPass;
       db.syncEnabled = true;
       try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
-      loadApprovalPage(approveId);
-    })
-    .catch(() => loadApprovalPage(approveId));
+    }
+    loadApprovalPage(approveId);
+  });
 });
 </script>
 </body>
