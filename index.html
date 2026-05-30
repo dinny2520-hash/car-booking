@@ -1355,6 +1355,278 @@ window.addEventListener('load', function(){
     loadApprovalPage(approveId);
   });
 });
+// ===== PERMIT / APPROVAL SYSTEM =====
+
+function initCanvas(id){
+  const canvas=document.getElementById(id);
+  if(!canvas||canvas._init)return;
+  canvas._init=true;
+  let drawing=false,lastX=0,lastY=0;
+  const ctx=canvas.getContext('2d');
+  ctx.strokeStyle='#000';ctx.lineWidth=3.5;ctx.lineCap='round';ctx.lineJoin='round';
+  function getPos(e){
+    const r=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/r.width,scaleY=canvas.height/r.height;
+    if(e.touches){return{x:(e.touches[0].clientX-r.left)*scaleX,y:(e.touches[0].clientY-r.top)*scaleY};}
+    return{x:(e.clientX-r.left)*scaleX,y:(e.clientY-r.top)*scaleY};
+  }
+  function start(e){e.preventDefault();drawing=true;const p=getPos(e);lastX=p.x;lastY=p.y;}
+  function draw(e){
+    if(!drawing)return;e.preventDefault();
+    const p=getPos(e);
+    ctx.beginPath();ctx.moveTo(lastX,lastY);ctx.lineTo(p.x,p.y);ctx.stroke();
+    lastX=p.x;lastY=p.y;
+  }
+  function stop(){drawing=false;}
+  canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',draw);
+  canvas.addEventListener('mouseup',stop);canvas.addEventListener('mouseleave',stop);
+  canvas.addEventListener('touchstart',start,{passive:false});
+  canvas.addEventListener('touchmove',draw,{passive:false});
+  canvas.addEventListener('touchend',stop);
+}
+
+function clearCanvas(id){
+  const c=document.getElementById(id);if(!c)return;
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+function isCanvasEmpty(id){
+  const c=document.getElementById(id);if(!c)return true;
+  const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  return !d.some(v=>v!==0);
+}
+
+function onCarSelectChange(){
+  const sel=document.getElementById('pf-car-select');
+  const custom=document.getElementById('pf-car-custom');
+  const hidden=document.getElementById('pf-car');
+  if(sel.value==='__other__'){custom.style.display='block';custom.focus();hidden.value='';}
+  else{custom.style.display='none';hidden.value=sel.value;}
+}
+
+function getSelectedCar(){
+  const sel=document.getElementById('pf-car-select');
+  if(sel.value==='__other__') return document.getElementById('pf-car-custom').value.trim();
+  return sel.value;
+}
+
+function submitPermitForm(){
+  const name=document.getElementById('pf-name').value.trim();
+  const dept=document.getElementById('pf-dept').value.trim();
+  const loc=document.getElementById('pf-location').value.trim();
+  const reason=document.getElementById('pf-reason').value.trim();
+  const detail=document.getElementById('pf-detail').value.trim();
+  const car=getSelectedCar();
+  const cartype=document.getElementById('pf-cartype').value.trim();
+  const fuel=document.getElementById('pf-fuel').value;
+  const date=document.getElementById('pf-date').value;
+  const empSigName=document.getElementById('pf-emp-sig-name').value.trim();
+  const errEl=document.getElementById('permit-form-err');
+  errEl.style.display='none';
+  if(!name||!dept||!loc||!reason||!detail||!car||!fuel||!date||!empSigName)
+    {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
+  const permit={
+    id:'p'+Date.now(),name,dept,location:loc,reason,detail,
+    car,cartype,fuel,date,empSig:empSigName,
+    status:'pending',createdAt:new Date().toISOString(),
+    managerSig:null,approvedAt:null
+  };
+  if(!db.permits)db.permits=[];
+  db.permits.unshift(permit);
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  document.getElementById('pf-emp-sig-name').value='';
+  ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  document.getElementById('pf-car-select').value='';
+  document.getElementById('pf-car-custom').value='';
+  document.getElementById('pf-car-custom').style.display='none';
+  document.getElementById('pf-car').value='';
+  const link=location.origin+location.pathname+'?approve='+permit.id;
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  const syncData={cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()};
+  errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet กรุณารอสักครู่...';
+  errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
+  syncViaGet(syncData, function(){
+    db.syncEnabled=true;try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    errEl.style.display='none';renderPermitList();
+    copyLink(link);
+    alert('✅ สร้างฟอร์มและซิงค์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+  }, function(){
+    errEl.style.display='none';renderPermitList();
+    alert('⚠️ บันทึกแล้ว แต่ซิงค์ไม่ได้\n\nลิงก์:\n'+link);
+  });
+}
+
+function renderPermitList(){
+  const list=document.getElementById('permit-list');
+  if(!list)return;
+  if(!db.permits||!db.permits.length){
+    list.innerHTML='<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';return;
+  }
+  list.innerHTML=db.permits.map(p=>{
+    const stColor=p.status==='approved'?'var(--success)':p.status==='rejected'?'var(--danger)':'var(--warning)';
+    const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
+    const link=location.origin+location.pathname+'?approve='+p.id;
+    return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;font-size:15px">${p.name} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px;font-weight:600">${stLabel}</span></div>
+          <div style="font-size:13px;color:var(--g600);margin-top:4px">
+            <div>📅 ${p.date} &nbsp;|&nbsp; 🚗 ${p.car} &nbsp;|&nbsp; ⛽ ${p.fuel} บาท</div>
+            <div>📍 ${p.location} &nbsp;|&nbsp; 📝 ${p.detail}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
+          ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
+          <button class="btn btn-danger btn-sm" onclick="deletePermit('${p.id}')">ลบ</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function copyLink(link){
+  navigator.clipboard.writeText(link).then(()=>alert('✅ คัดลอกลิงก์แล้ว!\n\n'+link))
+  .catch(()=>{
+    const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    alert('✅ คัดลอกลิงก์แล้ว!\n\n'+link);
+  });
+}
+
+function deletePermit(id){
+  if(!confirm('ลบคำขออนุมัตินี้?'))return;
+  db.permits=db.permits.filter(p=>p.id!==id);
+  saveDB();renderPermitList();
+}
+
+function loadApprovalPage(permitId){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-approve').classList.add('active');
+  const p=db.permits&&db.permits.find(x=>x.id===permitId);
+  const det=document.getElementById('approve-detail');
+  if(!p){det.innerHTML='<div class="alert alert-danger">ไม่พบคำขออนุมัตินี้ หรืออาจถูกลบไปแล้ว</div>';return;}
+  if(p.status==='approved'){
+    det.innerHTML=`<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">อนุมัติแล้ว</div><div style="font-size:14px;color:var(--g600)">อนุมัติเมื่อ ${new Date(p.approvedAt).toLocaleString('th-TH')}</div></div>`;
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    return;
+  }
+  if(p.status==='rejected'){
+    det.innerHTML=`<div class="alert alert-danger">❌ ไม่อนุมัติ</div>`;
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    return;
+  }
+  window._approvePermitId=permitId;
+  det.innerHTML=`
+    <div style="background:var(--g50);border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><span style="color:var(--g600)">ชื่อพนักงาน:</span> <b>${p.name}</b></div>
+        <div><span style="color:var(--g600)">แผนก:</span> <b>${p.dept}</b></div>
+        <div><span style="color:var(--g600)">สถานที่:</span> ${p.location}</div>
+        <div><span style="color:var(--g600)">เหตุผล:</span> ${p.reason}</div>
+        <div style="grid-column:1/-1"><span style="color:var(--g600)">รายละเอียด:</span> ${p.detail}</div>
+        <div><span style="color:var(--g600)">ทะเบียนรถ:</span> ${p.car}</div>
+        <div><span style="color:var(--g600)">น้ำมัน:</span> <b>${p.fuel} บาท</b></div>
+        <div><span style="color:var(--g600)">วันที่:</span> ${p.date}</div>
+        <div><span style="color:var(--g600)">ลายเซ็นพนักงาน:</span> <b>${p.empSig||''}</b></div>
+      </div>
+    </div>`;
+  requestAnimationFrame(()=>{ initCanvas('canvas-manager'); });
+}
+
+function submitApproval(){
+  const id=window._approvePermitId;
+  if(!id)return;
+  if(isCanvasEmpty('canvas-manager')){
+    document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อนอนุมัติ';
+    document.getElementById('approve-err').style.display='flex';return;
+  }
+  const sig=document.getElementById('canvas-manager').toDataURL('image/png');
+  const p=db.permits.find(x=>x.id===id);
+  if(!p)return;
+  p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const errEl=document.getElementById('approve-err');
+  errEl.textContent='⏳ กำลังบันทึก กรุณารอสักครู่...';
+  errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
+  document.querySelector('#page-approve .btn-success').disabled=true;
+  document.querySelector('#page-approve .btn-danger').disabled=true;
+  function showSuccess(){
+    errEl.style.display='none';
+    history.replaceState({},'',location.pathname);
+    document.getElementById('approve-detail').innerHTML=
+      '<div style="text-align:center;padding:20px">'
+      +'<div style="font-size:48px;margin-bottom:12px">✅</div>'
+      +'<div style="font-size:18px;font-weight:700;color:var(--success);margin-bottom:8px">อนุมัติสำเร็จ!</div>'
+      +'<div style="font-size:14px;color:var(--g600)">ผู้ยืมสามารถเปิดแอปและพิมพ์ฟอร์มได้แล้ว</div>'
+      +'</div>';
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+  }
+  syncViaGet({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()},
+    showSuccess, showSuccess);
+}
+
+function submitReject(){
+  const id=window._approvePermitId;
+  if(!id)return;
+  if(!confirm('ยืนยันการไม่อนุมัติ?'))return;
+  const p=db.permits.find(x=>x.id===id);
+  if(p){p.status='rejected';p.approvedAt=new Date().toISOString();}
+  syncViaGet({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()},
+    null, null);
+  history.replaceState({},'',location.pathname);
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-permit').classList.add('active');
+  renderPermitList();
+  alert('บันทึกแล้ว');
+}
+
+function showPrintPage(permitId){
+  const p=db.permits.find(x=>x.id===permitId);
+  if(!p)return;
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
+  const logoSrc='data:image/png;base64,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';
+  const managerSigHtml = p.managerSig
+    ? '<img src="' + p.managerSig + '" style="max-height:17mm;max-width:90%;display:block;margin:0 auto 2px;filter:contrast(1.8) brightness(0.5)">'
+    : '';
+  const form = (footer) =>
+    '<div id="print-card" style="background:#fff;width:210mm;padding:14mm 18mm;font-family:Sarabun,sans-serif;font-size:12pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto">'
+    +'<div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;margin-bottom:2mm"><span>1452</span><span>HR-F001</span></div>'
+    +'<div style="display:flex;align-items:center;margin-bottom:5mm;gap:10px">'
+    +'<img src="'+logoSrc+'" style="height:50px;flex-shrink:0">'
+    +'<div style="flex:1;text-align:center;font-size:14pt;font-weight:700;line-height:1.3">แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>'
+    +'<div style="text-align:right;font-size:11pt;flex-shrink:0;white-space:nowrap"><span style="color:#555">วันที่</span>&nbsp;&nbsp;'+p.date+'</div>'
+    +'</div>'
+    +'<table style="width:100%;border-collapse:collapse;margin-bottom:5mm;font-size:11pt">'
+    +'<tr><td style="width:42mm;padding:2mm 0"><b>ชื่อพนักงาน:</b></td><td style="padding:2mm 3mm">'+p.name+'</td><td style="width:22mm;padding:2mm 0"><b>แผนก:</b></td><td style="padding:2mm 3mm">'+p.dept+'</td></tr>'
+    +'<tr><td style="padding:2mm 0"><b>สถานที่ปฏิบัติงาน:</b></td><td style="padding:2mm 3mm">'+p.location+'</td><td style="padding:2mm 0"><b>เหตุผล:</b></td><td style="padding:2mm 3mm">'+p.reason+'</td></tr>'
+    +'<tr><td style="padding:2mm 0"><b>รายละเอียด:</b></td><td colspan="3" style="padding:2mm 3mm">'+p.detail+'</td></tr>'
+    +'<tr><td style="padding:2mm 0"><b>ทะเบียนรถ:</b></td><td style="padding:2mm 3mm">'+p.car+'&nbsp;&nbsp;ประเภทรถ:'+(p.cartype||'0')+'</td><td style="padding:2mm 0"><b>จำนวนเงิน:</b></td><td style="padding:2mm 3mm">'+p.fuel+'&nbsp;&nbsp;บาท</td></tr>'
+    +'</table>'
+    +'<table style="width:100%;border-collapse:collapse;border:1.5px solid #333;font-size:10pt;table-layout:fixed">'
+    +'<colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>'
+    +'<tr><td style="border:1.5px solid #333;padding:4px 6px;text-align:center;font-weight:700">ขอแสดงความนับถือ</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center;font-weight:700">อนุมัติออกนอกสถานที่</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center;font-weight:700">อนุมัติน้ำมัน</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center;font-weight:700">รปภ.ลงนามขาออก</td></tr>'
+    +'<tr>'
+    +'<td style="border:1.5px solid #333;height:22mm;text-align:center;vertical-align:bottom;padding:3px 6px"><div style="font-size:11pt;color:#111;padding-bottom:2px">'+(p.empSig||'')+'</div><div style="border-top:1px solid #666;padding-top:1px">&nbsp;</div></td>'
+    +'<td style="border:1.5px solid #333;height:22mm;text-align:center;vertical-align:bottom;padding:3px 6px;overflow:hidden">'+managerSigHtml+'<div style="border-top:1px solid #666;padding-top:1px">&nbsp;</div></td>'
+    +'<td style="border:1.5px solid #333;height:22mm;vertical-align:bottom;padding:3px 6px"><div style="border-top:1px solid #666">&nbsp;</div></td>'
+    +'<td style="border:1.5px solid #333;height:22mm;vertical-align:bottom;padding:3px 6px"><div style="border-top:1px solid #666">&nbsp;</div></td>'
+    +'</tr>'
+    +'<tr><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">พนักงาน</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">ผู้จัดการแผนก/หัวหน้าแผนก</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เจ้าหน้าที่</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เวลา : <span style="border-bottom:1px solid #333;display:inline-block;width:20mm">&nbsp;</span></td></tr>'
+    +'</table>'
+    +'<div style="text-align:right;font-size:9pt;margin-top:3mm;color:#555">'+footer+'</div>'
+    +'</div>';
+  document.getElementById('print-content').innerHTML =
+    form('สำหรับเจ้าหน้าที่ที่ปั๊ม') +
+    '<div style="border-top:2px dashed #aaa;margin:8mm 20mm"></div>' +
+    form('สำหรับพนักงาน');
+}
+
 </script>
 </body>
 </html>
