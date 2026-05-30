@@ -1253,6 +1253,17 @@ function hardReset(){
 }
 
 
+// sync via GET to avoid CORS issues (used in approval page)
+function syncViaGet(data, onSuccess, onFail){
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(!gsUrl){ if(onFail)onFail(); return; }
+  const encoded=encodeURIComponent(JSON.stringify(data));
+  fetch(gsUrl+'?action=sync&data='+encoded)
+    .then(r=>r.json())
+    .then(res=>{ if(res.status==='ok'&&onSuccess)onSuccess(); else if(onFail)onFail(); })
+    .catch(()=>{ if(onFail)onFail(); });
+}
+
 // ===== PERMIT / APPROVAL SYSTEM =====
 
 function initPermitPage(){
@@ -1524,12 +1535,11 @@ function submitApproval(){
     document.querySelector('#page-approve .btn-danger').style.display='none';
   }
 
-  fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body})
-    .then(r=>r.text()).then(showSuccess)
-    .catch(()=>{
-      fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body,mode:'no-cors'})
-        .then(showSuccess).catch(showSuccess);
-    });
+  // ใช้ GET เพื่อหลีกเลี่ยง CORS
+  syncViaGet({
+    cars:db.cars,bookings:db.bookings,staff:db.staff,
+    adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()
+  }, showSuccess, showSuccess);
 }
 
 function submitReject(){
