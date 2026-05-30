@@ -479,6 +479,7 @@ tr:hover td{background:var(--g50)}
     <div id="s1-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-step1-return')">ปิด</button>
+      <button class="btn btn-warning btn-sm" onclick="closeModal('modal-step1-return');openAdminReturnModal()">🔒 แอดมินคืนแทน</button>
       <button class="btn btn-primary" onclick="submitStep1()">➡️ แจ้งคืนรถ</button>
     </div>
   </div>
@@ -1342,6 +1343,36 @@ function saveSigToSheet(permitId, sigData){
 }
 
 // Also update pullFromGSheet to get sigs
+
+function openAdminReturnModal(){
+  if(!returnBookingId) return;
+  const b=db.bookings.find(x=>x.id===returnBookingId);
+  const car=db.cars.find(c=>c.id===b?.carId);
+  document.getElementById('admin-return-car-info').innerHTML=
+    `รถ <b>${car?car.plate:'?'}</b> | ผู้จอง <b>${b?.name||''}</b><br>📍 ${b?.dest||''}`;
+  document.getElementById('admin-return-pass').value='';
+  document.getElementById('admin-return-err').style.display='none';
+  openModal('modal-admin-return');
+}
+
+function submitAdminReturn(){
+  const pass=document.getElementById('admin-return-pass').value;
+  const errEl=document.getElementById('admin-return-err');
+  errEl.style.display='none';
+  if(pass!==db.adminPass){
+    errEl.textContent='รหัสแอดมินไม่ถูกต้อง';
+    errEl.style.display='flex';return;
+  }
+  const b=db.bookings.find(x=>x.id===returnBookingId);
+  if(!b){closeModal('modal-admin-return');return;}
+  b.returnStep='pending';
+  b._adminReturn=true;
+  saveDB();
+  closeModal('modal-admin-return');
+  renderReturnList();
+  alert('✅ แจ้งคืนรถสำเร็จ (โดยแอดมิน) กรุณาให้เจ้าหน้าที่ยืนยันรับกุญแจในขั้นตอนที่ 2');
+}
+
 // Auto sync every 15s
 setInterval(pullFromGSheet,15000);
 updateSync(false,null);
@@ -1658,5 +1689,21 @@ function showPrintPage(permitId){
 }
 
 </script>
+
+<!-- MODAL: ADMIN RETURN -->
+<div class="modal-overlay" id="modal-admin-return">
+  <div class="modal">
+    <div class="modal-title">🔒 แอดมินยืนยันคืนรถแทน</div>
+    <div id="admin-return-car-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>รหัสแอดมินหลัก</label>
+      <input type="password" id="admin-return-pass" placeholder="ใส่รหัสแอดมิน">
+    </div>
+    <div id="admin-return-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-admin-return')">ปิด</button>
+      <button class="btn btn-success" onclick="submitAdminReturn()">✅ ยืนยันคืนรถ (แอดมิน)</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
