@@ -1712,7 +1712,7 @@ function renderUcPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          <button class="btn btn-danger btn-sm" onclick="deletePermit('${p.id}')">ลบ</button>
+          <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
     </div>`;
@@ -1855,6 +1855,66 @@ function adminDeleteAllDone(){
   renderHistory();
   renderCars();
   alert('✅ ลบสำเร็จ');
+}
+
+
+var _deletePermitId = null;
+
+function openDeletePermitModal(id){
+  _deletePermitId = id;
+  const p = db.permits.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('delete-permit-info').innerHTML =
+    `<b>${p.name}</b> | 🚗 ${p.car} | 📅 ${p.date}<br>📍 ${p.location}`;
+  clearPins('dp');
+  document.getElementById('dp-admin-pass').value='';
+  document.getElementById('delete-permit-err').style.display='none';
+  openModal('modal-delete-permit');
+}
+
+function confirmDeletePermit(){
+  const p = db.permits.find(x=>x.id===_deletePermitId);
+  const errEl = document.getElementById('delete-permit-err');
+  errEl.style.display='none';
+  if(!p) return;
+
+  const pin = getModalPin('dp');
+  const adminPass = document.getElementById('dp-admin-pass').value.trim();
+
+  // ตรวจสอบสิทธิ์
+  // permit ไม่มี pin เพราะสร้างจากหน้าใช้รถ — ให้แอดมินลบได้อย่างเดียว
+  // ถ้ามี booking ที่เกี่ยวข้อง ให้ใช้ pin ของ booking นั้น
+  let authorized = false;
+
+  if(adminPass && adminPass === db.adminPass){
+    authorized = true;
+  } else if(pin.length === 4){
+    // หา booking ที่ตรงกับ permit นี้ (same car, same date)
+    const relatedBk = db.bookings.find(b=>
+      b.name === p.name && b.dest === p.location && b.pin && b.pin === pin
+    );
+    if(relatedBk) authorized = true;
+    else if(pin === '0000') authorized = false; // ไม่ให้ใช้ 0000
+  }
+
+  if(!authorized){
+    errEl.textContent = 'รหัส PIN หรือรหัสแอดมินไม่ถูกต้อง';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  db.permits = db.permits.filter(x=>x.id!==_deletePermitId);
+  const _ts = new Date().toISOString();
+  db._lastSync = _ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  closeModal('modal-delete-permit');
+  renderPermitList();
+  renderUcPermitList();
 }
 
 // Auto sync every 15s
@@ -2019,7 +2079,7 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          <button class="btn btn-danger btn-sm" onclick="deletePermit('${p.id}')">ลบ</button>
+          <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
     </div>`;
@@ -2198,6 +2258,39 @@ function showPrintPage(permitId){
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-admin-return')">ปิด</button>
       <button class="btn btn-success" onclick="submitAdminReturn()">✅ ยืนยันคืนรถ (แอดมิน)</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DELETE PERMIT -->
+<div class="modal-overlay" id="modal-delete-permit">
+  <div class="modal">
+    <div class="modal-title">🗑️ ยืนยันการลบคำขออนุมัติ</div>
+    <div id="delete-permit-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+
+    <!-- เจ้าของใช้ PIN -->
+    <div id="delete-permit-pin-section">
+      <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอก PIN 4 หลักที่ตั้งไว้ตอนจองรถ (ถ้ามี)</div>
+      <div class="pin-input">
+        <input type="password" maxlength="1" id="dp1" inputmode="numeric" oninput="pinNext(this,'dp2')">
+        <input type="password" maxlength="1" id="dp2" inputmode="numeric" oninput="pinNext(this,'dp3')" onkeydown="pinBack(event,this,'dp1')">
+        <input type="password" maxlength="1" id="dp3" inputmode="numeric" oninput="pinNext(this,'dp4')" onkeydown="pinBack(event,this,'dp2')">
+        <input type="password" maxlength="1" id="dp4" inputmode="numeric" onkeydown="pinBack(event,this,'dp3')">
+      </div>
+    </div>
+
+    <div style="text-align:center;margin:10px 0;color:var(--g400);font-size:13px">— หรือ —</div>
+
+    <!-- แอดมินใช้รหัส -->
+    <div class="form-row">
+      <label>รหัสแอดมิน (สำหรับแอดมินหรือกรณีลืม PIN)</label>
+      <input type="password" id="dp-admin-pass" placeholder="รหัสแอดมิน">
+    </div>
+
+    <div id="delete-permit-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-delete-permit')">ปิด</button>
+      <button class="btn btn-danger" onclick="confirmDeletePermit()">🗑️ ลบ</button>
     </div>
   </div>
 </div>
