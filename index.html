@@ -1264,50 +1264,37 @@ function pullFromGSheet(){
     .then(data=>{
       if(data&&data.cars&&data.cars.length){
         const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
-        const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-        if(sheetTs >= localTs){
-          db.cars = data.cars; // Sheet ใหม่กว่า ใช้ตรงๆ
-        } else {
-          const sheetCarIds = new Set(data.cars.map(c=>c.id));
-          const localOnlyCars = (db.cars||[]).filter(c=>!sheetCarIds.has(c.id));
-          db.cars = [...localOnlyCars, ...data.cars];
-        }
+        // เก็บเฉพาะ local ที่สร้างหลัง Sheet timestamp (ยังไม่ sync)
+        const sheetCarIds = new Set(data.cars.map(c=>c.id));
+        const localNewOnly = (db.cars||[]).filter(c=>!sheetCarIds.has(c.id));
+        db.cars = [...data.cars, ...localNewOnly];
       }
       if(data&&data.staff&&data.staff.length){
-        const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
-        const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-        if(sheetTs >= localTs){
-          db.staff = data.staff; // Sheet ใหม่กว่า ใช้ตรงๆ
-        } else {
-          const sheetStaffIds = new Set(data.staff.map(s=>s.id));
-          const localOnlyStaff = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
-          db.staff = [...localOnlyStaff, ...data.staff];
-        }
+        const sheetStaffIds = new Set(data.staff.map(s=>s.id));
+        const localNewOnly = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
+        db.staff = [...data.staff, ...localNewOnly];
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
 
       if(data&&data.bookings){
         const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
-        const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-        if(sheetTs >= localTs){
-          // Sheet ใหม่กว่า — ใช้ข้อมูล Sheet ตรงๆ แต่เพิ่ม local ที่ยังไม่ sync
-          const sheetIds = new Set(data.bookings.map(b=>b.id));
-          const localOnlyNew = (db.bookings||[]).filter(b=>!sheetIds.has(b.id) && (!db._lastSync || new Date(b.createdAt)>new Date(db._lastSync)));
-          db.bookings = [...localOnlyNew, ...data.bookings];
-        } else {
-          // Local ใหม่กว่า — เพิ่มแค่ที่ยังไม่อยู่ใน local
-          const localIds = new Set((db.bookings||[]).map(b=>b.id));
-          const sheetOnlyNew = data.bookings.filter(b=>!localIds.has(b.id));
-          db.bookings = [...(db.bookings||[]), ...sheetOnlyNew];
-        }
+        const sheetIds = new Set(data.bookings.map(b=>b.id));
+        // เก็บเฉพาะ local ที่สร้างหลัง Sheet timestamp (ยังไม่ sync ขึ้น Sheet)
+        const localNewOnly = (db.bookings||[]).filter(b=>
+          !sheetIds.has(b.id) && b.createdAt && new Date(b.createdAt).getTime() > sheetTs
+        );
+        db.bookings = [...localNewOnly, ...data.bookings];
       }
 
       // Restore permit signatures
       if(data&&data.permits){
+        const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
         const localPermits = db.permits || [];
-        // เก็บ local permits ที่ยังไม่อยู่ใน Sheet (ที่เพิ่งสร้าง)
         const sheetPermitIds = new Set(data.permits.map(p=>p.id));
-        const localOnlyPermits = localPermits.filter(p=>!sheetPermitIds.has(p.id));
+        // เก็บเฉพาะ local permits ที่สร้างหลัง Sheet timestamp
+        const localNewOnly = localPermits.filter(p=>
+          !sheetPermitIds.has(p.id) && p.createdAt && new Date(p.createdAt).getTime() > sheetTs
+        );
         // restore signatures
         const merged = data.permits.map(p=>{
           const local = localPermits.find(lp=>lp.id===p.id);
@@ -1317,7 +1304,7 @@ function pullFromGSheet(){
             empSig: (p.empSig==='[sig]' && local) ? local.empSig : p.empSig
           };
         });
-        db.permits = [...localOnlyPermits, ...merged];
+        db.permits = [...localNewOnly, ...merged];
       }
 
       db.syncEnabled=true;
@@ -1489,15 +1476,9 @@ function refreshPermitList(){
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
       if(data&&data.staff&&data.staff.length){
-        const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
-        const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-        if(sheetTs >= localTs){
-          db.staff = data.staff; // Sheet ใหม่กว่า ใช้ตรงๆ
-        } else {
-          const sheetStaffIds = new Set(data.staff.map(s=>s.id));
-          const localOnlyStaff = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
-          db.staff = [...localOnlyStaff, ...data.staff];
-        }
+        const sheetStaffIds = new Set(data.staff.map(s=>s.id));
+        const localNewOnly = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
+        db.staff = [...data.staff, ...localNewOnly];
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       db.syncEnabled=true;
