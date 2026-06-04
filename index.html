@@ -1152,12 +1152,19 @@ function pullFromGSheet(){
   fetch(gsUrl + '?action=get&t=' + Date.now())
     .then(r=>r.json())
     .then(data=>{
-      if(data&&data.bookings) db.bookings=data.bookings;
       if(data&&data.cars&&data.cars.length) db.cars=data.cars;
       if(data&&data.staff&&data.staff.length) db.staff=data.staff;
       if(data&&data.adminPass) db.adminPass=data.adminPass;
+
+      // Merge bookings: เก็บรายการ local ที่ยังไม่อยู่ใน Sheet
+      if(data&&data.bookings){
+        const sheetIds = new Set(data.bookings.map(b=>b.id));
+        const localOnly = (db.bookings||[]).filter(b=>!sheetIds.has(b.id));
+        db.bookings = [...localOnly, ...data.bookings];
+      }
+
+      // Restore permit signatures
       if(data&&data.permits){
-        // restore local signatures that were stripped during sync
         const localPermits = db.permits || [];
         db.permits = data.permits.map(p=>{
           const local = localPermits.find(lp=>lp.id===p.id);
@@ -1167,7 +1174,12 @@ function pullFromGSheet(){
             empSig: (p.empSig==='[sig]' && local) ? local.empSig : p.empSig
           };
         });
+        // เพิ่ม local permits ที่ยังไม่อยู่ใน Sheet
+        const sheetPermitIds = new Set(data.permits.map(p=>p.id));
+        const localOnlyPermits = (db.permits||[]).filter(p=>!sheetPermitIds.has(p.id));
+        if(localOnlyPermits.length) db.permits = [...localOnlyPermits, ...db.permits];
       }
+
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       updateSync(false,true); renderCars();
