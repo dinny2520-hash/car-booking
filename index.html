@@ -1894,7 +1894,9 @@ function copyLink(link){
 function deletePermit(id){
   if(!confirm('ลบคำขออนุมัตินี้?'))return;
   db.permits=db.permits.filter(p=>p.id!==id);
-  saveDB();renderPermitList();
+  saveDB();
+  renderPermitList();
+  renderUcPermitList();
 }
 
 function loadApprovalPage(permitId){
