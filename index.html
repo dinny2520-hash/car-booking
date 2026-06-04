@@ -1059,12 +1059,25 @@ function addCar(){
   if(db.cars.find(c=>c.plate===plate&&c.active))return alert('ทะเบียนนี้มีอยู่แล้ว');
   db.cars.push({id:'c'+Date.now(),plate,active:true});
   document.getElementById('new-car-plate').value='';
-  saveDB();renderSettings();renderCars();
+  // บันทึก local ก่อน แล้ว sync ขึ้น Sheet ทันที
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();renderCars();
 }
 function removeCar(id){
   if(!confirm('ยืนยันการลบรถคันนี้?'))return;
   const car=db.cars.find(c=>c.id===id);if(car)car.active=false;
-  saveDB();renderSettings();renderCars();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();renderCars();
 }
 function addStaff(){
   const name=document.getElementById('new-staff-name').value.trim();
@@ -1073,12 +1086,24 @@ function addStaff(){
   db.staff.push({id:'s'+Date.now(),name,code});
   document.getElementById('new-staff-name').value='';
   document.getElementById('new-staff-code').value='';
-  saveDB();renderSettings();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();
 }
 function removeStaff(id){
   if(!confirm('ยืนยันการลบเจ้าหน้าที่?'))return;
   db.staff=db.staff.filter(s=>s.id!==id);
-  saveDB();renderSettings();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();
 }
 function changeAdminPass(){
   const np=document.getElementById('new-admin-pass').value;
@@ -1184,8 +1209,17 @@ function pullFromGSheet(){
   fetch(gsUrl + '?action=get&t=' + Date.now())
     .then(r=>r.json())
     .then(data=>{
-      if(data&&data.cars&&data.cars.length) db.cars=data.cars;
-      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+      if(data&&data.cars&&data.cars.length){
+        // Merge cars: เก็บรถ local ที่ยังไม่อยู่ใน Sheet
+        const sheetCarIds = new Set(data.cars.map(c=>c.id));
+        const localOnlyCars = (db.cars||[]).filter(c=>!sheetCarIds.has(c.id));
+        db.cars = [...localOnlyCars, ...data.cars];
+      }
+      if(data&&data.staff&&data.staff.length){
+        const sheetStaffIds = new Set(data.staff.map(s=>s.id));
+        const localOnlyStaff = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
+        db.staff = [...localOnlyStaff, ...data.staff];
+      }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
 
       // Merge bookings: เก็บรายการ local ที่ยังไม่อยู่ใน Sheet
@@ -1380,7 +1414,11 @@ function refreshPermitList(){
     .then(data=>{
       if(data&&data.permits) db.permits=data.permits;
       if(data&&data.bookings) db.bookings=data.bookings;
-      if(data&&data.staff&&data.staff.length) db.staff=data.staff;
+      if(data&&data.staff&&data.staff.length){
+        const sheetStaffIds = new Set(data.staff.map(s=>s.id));
+        const localOnlyStaff = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
+        db.staff = [...localOnlyStaff, ...data.staff];
+      }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
