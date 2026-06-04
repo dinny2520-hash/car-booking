@@ -513,6 +513,15 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>🗑️ จัดการประวัติการจอง</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ลบรายการจองออกจากระบบ (เฉพาะที่ยกเลิกหรือคืนแล้ว)</div>
+        <div id="admin-booking-list" style="max-height:300px;overflow-y:auto"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h3>🔐 เปลี่ยนรหัสแอดมินหลัก</h3>
         <div class="form-grid-2">
           <div class="form-row"><label>รหัสใหม่</label><input type="password" id="new-admin-pass" placeholder="รหัสใหม่"></div>
@@ -1075,6 +1084,7 @@ function renderSettings(){
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item"><span class="staff-name">🚗 ${c.plate}</span>
     <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button></div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
+  renderAdminBookingList();
   document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
     <span style="font-size:12px;color:var(--g600)">รหัส: ${s.code}</span>
@@ -1746,6 +1756,61 @@ function getManagerSig(){
     return img && img.src && img.src !== window.location.href ? img.src : null;
   }
   return null;
+}
+
+
+function renderAdminBookingList(){
+  const list = document.getElementById('admin-booking-list');
+  if(!list) return;
+  const deletable = db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned');
+  if(!deletable.length){
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่ลบได้</p>';
+    return;
+  }
+  list.innerHTML = deletable.map(b=>{
+    const car=db.cars.find(c=>c.id===b.carId);
+    const stLabel=b.status==='cancelled'?'ยกเลิก':'คืนแล้ว';
+    const stColor=b.status==='cancelled'?'var(--g400)':'var(--success)';
+    return `<div class="staff-item">
+      <div style="flex:1;font-size:13px">
+        <span style="font-weight:600">${car?car.plate:'?'}</span>
+        <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
+        <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="adminDeleteBooking('${b.id}')">ลบ</button>
+    </div>`;
+  }).join('');
+}
+
+function adminDeleteBooking(id){
+  if(!confirm('ลบรายการจองนี้ออกจากระบบ?'))return;
+  db.bookings=db.bookings.filter(b=>b.id!==id);
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderAdminBookingList();
+  renderHistory();
+  renderCars();
+}
+
+function adminDeleteAllDone(){
+  const count=db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned').length;
+  if(!count){alert('ไม่มีรายการที่ลบได้');return;}
+  if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${count} รายการ?`))return;
+  db.bookings=db.bookings.filter(b=>b.status!=='cancelled'&&b.status!=='returned');
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderAdminBookingList();
+  renderHistory();
+  renderCars();
+  alert('✅ ลบสำเร็จ');
 }
 
 // Auto sync every 15s
