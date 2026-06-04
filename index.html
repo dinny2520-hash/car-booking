@@ -1260,11 +1260,20 @@ function pullFromGSheet(){
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
 
-      // Merge bookings: เก็บรายการ local ที่ยังไม่อยู่ใน Sheet
       if(data&&data.bookings){
-        const sheetIds = new Set(data.bookings.map(b=>b.id));
-        const localOnly = (db.bookings||[]).filter(b=>!sheetIds.has(b.id));
-        db.bookings = [...localOnly, ...data.bookings];
+        const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
+        const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
+        if(sheetTs >= localTs){
+          // Sheet ใหม่กว่า — ใช้ข้อมูล Sheet ตรงๆ แต่เพิ่ม local ที่ยังไม่ sync
+          const sheetIds = new Set(data.bookings.map(b=>b.id));
+          const localOnlyNew = (db.bookings||[]).filter(b=>!sheetIds.has(b.id) && (!db._lastSync || new Date(b.createdAt)>new Date(db._lastSync)));
+          db.bookings = [...localOnlyNew, ...data.bookings];
+        } else {
+          // Local ใหม่กว่า — เพิ่มแค่ที่ยังไม่อยู่ใน local
+          const localIds = new Set((db.bookings||[]).map(b=>b.id));
+          const sheetOnlyNew = data.bookings.filter(b=>!localIds.has(b.id));
+          db.bookings = [...(db.bookings||[]), ...sheetOnlyNew];
+        }
       }
 
       // Restore permit signatures
