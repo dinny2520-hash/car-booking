@@ -1309,8 +1309,13 @@ function pullFromGSheet(){
 
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      updateSync(false,true); renderCars();
-      if(adminLoggedIn) renderSettings();
+      updateSync(false,true);
+      renderCars();
+      renderHistory();
+      renderReturnList();
+      renderUcPermitList();
+      renderPermitList();
+      if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
     })
     .catch(()=>updateSync(false,false));
 }
