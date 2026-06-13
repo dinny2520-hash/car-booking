@@ -558,6 +558,12 @@ tr:hover td{background:var(--g50)}
       <div class="modal-title" style="margin:0">ผู้ยืมแจ้งคืนรถ</div>
     </div>
     <div id="s1-car-info" class="alert alert-info" style="margin-bottom:14px"></div>
+
+    <div class="form-row"><label>เลขไมล์ขาเข้า (ปัจจุบัน) *</label>
+      <input type="number" id="s1-mileage-in" placeholder="เช่น 125430" min="0" inputmode="numeric">
+    </div>
+    <div id="s1-mileage-out-display" style="font-size:12px;color:var(--g600);margin-bottom:12px"></div>
+
     <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
     <div class="pin-input">
       <input type="password" maxlength="1" id="s1pin1" inputmode="numeric" oninput="pinNext(this,'s1pin2')">
@@ -582,6 +588,12 @@ tr:hover td{background:var(--g50)}
       <div class="modal-title" style="margin:0">เจ้าหน้าที่ยืนยันรับกุญแจ</div>
     </div>
     <div id="s2-car-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>เลขไมล์ขาออก (ตอนยืม) *</label>
+      <input type="number" id="s2-mileage-out" placeholder="เช่น 125100" min="0" inputmode="numeric">
+    </div>
+    <div class="form-row"><label>เลขไมล์ขาเข้า (ตอนคืน) *</label>
+      <input type="number" id="s2-mileage-in" placeholder="เช่น 125430" min="0" inputmode="numeric" readonly style="background:var(--g100)">
+    </div>
     <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
       <select id="s2-staff-select"></select>
     </div>
@@ -769,7 +781,8 @@ function renderCars(){
     div.className='car-card clickable '+(st==='available'?'available':st==='overdue'?'overdue':st==='in-use'?'in-use':'busy');
     if(selectedCarId===car.id)div.classList.add('selected');
     const bkInfo=inUseBk?`<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`:'';
-    div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
+    const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
+    div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=()=>selectCar(car.id);
     grid.appendChild(div);
   });
@@ -1010,6 +1023,9 @@ function openStep1Modal(bkId){
   const b=db.bookings.find(x=>x.id===bkId);
   const car=db.cars.find(c=>c.id===b.carId);
   document.getElementById('s1-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br>⏰ กำหนดคืน: ${fmt(b.endDt)}`;
+  document.getElementById('s1-mileage-in').value='';
+  document.getElementById('s1-mileage-out-display').textContent =
+    (car&&car.mileage!=null) ? ('เลขไมล์ล่าสุดของรถ: '+Number(car.mileage).toLocaleString('th-TH')+' กม.') : '';
   clearPins('s1pin');
   document.getElementById('s1-err').style.display='none';
   openModal('modal-step1-return');
@@ -1021,9 +1037,18 @@ function submitStep1(){
   const b=db.bookings.find(x=>x.id===returnBookingId);
   const errEl=document.getElementById('s1-err');
   errEl.style.display='none';
+  const mileageIn=document.getElementById('s1-mileage-in').value.trim();
+  if(!mileageIn){errEl.textContent='กรุณากรอกเลขไมล์ขาเข้า (ปัจจุบัน)';errEl.style.display='flex';return;}
+  if(!/^\d+$/.test(mileageIn)){errEl.textContent='เลขไมล์ต้องเป็นตัวเลขเท่านั้น';errEl.style.display='flex';return;}
+  const car=db.cars.find(c=>c.id===b.carId);
+  if(car&&car.mileage!=null&&Number(mileageIn)<Number(car.mileage)){
+    errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ล่าสุดของรถ ('+Number(car.mileage).toLocaleString('th-TH')+' กม.)';
+    errEl.style.display='flex';return;
+  }
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN ให้ครบ 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
+  b.mileageIn=Number(mileageIn);
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
@@ -1043,6 +1068,8 @@ function openStep2Modal(bkId){
   const b=db.bookings.find(x=>x.id===bkId);
   const car=db.cars.find(c=>c.id===b.carId);
   document.getElementById('s2-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br><span style="color:var(--success);font-weight:600">✅ ผู้ยืมยืนยัน PIN แล้ว</span>`;
+  document.getElementById('s2-mileage-out').value = (car&&car.mileage!=null) ? car.mileage : '';
+  document.getElementById('s2-mileage-in').value = b.mileageIn!=null ? b.mileageIn : '';
   document.getElementById('s2-staff-code').value='';
   document.getElementById('s2-err').style.display='none';
   const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
@@ -1055,12 +1082,21 @@ function submitStep2(){
   const staffCode=document.getElementById('s2-staff-code').value.trim();
   const errEl=document.getElementById('s2-err');
   errEl.style.display='none';
+  const mileageOut=document.getElementById('s2-mileage-out').value.trim();
+  const mileageIn=document.getElementById('s2-mileage-in').value.trim();
+  if(!mileageOut||!mileageIn){errEl.textContent='กรุณากรอกเลขไมล์ขาออกและขาเข้าให้ครบ';errEl.style.display='flex';return;}
+  if(!/^\d+$/.test(mileageOut)||!/^\d+$/.test(mileageIn)){errEl.textContent='เลขไมล์ต้องเป็นตัวเลขเท่านั้น';errEl.style.display='flex';return;}
+  if(Number(mileageIn)<Number(mileageOut)){errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ขาออก';errEl.style.display='flex';return;}
   const staff=db.staff.find(s=>s.id===staffId);
   if(!staff){errEl.textContent='กรุณาเลือกเจ้าหน้าที่';errEl.style.display='flex';return;}
   if(staff.code!==staffCode){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===returnBookingId);
   if(!b){return;}
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
+  b.mileageOut=Number(mileageOut);
+  b.mileageIn=Number(mileageIn);
+  const car=db.cars.find(c=>c.id===b.carId);
+  if(car) car.mileage=Number(mileageIn);
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
@@ -1098,12 +1134,38 @@ function renderSettings(){
   document.getElementById('gs-url').value=db.gsUrl||'';
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item"><span class="staff-name">🚗 ${c.plate}</span>
+    <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
+    <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
     <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button></div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAdminBookingList();
   document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
     <span style="font-size:12px;color:var(--g600)">รหัส: ${s.code}</span>
     <button class="btn btn-danger btn-sm" onclick="removeStaff('${s.id}')">ลบ</button></div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีเจ้าหน้าที่</p>';
+}
+
+function editCarMileage(id){
+  const car=db.cars.find(c=>c.id===id);
+  if(!car)return;
+  const current = car.mileage!=null ? car.mileage : '';
+  const val = prompt('แก้ไขเลขไมล์ของ '+car.plate+' (กม.)', current);
+  if(val===null) return; // cancelled
+  const trimmed = val.trim();
+  if(trimmed===''){
+    delete car.mileage;
+  } else {
+    if(!/^\d+$/.test(trimmed)){ alert('กรุณากรอกตัวเลขเท่านั้น'); return; }
+    car.mileage = Number(trimmed);
+  }
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();
+  renderCars();
 }
 
 function addCar(){
