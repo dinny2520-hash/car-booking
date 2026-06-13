@@ -679,6 +679,7 @@ function loadDB(){
   try{const d=localStorage.getItem(DB_KEY);if(d)db=JSON.parse(d);}catch(e){}
   // อัปเดต URL เป็น DEFAULT_GS_URL เสมอ เพื่อให้ทุกเครื่องใช้ URL เดียวกัน
   if(DEFAULT_GS_URL) db.gsUrl=DEFAULT_GS_URL;
+  if(typeof applyDeletedFilters==='function') applyDeletedFilters();
 }
 function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} if(db.syncEnabled)syncToGSheet();}
 loadDB();
@@ -834,7 +835,7 @@ function submitBooking(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_syncTs})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_syncTs})});
     fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body}).catch(()=>{});
   }
   document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
@@ -899,7 +900,7 @@ function confirmCancelUser(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     const _syncTs = new Date().toISOString();
     db._lastSync = _syncTs;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -924,7 +925,7 @@ function confirmCancelAdmin(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     const _syncTs = new Date().toISOString();
     db._lastSync = _syncTs;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1026,7 +1027,7 @@ function submitStep1(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     const _syncTs = new Date().toISOString();
     db._lastSync = _syncTs;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1063,7 +1064,7 @@ function submitStep2(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     const _syncTs = new Date().toISOString();
     db._lastSync = _syncTs;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1115,19 +1116,20 @@ function addCar(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderSettings();renderCars();
 }
 function removeCar(id){
   if(!confirm('ยืนยันการลบรถคันนี้?'))return;
-  const car=db.cars.find(c=>c.id===id);if(car)car.active=false;
+  db.cars = db.cars.filter(c=>c.id!==id);
+  markDeleted('deletedCarIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderSettings();renderCars();
@@ -1143,7 +1145,7 @@ function addStaff(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderSettings();
@@ -1151,11 +1153,12 @@ function addStaff(){
 function removeStaff(id){
   if(!confirm('ยืนยันการลบเจ้าหน้าที่?'))return;
   db.staff=db.staff.filter(s=>s.id!==id);
+  markDeleted('deletedStaffIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderSettings();
@@ -1278,6 +1281,13 @@ function pullFromGSheet(){
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
 
+      // รวม deleted lists จาก Sheet เข้ากับ local (union)
+      ['deletedStaffIds','deletedCarIds','deletedBookingIds','deletedPermitIds'].forEach(key=>{
+        const sheetIds = (data[key]||[]);
+        const localIds = (db[key]||[]);
+        db[key] = [...new Set([...localIds, ...sheetIds])];
+      });
+
       if(data&&data.bookings){
         const sheetTs = data.ts ? new Date(data.ts).getTime() : 0;
         const sheetIds = new Set(data.bookings.map(b=>b.id));
@@ -1310,6 +1320,7 @@ function pullFromGSheet(){
       }
 
       db.syncEnabled=true;
+      applyDeletedFilters();
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       updateSync(false,true);
       renderCars();
@@ -1585,7 +1596,7 @@ function submitAdminReturn(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     const _syncTs = new Date().toISOString();
     db._lastSync = _syncTs;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1817,10 +1828,12 @@ function renderAdminBookingList(){
 function adminDeleteBooking(id){
   if(!confirm('ลบรายการจองนี้ออกจากระบบ?'))return;
   db.bookings=db.bookings.filter(b=>b.id!==id);
+  markDeleted('deletedBookingIds', id);
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderAdminBookingList();
@@ -1829,14 +1842,16 @@ function adminDeleteBooking(id){
 }
 
 function adminDeleteAllDone(){
-  const count=db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned').length;
-  if(!count){alert('ไม่มีรายการที่ลบได้');return;}
-  if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${count} รายการ?`))return;
+  const toDelete = db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned');
+  if(!toDelete.length){alert('ไม่มีรายการที่ลบได้');return;}
+  if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${toDelete.length} รายการ?`))return;
+  toDelete.forEach(b=>markDeleted('deletedBookingIds', b.id));
   db.bookings=db.bookings.filter(b=>b.status!=='cancelled'&&b.status!=='returned');
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderAdminBookingList();
@@ -1892,17 +1907,47 @@ function confirmDeletePermit(){
   }
 
   db.permits = db.permits.filter(x=>x.id!==_deletePermitId);
+  markDeleted('deletedPermitIds', _deletePermitId);
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:_ts})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   closeModal('modal-delete-permit');
   renderPermitList();
   renderUcPermitList();
+}
+
+
+// ---- DELETED ITEMS TRACKING (กันการคืนชีพข้อมูลที่ลบไปแล้ว) ----
+function markDeleted(listName, id){
+  if(!db[listName]) db[listName]=[];
+  if(!db[listName].includes(id)) db[listName].push(id);
+}
+
+function applyDeletedFilters(){
+  const delStaff = new Set(db.deletedStaffIds||[]);
+  const delCars = new Set(db.deletedCarIds||[]);
+  const delBookings = new Set(db.deletedBookingIds||[]);
+  const delPermits = new Set(db.deletedPermitIds||[]);
+  if(delStaff.size) db.staff = (db.staff||[]).filter(s=>!delStaff.has(s.id));
+  if(delCars.size) db.cars = (db.cars||[]).filter(c=>!delCars.has(c.id));
+  if(delBookings.size) db.bookings = (db.bookings||[]).filter(b=>!delBookings.has(b.id));
+  if(delPermits.size) db.permits = (db.permits||[]).filter(p=>!delPermits.has(p.id));
+}
+
+function buildSyncPayload(){
+  return {
+    cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
+    permits:stripSigs(db.permits||[]), ts:new Date().toISOString(),
+    deletedStaffIds:db.deletedStaffIds||[],
+    deletedCarIds:db.deletedCarIds||[],
+    deletedBookingIds:db.deletedBookingIds||[],
+    deletedPermitIds:db.deletedPermitIds||[]
+  };
 }
 
 // Auto sync every 15s
@@ -2088,7 +2133,7 @@ function deletePermit(id){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits||[]),ts:new Date().toISOString()})});
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload()})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderPermitList();
