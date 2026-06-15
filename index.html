@@ -540,6 +540,13 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>🗄️ จัดการ Cache</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">Cache ลายเซ็นเก็บไว้ใน localStorage เพื่อให้พิมพ์ PDF เร็วขึ้น ลบได้ปลอดภัย ลายเซ็นจริงยังอยู่ใน Sheet</div>
+        <button class="btn btn-outline btn-sm" onclick="clearSigCache()">🗑️ ล้าง Cache ลายเซ็น</button>
+        <span id="sig-cache-size" style="font-size:12px;color:var(--g600);margin-left:10px"></span>
+      </div>
+
+      <div class="settings-section">
         <h3>🔐 เปลี่ยนรหัสแอดมินหลัก</h3>
         <div class="form-grid-2">
           <div class="form-row"><label>รหัสใหม่</label><input type="password" id="new-admin-pass" placeholder="รหัสใหม่"></div>
@@ -1162,6 +1169,7 @@ function showPageDirect(name){
 
 function renderSettings(){
   document.getElementById('gs-url').value=db.gsUrl||'';
+  updateSigCacheSize();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
       <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}</span>
@@ -2137,6 +2145,23 @@ function toggleCarService(id){
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
   renderSettings();renderCars();
+}
+
+
+function clearSigCache(){
+  localStorage.removeItem(SIG_CACHE_KEY);
+  updateSigCacheSize();
+  alert('✅ ล้าง cache ลายเซ็นแล้ว');
+}
+
+function updateSigCacheSize(){
+  const el = document.getElementById('sig-cache-size');
+  if(!el) return;
+  try{
+    const raw = localStorage.getItem(SIG_CACHE_KEY)||'{}';
+    const kb = (raw.length/1024).toFixed(1);
+    el.textContent = 'ขนาดปัจจุบัน: '+kb+' KB';
+  }catch(e){ el.textContent=''; }
 }
 
 // Auto sync every 15s
