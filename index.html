@@ -145,6 +145,23 @@ tr:hover td{background:var(--g50)}
 .pin-hint{text-align:center;font-size:12px;color:var(--g600);margin-top:6px}
 .cancel-btn-row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 .divider{border:none;border-top:1px solid var(--g200);margin:14px 0}
+
+/* รถเข้าเช็คระยะ/ซ่อม */
+@keyframes blink-yellow {
+  0%,100%{background:var(--warning-light,#fff8e1);border-color:#f59e0b;}
+  50%{background:#fef3c7;border-color:#d97706;}
+}
+.car-card.in-service {
+  animation: blink-yellow 1.2s ease-in-out infinite;
+  border:2.5px solid #f59e0b !important;
+}
+.car-card.in-service .car-service-badge {
+  display:flex;align-items:center;justify-content:center;
+  background:#f59e0b;color:#fff;font-weight:700;font-size:13px;
+  border-radius:8px;padding:5px 10px;margin:6px 0 4px;
+  gap:5px;letter-spacing:0.5px;
+}
+
 </style>
 </head>
 <body>
@@ -782,7 +799,9 @@ function renderCars(){
     if(selectedCarId===car.id)div.classList.add('selected');
     const bkInfo=inUseBk?`<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`:'';
     const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
-    div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
+    const serviceBadge=car.inService?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
+    if(car.inService) div.classList.add('in-service');
+    div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=()=>selectCar(car.id);
     grid.appendChild(div);
   });
@@ -1142,10 +1161,13 @@ function showPageDirect(name){
 function renderSettings(){
   document.getElementById('gs-url').value=db.gsUrl||'';
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
-    <div class="staff-item"><span class="staff-name">🚗 ${c.plate}</span>
-    <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
-    <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
-    <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button></div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
+    <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
+      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}</span>
+      <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
+      <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
+      <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
+      <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
+    </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAdminBookingList();
   document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
@@ -2098,6 +2120,21 @@ function deleteSigFromSheet(permitId){
   const cache = getSigCache();
   delete cache[permitId+'_mgr'];
   setSigCache(cache);
+}
+
+
+function toggleCarService(id){
+  const car=db.cars.find(c=>c.id===id);
+  if(!car)return;
+  car.inService = !car.inService;
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderSettings();renderCars();
 }
 
 // Auto sync every 15s
