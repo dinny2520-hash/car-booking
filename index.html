@@ -810,7 +810,7 @@ function renderCars(){
     const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
     if(car.inService===true) div.classList.add('in-service');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
-    div.onclick=(st==='free'&&car.inService!==true)?()=>selectCar(car.id):null;
+    div.onclick=(car.inService!==true)?()=>selectCar(car.id):null;
     grid.appendChild(div);
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
