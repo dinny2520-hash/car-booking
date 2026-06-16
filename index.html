@@ -807,10 +807,10 @@ function renderCars(){
     if(selectedCarId===car.id)div.classList.add('selected');
     const bkInfo=inUseBk?`<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`:'';
     const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
-    const serviceBadge=car.inService?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
-    if(car.inService) div.classList.add('in-service');
+    const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
+    if(car.inService===true) div.classList.add('in-service');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
-    div.onclick=(st==='free'&&!car.inService)?()=>selectCar(car.id):null;
+    div.onclick=(st==='free'&&car.inService!==true)?()=>selectCar(car.id):null;
     grid.appendChild(div);
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
@@ -868,7 +868,7 @@ function submitBooking(){
   if(pin.length!==4||!/^\d{4}$/.test(pin)){return showErr('กรุณาตั้งรหัส PIN 4 หลัก (ตัวเลขเท่านั้น)');}
   const car=db.cars.find(c=>c.id===selectedCarId&&c.active);
   if(!car){return showErr('ไม่พบรถที่เลือก กรุณาเลือกรถใหม่อีกครั้ง');}
-  if(car.inService){return showErr('รถคันนี้อยู่ระหว่างเช็คระยะ/ซ่อม ไม่สามารถจองได้');}
+  if(car.inService===true){return showErr('รถคันนี้อยู่ระหว่างเช็คระยะ/ซ่อม ไม่สามารถจองได้');}
   if(!isCarFreeFor(selectedCarId,start,end,null)){return showErr('ขออภัย! ช่วงเวลานี้มีการจองทับซ้อนอยู่แล้ว กรุณาเลือกช่วงเวลาอื่น');}
   const bk={id:genId(),carId:selectedCarId,name,startDt:start,endDt:end,dest,reason,pin,status:'booked',createdAt:nowISO()};
   db.bookings.unshift(bk);
