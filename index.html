@@ -810,7 +810,7 @@ function renderCars(){
     const serviceBadge=car.inService?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
     if(car.inService) div.classList.add('in-service');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
-    div.onclick=()=>selectCar(car.id);
+    div.onclick=(st==='free'&&!car.inService)?()=>selectCar(car.id):null;
     grid.appendChild(div);
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
@@ -864,7 +864,7 @@ function submitBooking(){
   const showErr=msg=>{errEl.textContent=msg;errEl.style.display='flex';};
   if(!name||!start||!end||!dest||!reason){return showErr('กรุณากรอกข้อมูลให้ครบทุกช่อง');}
   if(new Date(start)>=new Date(end)){return showErr('เวลาคืนรถต้องมาหลังเวลาเริ่มใช้');}
-  if(new Date(start)<new Date()){return showErr('ไม่สามารถจองในอดีตได้');}
+  if(new Date(start)<new Date()){return showErr('ไม่สามารถจองย้อนหลังได้ กรุณาเลือกวันและเวลาเริ่มใช้รถที่เป็นปัจจุบันหรืออนาคต');}
   if(pin.length!==4||!/^\d{4}$/.test(pin)){return showErr('กรุณาตั้งรหัส PIN 4 หลัก (ตัวเลขเท่านั้น)');}
   const car=db.cars.find(c=>c.id===selectedCarId&&c.active);
   if(!car){return showErr('ไม่พบรถที่เลือก กรุณาเลือกรถใหม่อีกครั้ง');}
