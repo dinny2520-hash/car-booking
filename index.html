@@ -242,7 +242,7 @@ tr:hover td{background:var(--g50)}
   <div class="container">
     <div class="card">
       <div class="card-title">📅 ตารางการจองรายคัน</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <label style="font-size:13px;font-weight:600;color:var(--g600)">เลือกรถ:</label>
         <select id="cs-car-select" onchange="renderCarSchedule()" style="padding:7px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
         </select>
@@ -253,6 +253,13 @@ tr:hover td{background:var(--g50)}
           <option value="returned">คืนแล้ว</option>
           <option value="cancelled">ยกเลิก</option>
         </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <label style="font-size:13px;color:var(--g600);white-space:nowrap">📅 กรองตามวันที่:</label>
+        <input type="date" id="cs-date-from" onchange="renderCarSchedule()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+        <span style="font-size:13px;color:var(--g600)">ถึง</span>
+        <input type="date" id="cs-date-to" onchange="renderCarSchedule()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+        <button class="btn btn-outline btn-sm" onclick="clearCsDate()">ล้าง</button>
       </div>
       <div id="cs-car-header"></div>
       <div id="cs-timeline"></div>
@@ -289,6 +296,15 @@ tr:hover td{background:var(--g50)}
         <div class="tab" onclick="filterHistory('upcoming',this)">รอใช้งาน</div>
         <div class="tab" onclick="filterHistory('returned',this)">คืนแล้ว</div>
         <div class="tab" onclick="filterHistory('cancelled',this)">ยกเลิก</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <label style="font-size:13px;color:var(--g600);white-space:nowrap">📅 กรองตามวันที่:</label>
+        <input type="date" id="history-date-from" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+        <span style="font-size:13px;color:var(--g600)">ถึง</span>
+        <input type="date" id="history-date-to" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+        <button class="btn btn-outline btn-sm" onclick="clearHistoryDate()">ล้าง</button>
+      </div>
+      <div style="display:none">
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>รถ</th><th>ผู้จอง</th><th>เริ่ม</th><th>คืน</th><th>สถานที่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
@@ -892,12 +908,27 @@ function filterHistory(f,el){
   el.classList.add('active');
   renderHistory();
 }
+function clearHistoryDate(){
+  const f=document.getElementById('history-date-from');
+  const t=document.getElementById('history-date-to');
+  if(f) f.value='';
+  if(t) t.value='';
+  renderHistory();
+}
+
 function renderHistory(){
   let bks=[...db.bookings];
   if(hFilter==='in-use') bks=bks.filter(b=>getBkStatus(b)==='in-use'||getBkStatus(b)==='pending-return');
   else if(hFilter==='upcoming') bks=bks.filter(b=>getBkStatus(b)==='upcoming');
   else if(hFilter==='returned') bks=bks.filter(b=>b.status==='returned');
   else if(hFilter==='cancelled') bks=bks.filter(b=>b.status==='cancelled');
+  // กรองตามวันที่
+  const fromEl=document.getElementById('history-date-from');
+  const toEl=document.getElementById('history-date-to');
+  const fromDate=fromEl&&fromEl.value?new Date(fromEl.value):null;
+  const toDate=toEl&&toEl.value?new Date(toEl.value+'T23:59:59'):null;
+  if(fromDate) bks=bks.filter(b=>new Date(b.startDt)>=fromDate);
+  if(toDate) bks=bks.filter(b=>new Date(b.startDt)<=toDate);
   // else 'all' — แสดงทั้งหมด
   const tbody=document.getElementById('history-tbody');
   if(!bks.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูล</td></tr>';return;}
@@ -1444,9 +1475,21 @@ function initCarSchedule(){
   renderCarSchedule();
 }
 
+function clearCsDate(){
+  const f=document.getElementById('cs-date-from');
+  const t=document.getElementById('cs-date-to');
+  if(f) f.value='';
+  if(t) t.value='';
+  renderCarSchedule();
+}
+
 function renderCarSchedule(){
   const carId=document.getElementById('cs-car-select').value;
   const filter=document.getElementById('cs-filter').value;
+  const csFromEl=document.getElementById('cs-date-from');
+  const csToEl=document.getElementById('cs-date-to');
+  const csFromDate=csFromEl&&csFromEl.value?new Date(csFromEl.value):null;
+  const csToDate=csToEl&&csToEl.value?new Date(csToEl.value+'T23:59:59'):null;
   const car=db.cars.find(c=>c.id===carId);
   if(!car){return;}
 
@@ -1470,6 +1513,8 @@ function renderCarSchedule(){
   if(filter==='upcoming') bks=bks.filter(b=>getBkStatus(b)==='upcoming');
   if(filter==='returned') bks=bks.filter(b=>b.status==='returned');
   if(filter==='cancelled') bks=bks.filter(b=>b.status==='cancelled');
+  if(csFromDate) bks=bks.filter(b=>new Date(b.endDt)>=csFromDate);
+  if(csToDate) bks=bks.filter(b=>new Date(b.startDt)<=csToDate);
   bks=[...bks].sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
 
   // Timeline bar (next 30 days)
