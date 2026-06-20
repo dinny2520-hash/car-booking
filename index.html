@@ -164,6 +164,7 @@ tr:hover td{background:var(--g50)}
 }
 
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -528,6 +529,18 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>📊 รายงานสรุปค่าน้ำมัน</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:14px">เลือกช่วงวันที่ที่ต้องการ แล้วดาวน์โหลดเป็นไฟล์ Excel — สรุปแยกตามแผนกให้อัตโนมัติ</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <label style="font-size:13px;color:var(--g600);white-space:nowrap">ช่วงวันที่:</label>
+          <input type="date" id="fuel-report-from" style="padding:7px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+          <span style="font-size:13px;color:var(--g600)">ถึง</span>
+          <input type="date" id="fuel-report-to" style="padding:7px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="exportFuelReport()">📥 ดาวน์โหลดรายงาน Excel</button>
+      </div>
+
+      <div class="settings-section">
         <h3>🚗 จัดการรถ</h3>
         <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap">
           <input type="text" id="new-car-plate" placeholder="ทะเบียนรถ เช่น กข 1234" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
@@ -805,7 +818,19 @@ function showPage(name,btn){
   if(name==='usecart'){initUseCar();}
   if(name==='permit'){initPermitPage();startPermitPoll();}
   else{stopPermitPoll();}
-  if(name==='settings'){if(!adminLoggedIn){showAdminLogin();return;}renderSettings();}
+  if(name==='settings'){
+    if(!adminLoggedIn){showAdminLogin();return;}
+    renderSettings();
+    const frEl=document.getElementById('fuel-report-from');
+    const toEl=document.getElementById('fuel-report-to');
+    if(frEl && !frEl.value){
+      const now=new Date();
+      const firstDay=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+      const lastDay=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+      frEl.value=firstDay;
+      if(toEl) toEl.value=lastDay;
+    }
+  }
 }
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function openModal(id){document.getElementById(id).classList.add('open');}
@@ -1731,6 +1756,84 @@ function submitAdminReturn(){
 
 
 // ---- USE CAR PAGE ----
+// ---- รายงานสรุปค่าน้ำมัน (Excel) ----
+function exportFuelReport(){
+  const fromEl = document.getElementById('fuel-report-from');
+  const toEl = document.getElementById('fuel-report-to');
+  const fromVal = fromEl.value;
+  const toVal = toEl.value;
+  if(!fromVal || !toVal){ alert('กรุณาเลือกช่วงวันที่ให้ครบทั้งสองช่อง'); return; }
+  const fromDate = new Date(fromVal);
+  const toDate = new Date(toVal+'T23:59:59');
+  if(fromDate > toDate){ alert('วันที่เริ่มต้องมาก่อนวันที่สิ้นสุด'); return; }
+
+  const permits = (db.permits||[]).filter(p=>{
+    if(!p.date) return false;
+    const d = new Date(p.date);
+    return d >= fromDate && d <= toDate;
+  });
+
+  if(!permits.length){ alert('ไม่พบรายการขออนุมัติในช่วงวันที่ที่เลือก'); return; }
+
+  // จัดกลุ่มตามแผนก
+  const byDept = {};
+  permits.forEach(p=>{
+    const dept = p.dept || '(ไม่ระบุแผนก)';
+    if(!byDept[dept]) byDept[dept] = [];
+    byDept[dept].push(p);
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  // ชีตสรุปรวม
+  const summaryRows = [['แผนก','จำนวนรายการ','รวมค่าน้ำมัน (บาท)']];
+  let grandTotal = 0, grandCount = 0;
+  Object.keys(byDept).sort().forEach(dept=>{
+    const items = byDept[dept];
+    const total = items.reduce((s,p)=>s+(Number(p.fuel)||0),0);
+    summaryRows.push([dept, items.length, total]);
+    grandTotal += total;
+    grandCount += items.length;
+  });
+  summaryRows.push(['รวมทั้งหมด', grandCount, grandTotal]);
+  const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+  summaryWs['!cols'] = [{wch:25},{wch:15},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'สรุปรวม');
+
+  // ชีตรายละเอียดทุกรายการ
+  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','สถานะ']];
+  permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
+    detailRows.push([
+      p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-',
+      p.car||'-', Number(p.fuel)||0,
+      p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ'
+    ]);
+  });
+  const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
+  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:25},{wch:25},{wch:16},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, detailWs, 'รายละเอียด');
+
+  // ชีตแยกตามแผนก
+  Object.keys(byDept).sort().forEach(dept=>{
+    const items = byDept[dept].sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const rows = [['วันที่','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','สถานะ']];
+    let deptTotal=0;
+    items.forEach(p=>{
+      rows.push([p.date, p.name||'-', p.location||'-', p.reason||'-', p.car||'-', Number(p.fuel)||0,
+        p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ']);
+      deptTotal += Number(p.fuel)||0;
+    });
+    rows.push(['','','','','รวม', deptTotal,'']);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:12},{wch:20},{wch:18},{wch:25},{wch:25},{wch:16},{wch:14}];
+    const safeName = dept.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31) || 'แผนก';
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+  });
+
+  const filename = `รายงานค่าน้ำมัน_${fromVal}_ถึง_${toVal}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
 function initUseCar(){
   const sel=document.getElementById('uc-car-select');
   if(sel){
@@ -2100,11 +2203,19 @@ function autoCleanupOldBookings(){
   );
   if(!toRemove.length) return;
 
+  // Archive ก่อนลบ — เก็บสำรองไว้ใน Sheet "Archive"
+  const gsUrl = db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl){
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'archive', bookings:toRemove})
+    }).catch(()=>{});
+  }
+
   toRemove.forEach(b=>markDeleted('deletedBookingIds', b.id));
   const removeIds = new Set(toRemove.map(b=>b.id));
   db.bookings = db.bookings.filter(b=>!removeIds.has(b.id));
 
-  console.log(`🧹 Auto-cleanup: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ`);
+  console.log(`🧹 Auto-cleanup: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ (สำรองไว้ใน Archive แล้ว)`);
   syncNow();
 }
 
