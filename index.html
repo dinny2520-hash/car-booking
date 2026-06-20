@@ -548,10 +548,12 @@ tr:hover td{background:var(--g50)}
 
       <div class="settings-section">
         <h3>🗑️ จัดการประวัติการจอง</h3>
-        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ลบรายการจองออกจากระบบ (เฉพาะที่ยกเลิกหรือคืนแล้ว)</div>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:6px">ลบรายการจองออกจากระบบ (เฉพาะที่ยกเลิกหรือคืนแล้ว)</div>
+        <div style="font-size:12px;color:var(--success);margin-bottom:10px">🤖 ระบบลบรายการที่ยกเลิก/คืนแล้วเกิน 90 วันให้อัตโนมัติทุกวัน</div>
         <div id="admin-booking-list" style="max-height:300px;overflow-y:auto"></div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด</button>
+          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 90 วัน)</button>
         </div>
       </div>
 
@@ -2085,6 +2087,38 @@ function syncNow(){
   }
 }
 
+// ---- AUTO-CLEANUP: ลบ bookings เก่าที่จบงานแล้ว (cancelled/returned) เกิน 90 วัน ----
+const CLEANUP_DAYS = 90;
+const CLEANUP_CHECK_KEY = 'cbsys_last_cleanup';
+
+function autoCleanupOldBookings(){
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - CLEANUP_DAYS);
+
+  const toRemove = (db.bookings||[]).filter(b=>
+    (b.status==='cancelled'||b.status==='returned') && b.startDt && new Date(b.startDt) < cutoff
+  );
+  if(!toRemove.length) return;
+
+  toRemove.forEach(b=>markDeleted('deletedBookingIds', b.id));
+  const removeIds = new Set(toRemove.map(b=>b.id));
+  db.bookings = db.bookings.filter(b=>!removeIds.has(b.id));
+
+  console.log(`🧹 Auto-cleanup: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ`);
+  syncNow();
+}
+
+// เช็คทุกครั้งที่เปิดแอป แต่จำกัดให้รันแค่วันละครั้งต่อเครื่อง (กันรันถี่เกินไป)
+function maybeRunCleanup(){
+  try{
+    const last = localStorage.getItem(CLEANUP_CHECK_KEY);
+    const today = new Date().toISOString().slice(0,10);
+    if(last === today) return; // รันไปแล้ววันนี้
+    localStorage.setItem(CLEANUP_CHECK_KEY, today);
+  }catch(e){}
+  autoCleanupOldBookings();
+}
+
 
 // แปลงวันที่เป็นภาษาไทย วัน เดือน ปี (พ.ศ.)
 function fmtThaiDate(dateStr){
@@ -2187,6 +2221,8 @@ setInterval(pullFromGSheet,10000);
 setInterval(refreshSigCacheBackground,60000);
 refreshSigCacheBackground();
 updateSync(false,null);
+// รัน cleanup หลังโหลดข้อมูลครั้งแรกเสร็จ (รอ 3 วิให้ pull แรกเสร็จก่อน)
+setTimeout(maybeRunCleanup, 3000);
 renderCars();
 
 // Check ?approve= on page load
