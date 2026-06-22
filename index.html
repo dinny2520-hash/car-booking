@@ -1883,11 +1883,13 @@ function submitUseCar(){
   };
   if(!db.permits)db.permits=[];
   db.permits.unshift(permit);
+  const _ts = new Date().toISOString();
+  db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
 
   const link=location.origin+location.pathname+'?approve='+permit.id;
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  const syncData={cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:stripSigs(db.permits),ts:new Date().toISOString()};
+  const syncData={...buildSyncPayload(_ts)};
 
   errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
