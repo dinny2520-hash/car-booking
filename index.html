@@ -1918,7 +1918,7 @@ function submitUseCar(){
 function renderUcPermitList(){
   const list=document.getElementById('uc-permit-list');
   if(!list)return;
-  const myPermits=(db.permits||[]).slice(0,10); // แสดง 10 อันล่าสุด
+  const myPermits=(db.permits||[]);
   if(!myPermits.length){
     list.innerHTML='<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';return;
   }
