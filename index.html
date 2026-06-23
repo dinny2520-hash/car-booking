@@ -147,7 +147,11 @@ tr:hover td{background:var(--g50)}
 .divider{border:none;border-top:1px solid var(--g200);margin:14px 0}
 
 /* รถเข้าเช็คระยะ/ซ่อม */
-@keyframes blink-yellow {
+@keyframes blink-red {
+  0%,100%{opacity:1;}
+  50%{opacity:0.3;}
+}
+
   0%,100%{background:#fff8e1;border-color:#f59e0b;box-shadow:0 0 0 3px #fde68a;}
   50%{background:#fef3c7;border-color:#d97706;box-shadow:0 0 0 6px #fcd34d55;}
 }
@@ -609,6 +613,9 @@ tr:hover td{background:var(--g50)}
 <!-- MODAL: STEP 1 — ผู้ยืมแจ้งคืน -->
 <div class="modal-overlay" id="modal-step1-return">
   <div class="modal">
+    <div style="text-align:center;font-weight:700;font-size:14px;color:#dc2626;animation:blink-red 1s ease-in-out infinite;margin-bottom:14px;padding:10px;background:#fef2f2;border-radius:8px;border:1.5px solid #fca5a5">
+      🚗 รถใช้งานให้จอดที่จอดรถ ไม่จอดหน้าตึกนะจ๊ะ
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">1</span>
       <div class="modal-title" style="margin:0">ผู้ยืมแจ้งคืนรถ</div>
@@ -1775,6 +1782,22 @@ function exportFuelReport(){
 
   if(!permits.length){ alert('ไม่พบรายการขออนุมัติในช่วงวันที่ที่เลือก'); return; }
 
+  // หา booking ที่ตรงกับ permit เพื่อดึงเลขไมล์
+  function getMileage(p){
+    const bk = (db.bookings||[]).find(b=>
+      b.name === p.name &&
+      b.mileageIn != null &&
+      b.startDt && b.startDt.slice(0,10) === p.date
+    );
+    if(!bk) return {mileageOut:'-', mileageIn:'-', distance:'-'};
+    const dist = (bk.mileageIn!=null && bk.mileageOut!=null) ? (bk.mileageIn - bk.mileageOut) : '-';
+    return {
+      mileageOut: bk.mileageOut != null ? bk.mileageOut : '-',
+      mileageIn: bk.mileageIn != null ? bk.mileageIn : '-',
+      distance: dist
+    };
+  }
+
   // จัดกลุ่มตามแผนก
   const byDept = {};
   permits.forEach(p=>{
@@ -1786,46 +1809,56 @@ function exportFuelReport(){
   const wb = XLSX.utils.book_new();
 
   // ชีตสรุปรวม
-  const summaryRows = [['แผนก','จำนวนรายการ','รวมค่าน้ำมัน (บาท)']];
-  let grandTotal = 0, grandCount = 0;
+  const summaryRows = [['แผนก','จำนวนรายการ','รวมค่าน้ำมัน (บาท)','รวมระยะทาง (กม.)']];
+  let grandTotal = 0, grandCount = 0, grandDist = 0;
   Object.keys(byDept).sort().forEach(dept=>{
     const items = byDept[dept];
     const total = items.reduce((s,p)=>s+(Number(p.fuel)||0),0);
-    summaryRows.push([dept, items.length, total]);
+    const totalDist = items.reduce((s,p)=>{
+      const m = getMileage(p);
+      return s + (typeof m.distance==='number' ? m.distance : 0);
+    },0);
+    summaryRows.push([dept, items.length, total, totalDist||'-']);
     grandTotal += total;
     grandCount += items.length;
+    grandDist += totalDist;
   });
-  summaryRows.push(['รวมทั้งหมด', grandCount, grandTotal]);
+  summaryRows.push(['รวมทั้งหมด', grandCount, grandTotal, grandDist||'-']);
   const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
-  summaryWs['!cols'] = [{wch:25},{wch:15},{wch:20}];
+  summaryWs['!cols'] = [{wch:25},{wch:15},{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb, summaryWs, 'สรุปรวม');
 
   // ชีตรายละเอียดทุกรายการ
-  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','สถานะ']];
+  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
   permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
+    const m = getMileage(p);
     detailRows.push([
       p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-',
       p.car||'-', Number(p.fuel)||0,
+      m.mileageOut, m.mileageIn, m.distance,
       p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ'
     ]);
   });
   const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
-  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:25},{wch:25},{wch:16},{wch:14}];
+  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:25},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb, detailWs, 'รายละเอียด');
 
   // ชีตแยกตามแผนก
   Object.keys(byDept).sort().forEach(dept=>{
     const items = byDept[dept].sort((a,b)=>new Date(a.date)-new Date(b.date));
-    const rows = [['วันที่','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','สถานะ']];
-    let deptTotal=0;
+    const rows = [['วันที่','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
+    let deptTotal=0, deptDist=0;
     items.forEach(p=>{
-      rows.push([p.date, p.name||'-', p.location||'-', p.reason||'-', p.car||'-', Number(p.fuel)||0,
+      const m = getMileage(p);
+      rows.push([p.date, p.name||'-', p.location||'-', p.reason||'-', p.car||'-',
+        Number(p.fuel)||0, m.mileageOut, m.mileageIn, m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ']);
       deptTotal += Number(p.fuel)||0;
+      deptDist += typeof m.distance==='number' ? m.distance : 0;
     });
-    rows.push(['','','','','รวม', deptTotal,'']);
+    rows.push(['','','','','รวม', deptTotal,'','', deptDist||'-','']);
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:12},{wch:20},{wch:18},{wch:25},{wch:25},{wch:16},{wch:14}];
+    ws['!cols'] = [{wch:12},{wch:20},{wch:18},{wch:25},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
     const safeName = dept.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31) || 'แผนก';
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
