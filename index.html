@@ -566,11 +566,11 @@ tr:hover td{background:var(--g50)}
       <div class="settings-section">
         <h3>🗑️ จัดการประวัติการจอง</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:6px">ลบรายการจองออกจากระบบ (เฉพาะที่ยกเลิกหรือคืนแล้ว)</div>
-        <div style="font-size:12px;color:var(--success);margin-bottom:10px">🤖 ระบบลบรายการที่ยกเลิก/คืนแล้วเกิน 90 วันให้อัตโนมัติทุกวัน</div>
+        <div style="font-size:12px;color:var(--success);margin-bottom:10px">🤖 ระบบลบรายการที่ยกเลิก/คืนแล้วเกิน 60 วันให้อัตโนมัติทุกวัน</div>
         <div id="admin-booking-list" style="max-height:300px;overflow-y:auto"></div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด</button>
-          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 90 วัน)</button>
+          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
         </div>
       </div>
 
@@ -2226,7 +2226,7 @@ function syncNow(){
 }
 
 // ---- AUTO-CLEANUP: ลบ bookings เก่าที่จบงานแล้ว (cancelled/returned) เกิน 90 วัน ----
-const CLEANUP_DAYS = 90;
+const CLEANUP_DAYS = 60;
 const CLEANUP_CHECK_KEY = 'cbsys_last_cleanup';
 
 function autoCleanupOldBookings(){
