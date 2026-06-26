@@ -1462,8 +1462,8 @@ function pullFromGSheet(){
       renderCars();
       renderHistory();
       // ไม่ render return list ขณะ modal step2 เปิดอยู่ เพื่อกันไม่ให้ dropdown reset
-      const step2Open = document.getElementById('modal-step2-return')?.classList.contains('active');
-      const step1Open = document.getElementById('modal-step1-return')?.classList.contains('active');
+      const step2Open = document.getElementById('modal-step2-return')?.classList.contains('open');
+      const step1Open = document.getElementById('modal-step1-return')?.classList.contains('open');
       if(!step2Open && !step1Open) renderReturnList();
       renderUcPermitList();
       renderPermitList();
