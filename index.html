@@ -926,8 +926,11 @@ function submitBooking(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_syncTs})});
-    fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body}).catch(()=>{});
+    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_syncTs)})});
+    fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body})
+      .then(r=>r.json())
+      .then(()=>showSyncToast(true))
+      .catch(()=>showSyncToast(false));
   }
   document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
   document.getElementById('success-pin').textContent=pin;
@@ -1176,6 +1179,7 @@ function submitStep2(){
   const car=db.cars.find(c=>c.id===b.carId);
   if(car) car.mileage=Number(mileageIn);
   syncNow();
+  syncNow(()=>showSyncToast(true), ()=>showSyncToast(false));
   closeModal('modal-step2-return');renderReturnList();renderCars();
   alert('✅ ยืนยันคืนรถสำเร็จ! สถานะรถเปลี่ยนเป็นว่างแล้ว');
 }
@@ -2217,15 +2221,33 @@ function buildSyncPayload(ts){
 
 // Sync ขึ้น Sheet พร้อมป้องกัน race condition กับ pullFromGSheet
 // บันทึก _lastSync ก่อนสร้าง payload เสมอ เพื่อให้ ts ตรงกันทั้งระบบ
-function syncNow(){
+function syncNow(onSuccess, onFail){
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl = db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl && db.syncEnabled){
     const body = JSON.stringify({action:'sync', data: JSON.stringify(buildSyncPayload(_ts))});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body})
+      .then(r=>r.json())
+      .then(res=>{ if(onSuccess) onSuccess(); })
+      .catch(()=>{ if(onFail) onFail(); });
   }
+}
+
+// แสดง toast แจ้งสถานะ sync
+function showSyncToast(success){
+  const existing = document.getElementById('sync-toast');
+  if(existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'sync-toast';
+  toast.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+    background:${success?'#10b981':'#ef4444'};color:#fff;padding:10px 20px;border-radius:20px;
+    font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.2);
+    transition:opacity 0.5s;white-space:nowrap`;
+  toast.textContent = success ? '✅ บันทึกและซิงค์สำเร็จ' : '⚠️ บันทึกแล้ว แต่ซิงค์ไม่ได้ — ตรวจสอบเน็ต';
+  document.body.appendChild(toast);
+  setTimeout(()=>{ toast.style.opacity='0'; setTimeout(()=>toast.remove(), 500); }, success?2500:5000);
 }
 
 // ---- AUTO-CLEANUP: ลบ bookings เก่าที่จบงานแล้ว (cancelled/returned) เกิน 90 วัน ----
