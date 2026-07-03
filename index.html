@@ -1790,17 +1790,36 @@ function exportFuelReport(){
   if(!permits.length){ alert('ไม่พบรายการขออนุมัติในช่วงวันที่ที่เลือก'); return; }
 
   // หา booking ที่ตรงกับ permit เพื่อดึงเลขไมล์
+  // จับคู่ด้วยทะเบียนรถ + วันที่ใกล้ที่สุด (ไม่เกิน 7 วัน)
   function getMileage(p){
-    const bk = (db.bookings||[]).find(b=>
-      b.name === p.name &&
-      b.mileageIn != null &&
-      b.startDt && b.startDt.slice(0,10) === p.date
-    );
-    if(!bk) return {mileageOut:'-', mileageIn:'-', distance:'-'};
-    const dist = (bk.mileageIn!=null && bk.mileageOut!=null) ? (bk.mileageIn - bk.mileageOut) : '-';
+    if(!p.car) return {mileageOut:'-', mileageIn:'-', distance:'-'};
+    const permitDate = p.date ? new Date(p.date).getTime() : null;
+
+    // หา bookings ที่ใช้รถคันเดียวกัน และมีเลขไมล์
+    const candidates = (db.bookings||[]).filter(b=>{
+      if(b.mileageIn == null) return false;
+      const car = db.cars.find(c=>c.id===b.carId);
+      return car && car.plate === p.car;
+    });
+
+    if(!candidates.length) return {mileageOut:'-', mileageIn:'-', distance:'-'};
+
+    // เลือกอันที่วันที่ใกล้ที่สุด (ไม่เกิน 7 วัน)
+    let best = null, bestDiff = Infinity;
+    candidates.forEach(b=>{
+      if(!b.startDt || !permitDate) return;
+      const diff = Math.abs(permitDate - new Date(b.startDt.slice(0,10)).getTime());
+      if(diff < bestDiff && diff <= 7*86400000){
+        bestDiff = diff;
+        best = b;
+      }
+    });
+
+    if(!best) return {mileageOut:'-', mileageIn:'-', distance:'-'};
+    const dist = (best.mileageIn!=null && best.mileageOut!=null) ? (best.mileageIn - best.mileageOut) : '-';
     return {
-      mileageOut: bk.mileageOut != null ? bk.mileageOut : '-',
-      mileageIn: bk.mileageIn != null ? bk.mileageIn : '-',
+      mileageOut: best.mileageOut != null ? best.mileageOut : '-',
+      mileageIn: best.mileageIn != null ? best.mileageIn : '-',
       distance: dist
     };
   }
