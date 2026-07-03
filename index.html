@@ -1835,6 +1835,28 @@ function exportFuelReport(){
   summaryWs['!cols'] = [{wch:25},{wch:15},{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb, summaryWs, 'สรุปรวม');
 
+  // ชีตสรุปตามทะเบียนรถ
+  const byPlate = {};
+  permits.forEach(p=>{
+    const plate = p.car || '(ไม่ระบุ)';
+    if(!byPlate[plate]) byPlate[plate] = [];
+    byPlate[plate].push(p);
+  });
+  const plateRows = [['ทะเบียนรถ','จำนวนครั้งที่ใช้','รวมค่าน้ำมัน (บาท)','รวมระยะทาง (กม.)']];
+  Object.keys(byPlate).sort().forEach(plate=>{
+    const items = byPlate[plate];
+    const total = items.reduce((s,p)=>s+(Number(p.fuel)||0),0);
+    const totalDist = items.reduce((s,p)=>{
+      const m = getMileage(p);
+      return s + (typeof m.distance==='number' ? m.distance : 0);
+    },0);
+    plateRows.push([plate, items.length, total, totalDist||'-']);
+  });
+  plateRows.push(['รวมทั้งหมด', permits.length, grandTotal, grandDist||'-']);
+  const plateWs = XLSX.utils.aoa_to_sheet(plateRows);
+  plateWs['!cols'] = [{wch:28},{wch:18},{wch:20},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, plateWs, 'สรุปตามทะเบียน');
+
   // ชีตรายละเอียดทุกรายการ
   const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
   permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
