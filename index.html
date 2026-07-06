@@ -2045,7 +2045,7 @@ function submitUseCar(){
   const empSig=document.getElementById('uc-empsig').value.trim();
   const errEl=document.getElementById('uc-err');
   errEl.style.display='none';
-  if(!name||!dept||!loc||!reason||!detail||!car||!fuel||!date||!empSig){
+  if(!name||!dept||!loc||!reason||!detail||!car||fuel===''||fuel===null||!date||!empSig){
     errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;
   }
   const permit={
@@ -2965,7 +2965,7 @@ function submitPermitForm(){
   const empSigName=document.getElementById('pf-emp-sig-name').value.trim();
   const errEl=document.getElementById('permit-form-err');
   errEl.style.display='none';
-  if(!name||!dept||!loc||!reason||!detail||!car||!fuel||!date||!empSigName)
+  if(!name||!dept||!loc||!reason||!detail||!car||fuel===''||fuel===null||!date||!empSigName)
     {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
