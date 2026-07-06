@@ -146,6 +146,43 @@ tr:hover td{background:var(--g50)}
 .cancel-btn-row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 .divider{border:none;border-top:1px solid var(--g200);margin:14px 0}
 
+/* การ์ดน้ำมัน */
+.fuel-card {
+  background: linear-gradient(135deg, #1a4f8a 0%, #2563eb 60%, #1d4ed8 100%);
+  border-radius: 14px;
+  padding: 18px 20px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  margin-bottom: 12px;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 4px 16px rgba(37,99,235,0.25);
+  border: 2px solid transparent;
+  user-select: none;
+}
+.fuel-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(37,99,235,0.35); }
+.fuel-card.selected { border: 2px solid #fbbf24; box-shadow: 0 0 0 3px #fcd34d55; }
+.fuel-card.in-use-card { opacity: 0.7; cursor: not-allowed; }
+.fuel-card.in-service-card { animation: blink-yellow 0.9s ease-in-out infinite; cursor: not-allowed; }
+.fuel-card::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -30px;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+}
+.fuel-card-name { font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.fuel-card-value { font-size: 22px; font-weight: 800; margin: 6px 0 2px; }
+.fuel-card-label { font-size: 11px; opacity: 0.8; }
+.fuel-card-status { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: rgba(255,255,255,0.2); display: inline-block; margin-top: 4px; }
+.fuel-card-icon { position: absolute; top: 16px; right: 16px; font-size: 28px; opacity: 0.6; }
+
 /* รถเข้าเช็คระยะ/ซ่อม */
 @keyframes blink-red {
   0%,100%{opacity:1;}
@@ -210,6 +247,13 @@ tr:hover td{background:var(--g50)}
       <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">💡 รถที่มีสถานะ <b>กำลังใช้งาน</b> หรือ <b>ติดจอง</b> สามารถจองช่วงเวลาอื่นได้ — กดที่การ์ดรถเพื่อดูว่างหรือเลือกเวลาจอง</div>
       <div class="car-grid" id="car-grid"></div>
     </div>
+
+    <div class="card" id="fuel-cards-section" style="margin-top:4px">
+      <div class="card-title">💳 การ์ดน้ำมัน <span style="font-size:12px;color:var(--g500);font-weight:400">สำหรับรถทดลองขับและฝ่ายขายรถใหญ่</span></div>
+      <div style="font-size:13px;color:var(--g600);margin-bottom:12px">เลือกการ์ดที่ต้องการจอง</div>
+      <div id="fuel-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px"></div>
+    </div>
+
     <div class="card" id="booking-form-card" style="display:none">
       <div class="card-title">📋 ข้อมูลการจอง — <span id="form-car-plate" style="color:var(--primary-mid)"></span></div>
       <div id="conflict-list" style="display:none" class="alert alert-warning">
@@ -370,7 +414,17 @@ tr:hover td{background:var(--g50)}
           <input type="hidden" id="pf-car">
         </div>
         <div class="form-row"><label>ประเภทรถ</label><input type="text" id="pf-cartype" placeholder="เช่น กระบะ, 4 ประตู"></div>
-        <div class="form-row"><label>จำนวนเงินน้ำมัน (บาท) *</label><input type="number" id="pf-fuel" placeholder="เช่น 330" min="0"></div>
+        <div class="form-row">
+          <label>จำนวนน้ำมัน *</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="pf-fuel-unit" onchange="onFuelUnitChange('pf')" style="padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+              <option value="baht">บาท</option>
+              <option value="liter">ลิตร</option>
+            </select>
+            <input type="number" id="pf-fuel" placeholder="กรอกจำนวน" min="0" step="0.01" style="flex:1;min-width:120px">
+          </div>
+          <div id="pf-fuel-calc" style="font-size:12px;color:var(--success);margin-top:4px;display:none"></div>
+        </div>
       </div>
       <div class="form-row"><label>วันที่</label><input type="date" id="pf-date"></div>
 
@@ -490,7 +544,17 @@ tr:hover td{background:var(--g50)}
           <input type="text" id="uc-car-custom" placeholder="พิมพ์ทะเบียนรถ" style="display:none">
         </div>
         <div class="form-row"><label>ประเภทรถ</label><input type="text" id="uc-cartype" placeholder="เช่น กระบะ, 4 ประตู"></div>
-        <div class="form-row"><label>จำนวนเงินน้ำมัน (บาท) *</label><input type="number" id="uc-fuel" placeholder="เช่น 300" min="0"></div>
+        <div class="form-row">
+          <label>จำนวนน้ำมัน *</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="uc-fuel-unit" onchange="onFuelUnitChange('uc')" style="padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+              <option value="baht">บาท</option>
+              <option value="liter">ลิตร</option>
+            </select>
+            <input type="number" id="uc-fuel" placeholder="กรอกจำนวน" min="0" step="0.01" style="flex:1;min-width:120px">
+          </div>
+          <div id="uc-fuel-calc" style="font-size:12px;color:var(--success);margin-top:4px;display:none"></div>
+        </div>
         <div class="form-row"><label>วันที่ *</label><input type="date" id="uc-date"></div>
       </div>
 
@@ -545,6 +609,16 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>💳 จัดการการ์ดน้ำมัน</h3>
+        <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap">
+          <input type="text" id="new-fc-name" placeholder="ชื่อการ์ด เช่น บัตร PTT-01" style="flex:1;min-width:160px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <input type="number" id="new-fc-value" placeholder="มูลค่า (บาท)" min="0" style="width:140px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <button class="btn btn-primary btn-sm" onclick="addFuelCard()">+ เพิ่มการ์ด</button>
+        </div>
+        <div id="fc-list-settings"></div>
+      </div>
+
+      <div class="settings-section">
         <h3>🚗 จัดการรถ</h3>
         <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap">
           <input type="text" id="new-car-plate" placeholder="ทะเบียนรถ เช่น กข 1234" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
@@ -571,6 +645,17 @@ tr:hover td{background:var(--g50)}
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด</button>
           <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>⛽ ราคาน้ำมันปัจจุบัน</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใช้คำนวณเมื่อผู้ใช้เลือกกรอกน้ำมันเป็นลิตร</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="fuel-price-input" placeholder="เช่น 40.50" min="0" step="0.01" style="width:140px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit">
+          <span style="font-size:13px;color:var(--g600)">บาท/ลิตร</span>
+          <button class="btn btn-primary btn-sm" onclick="saveFuelPrice()">บันทึกราคา</button>
+          <span id="fuel-price-display" style="font-size:13px;color:var(--success);font-weight:600"></span>
         </div>
       </div>
 
@@ -844,6 +929,7 @@ function openModal(id){document.getElementById(id).classList.add('open');}
 
 // ---- CARS ----
 function renderCars(){
+  renderFuelCards();
   const grid=document.getElementById('car-grid');
   grid.innerHTML='';
   let hasOverdue=false;
@@ -1030,6 +1116,7 @@ function confirmCancelAdmin(){
 
 // ---- RETURN (2 ขั้นตอน) ----
 function renderReturnList(){
+  renderFcReturnList();
   const n=new Date();
   // Step1: รถที่กำลังใช้งาน/เกินกำหนด และยังไม่ได้แจ้งคืน
   const step1Items=db.bookings.filter(b=>
@@ -1207,6 +1294,7 @@ function showPageDirect(name){
 function renderSettings(){
   document.getElementById('gs-url').value=db.gsUrl||'';
   updateSigCacheSize();
+  updateFuelPriceDisplay();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
       <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}</span>
@@ -1216,6 +1304,7 @@ function renderSettings(){
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAdminBookingList();
+  renderFcSettings();
   document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
     <span style="font-size:12px;color:var(--g600)">รหัส: ${s.code}</span>
@@ -1420,6 +1509,9 @@ function pullFromGSheet(){
         db.staff = [...data.staff, ...localNewOnly];
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
+      if(data&&data.fuelCards) db.fuelCards=data.fuelCards;
+      if(data&&data.fuelPrice!=null) db.fuelPrice=data.fuelPrice;
+      if(data&&data.fuelCardBookings) db.fuelCardBookings=data.fuelCardBookings;
 
       // รวม deleted lists จาก Sheet เข้ากับ local (union)
       ['deletedStaffIds','deletedCarIds','deletedBookingIds','deletedPermitIds'].forEach(key=>{
@@ -1877,36 +1969,36 @@ function exportFuelReport(){
   XLSX.utils.book_append_sheet(wb, plateWs, 'สรุปตามทะเบียน');
 
   // ชีตรายละเอียดทุกรายการ
-  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
+  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
   permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
     const m = getMileage(p);
     detailRows.push([
-      p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-',
+      p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-', p.detail||'-',
       p.car||'-', Number(p.fuel)||0,
       m.mileageOut, m.mileageIn, m.distance,
       p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ'
     ]);
   });
   const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
-  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:25},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
+  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb, detailWs, 'รายละเอียด');
 
   // ชีตแยกตามแผนก
   Object.keys(byDept).sort().forEach(dept=>{
     const items = byDept[dept].sort((a,b)=>new Date(a.date)-new Date(b.date));
-    const rows = [['วันที่','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
+    const rows = [['วันที่','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ']];
     let deptTotal=0, deptDist=0;
     items.forEach(p=>{
       const m = getMileage(p);
-      rows.push([p.date, p.name||'-', p.location||'-', p.reason||'-', p.car||'-',
+      rows.push([p.date, p.name||'-', p.dept||'-', p.location||'-', p.reason||'-', p.detail||'-', p.car||'-',
         Number(p.fuel)||0, m.mileageOut, m.mileageIn, m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ']);
       deptTotal += Number(p.fuel)||0;
       deptDist += typeof m.distance==='number' ? m.distance : 0;
     });
-    rows.push(['','','','','รวม', deptTotal,'','', deptDist||'-','']);
+    rows.push(['','','','','','รวม', '', deptTotal,'','', deptDist||'-','']);
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:12},{wch:20},{wch:18},{wch:25},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
+    ws['!cols'] = [{wch:12},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14}];
     const safeName = dept.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31) || 'แผนก';
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
@@ -1948,7 +2040,7 @@ function submitUseCar(){
   const detail=document.getElementById('uc-detail').value.trim();
   const car=getUcCar();
   const cartype=document.getElementById('uc-cartype').value.trim();
-  const fuel=document.getElementById('uc-fuel').value;
+  const fuel=getFuelBahtValue('uc');
   const date=document.getElementById('uc-date').value;
   const empSig=document.getElementById('uc-empsig').value.trim();
   const errEl=document.getElementById('uc-err');
@@ -2253,6 +2345,9 @@ function buildSyncPayload(ts){
   return {
     cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
     permits:stripSigs(db.permits||[]), ts: ts || new Date().toISOString(),
+    fuelPrice:db.fuelPrice||0,
+    fuelCards:db.fuelCards||[],
+    fuelCardBookings:db.fuelCardBookings||[],
     deletedStaffIds:db.deletedStaffIds||[],
     deletedCarIds:db.deletedCarIds||[],
     deletedBookingIds:db.deletedBookingIds||[],
@@ -2428,6 +2523,330 @@ function updateSigCacheSize(){
   }catch(e){ el.textContent=''; }
 }
 
+
+// ============================================================
+// FUEL CARD SYSTEM
+// ============================================================
+var selectedFcId = null;
+var fcReturnId = null;
+
+// ---- RENDER FUEL CARDS (หน้าจอง) ----
+function renderFuelCards(){
+  const grid = document.getElementById('fuel-cards-grid');
+  if(!grid) return;
+  const cards = (db.fuelCards||[]).filter(fc=>fc.active!==false);
+  if(!cards.length){
+    grid.innerHTML='<div style="color:var(--g400);font-size:13px">ยังไม่มีการ์ดน้ำมันในระบบ</div>';
+    return;
+  }
+  grid.innerHTML = cards.map(fc=>{
+    const bk = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.status==='in-use');
+    const pending = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.returnStep==='pending');
+    let statusLabel = '✅ ว่าง', statusStyle = '';
+    if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.75;'; }
+    else if(bk){ statusLabel='🔴 กำลังใช้งาน'; statusStyle='opacity:0.75;cursor:not-allowed'; }
+    const selected = selectedFcId===fc.id;
+    return `<div class="fuel-card${selected?' selected':''}${bk||pending?' in-use-card':''}"
+      style="${statusStyle}" onclick="selectFuelCard('${fc.id}')">
+      <div class="fuel-card-icon">💳</div>
+      <div class="fuel-card-name">${fc.name}</div>
+      <div class="fuel-card-value">฿${Number(fc.value||0).toLocaleString('th-TH')}</div>
+      <div class="fuel-card-label">มูลค่าคงเหลือ</div>
+      <span class="fuel-card-status">${statusLabel}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectFuelCard(id){
+  const fc = (db.fuelCards||[]).find(f=>f.id===id);
+  if(!fc) return;
+  const bk = (db.fuelCardBookings||[]).find(b=>b.fcId===id&&(b.status==='in-use'||b.returnStep==='pending'));
+  if(bk){ alert('การ์ดนี้กำลังถูกใช้งานอยู่ ไม่สามารถจองได้'); return; }
+  selectedFcId = id;
+  renderFuelCards();
+  // เปิด modal จอง
+  document.getElementById('fc-book-info').innerHTML = `<b>${fc.name}</b> | มูลค่าคงเหลือ: <b>฿${Number(fc.value||0).toLocaleString('th-TH')}</b>`;
+  document.getElementById('fc-name').value='';
+  document.getElementById('fc-reason').value='';
+  document.getElementById('fc-start').value='';
+  document.getElementById('fc-end').value='';
+  clearPins('fcpin');
+  document.getElementById('fc-book-err').style.display='none';
+  openModal('modal-fc-book');
+}
+
+function submitFcBooking(){
+  const name=document.getElementById('fc-name').value.trim();
+  const reason=document.getElementById('fc-reason').value.trim();
+  const start=document.getElementById('fc-start').value;
+  const end=document.getElementById('fc-end').value;
+  const pin=getModalPin('fcpin');
+  const errEl=document.getElementById('fc-book-err');
+  errEl.style.display='none';
+  if(!name||!reason||!start||!end){errEl.textContent='กรุณากรอกข้อมูลให้ครบ';errEl.style.display='flex';return;}
+  if(new Date(start)>=new Date(end)){errEl.textContent='เวลาคืนต้องมาหลังเวลาเริ่ม';errEl.style.display='flex';return;}
+  if(pin.length!==4){errEl.textContent='กรุณาตั้ง PIN 4 หลัก';errEl.style.display='flex';return;}
+  const fc=(db.fuelCards||[]).find(f=>f.id===selectedFcId);
+  if(!fc){return;}
+  const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,reason,startDt:start,endDt:end,pin,status:'in-use',createdAt:nowISO()};
+  if(!db.fuelCardBookings) db.fuelCardBookings=[];
+  db.fuelCardBookings.unshift(bk);
+  closeModal('modal-fc-book');
+  document.getElementById('fc-success-detail').innerHTML=`<b>${fc.name}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}`;
+  document.getElementById('fc-success-pin').textContent=pin;
+  selectedFcId=null;
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  renderFuelCards();
+  openModal('modal-fc-success');
+}
+
+// ---- FUEL CARD RETURN ----
+function renderFcReturnList(){
+  const el=document.getElementById('fc-return-list');
+  if(!el) return;
+  const pending=(db.fuelCardBookings||[]).filter(b=>b.returnStep==='pending'||b.status==='in-use');
+  if(!pending.length){
+    el.innerHTML='<div class="empty-state"><div style="font-size:30px">💳</div><div>ไม่มีการ์ดที่ต้องคืน</div></div>';return;
+  }
+  el.innerHTML=pending.map(b=>{
+    const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+    const isPending=b.returnStep==='pending';
+    return `<div class="card" style="border-left:4px solid ${isPending?'var(--success)':'var(--warning)'}">
+      <div style="font-weight:700">💳 ${fc?fc.name:'?'}</div>
+      <div style="font-size:13px;color:var(--g600)">👤 ${b.name} | 📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
+      <div style="font-size:13px;color:var(--g600)">📝 ${b.reason}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
+        ${isPending?`<button class="btn btn-success btn-sm" onclick="openFcStep2('${b.id}')">✅ เจ้าหน้าที่รับคืน</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openFcStep1(id){
+  fcReturnId=id;
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
+  const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
+  document.getElementById('fc-s1-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name} | มูลค่าคงเหลือ: <b>฿${Number(fc?.value||0).toLocaleString('th-TH')}</b>`;
+  document.getElementById('fc-s1-used').value='';
+  clearPins('fc1pin');
+  document.getElementById('fc-s1-err').style.display='none';
+  openModal('modal-fc-step1');
+}
+
+function submitFcStep1(){
+  const pin=getModalPin('fc1pin');
+  const used=document.getElementById('fc-s1-used').value;
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
+  const errEl=document.getElementById('fc-s1-err');
+  errEl.style.display='none';
+  if(used===''){errEl.textContent='กรุณากรอกยอดที่ใช้ไป (ถ้าไม่ได้ใช้ใส่ 0)';errEl.style.display='flex';return;}
+  if(pin.length!==4){errEl.textContent='กรุณากรอก PIN 4 หลัก';errEl.style.display='flex';return;}
+  if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
+  b.returnStep='pending';
+  b.usedAmount=Number(used);
+  syncNow();
+  closeModal('modal-fc-step1');
+  renderFcReturnList();
+  alert('✅ แจ้งคืนการ์ดสำเร็จ กรุณาส่งการ์ดให้เจ้าหน้าที่');
+}
+
+function openFcStep2(id){
+  fcReturnId=id;
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
+  const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
+  document.getElementById('fc-s2-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}<br>✅ ผู้ยืมยืนยันแล้ว | ยอดที่แจ้งใช้: <b>฿${Number(b?.usedAmount||0).toLocaleString('th-TH')}</b>`;
+  document.getElementById('fc-s2-used').value=b?.usedAmount??'';
+  document.getElementById('fc-s2-code').value='';
+  document.getElementById('fc-s2-err').style.display='none';
+  const opts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('fc-s2-staff').innerHTML='<option value="">-- เลือกชื่อ --</option>'+opts;
+  openModal('modal-fc-step2');
+}
+
+function submitFcStep2(){
+  const staffId=document.getElementById('fc-s2-staff').value;
+  const code=document.getElementById('fc-s2-code').value.trim();
+  const used=document.getElementById('fc-s2-used').value;
+  const errEl=document.getElementById('fc-s2-err');
+  errEl.style.display='none';
+  if(used===''){errEl.textContent='กรุณากรอกยอดที่ใช้ไป';errEl.style.display='flex';return;}
+  const staff=db.staff.find(s=>s.id===staffId);
+  if(!staff){errEl.textContent='กรุณาเลือกเจ้าหน้าที่';errEl.style.display='flex';return;}
+  if(staff.code!==code){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
+  if(!b) return;
+  const usedAmt=Number(used)||0;
+  b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();b.usedAmount=usedAmt;
+  // หักมูลค่าการ์ด
+  const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+  if(fc && usedAmt>0){
+    fc.value=Math.max(0,(Number(fc.value)||0)-usedAmt);
+    fc.lastUsed=nowISO();
+  }
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  closeModal('modal-fc-step2');
+  renderFcReturnList();
+  renderFuelCards();
+  if(adminLoggedIn) renderSettings();
+  alert('✅ รับคืนการ์ดสำเร็จ! มูลค่าคงเหลือ: ฿'+Number(fc?.value||0).toLocaleString('th-TH'));
+}
+
+function openFcAdminReturn(){
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
+  const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
+  document.getElementById('fc-admin-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}`;
+  document.getElementById('fc-admin-used').value='';
+  document.getElementById('fc-admin-pass').value='';
+  document.getElementById('fc-admin-err').style.display='none';
+  openModal('modal-fc-admin-return');
+}
+
+function submitFcAdminReturn(){
+  const pass=document.getElementById('fc-admin-pass').value;
+  const used=document.getElementById('fc-admin-used').value;
+  const errEl=document.getElementById('fc-admin-err');
+  errEl.style.display='none';
+  if(pass!==db.adminPass){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
+  if(used===''){errEl.textContent='กรุณากรอกยอดที่ใช้ไป';errEl.style.display='flex';return;}
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
+  if(!b) return;
+  b.returnStep='pending';
+  b._adminReturn=true;
+  b.usedAmount=Number(used)||0;
+  syncNow();
+  closeModal('modal-fc-admin-return');
+  renderFcReturnList();
+  alert('✅ แจ้งคืนการ์ดสำเร็จ (โดยแอดมิน) กรุณาให้เจ้าหน้าที่ยืนยัน');
+}
+
+// ---- ADMIN: จัดการการ์ดน้ำมัน ----
+function renderFcSettings(){
+  const el=document.getElementById('fc-list-settings');
+  if(!el) return;
+  const cards=(db.fuelCards||[]).filter(fc=>fc.active!==false);
+  if(!cards.length){el.innerHTML='<p style="color:var(--g400);font-size:13px">ยังไม่มีการ์ดน้ำมัน</p>';return;}
+  el.innerHTML=cards.map(fc=>`
+    <div class="staff-item">
+      <span class="staff-name">💳 ${fc.name}</span>
+      <span style="font-size:12px;color:var(--g600)">฿${Number(fc.value||0).toLocaleString('th-TH')}</span>
+      <button class="btn btn-outline btn-sm" onclick="editFcValue('${fc.id}')">แก้มูลค่า</button>
+      <button class="btn btn-danger btn-sm" onclick="removeFuelCard('${fc.id}')">ลบ</button>
+    </div>`).join('');
+}
+
+function addFuelCard(){
+  const name=document.getElementById('new-fc-name').value.trim();
+  const value=document.getElementById('new-fc-value').value;
+  if(!name||value===''){alert('กรุณากรอกชื่อและมูลค่าการ์ด');return;}
+  if(!db.fuelCards) db.fuelCards=[];
+  db.fuelCards.push({id:'fc'+Date.now(),name,value:Number(value),active:true,createdAt:nowISO()});
+  document.getElementById('new-fc-name').value='';
+  document.getElementById('new-fc-value').value='';
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderFcSettings();renderFuelCards();
+}
+
+function removeFuelCard(id){
+  if(!confirm('ยืนยันการลบการ์ดน้ำมันนี้?'))return;
+  db.fuelCards=(db.fuelCards||[]).filter(f=>f.id!==id);
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderFcSettings();renderFuelCards();
+}
+
+function editFcValue(id){
+  const fc=(db.fuelCards||[]).find(f=>f.id===id);
+  if(!fc) return;
+  const val=prompt('แก้มูลค่าของ '+fc.name+' (บาท)', fc.value||0);
+  if(val===null) return;
+  if(!/^\d+$/.test(val.trim())){alert('กรุณากรอกตัวเลขเท่านั้น');return;}
+  fc.value=Number(val.trim());
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  renderFcSettings();renderFuelCards();
+}
+
+
+// ---- FUEL PRICE & UNIT ----
+function getFuelPrice(){
+  return Number(db.fuelPrice||0);
+}
+
+function saveFuelPrice(){
+  const val = document.getElementById('fuel-price-input').value.trim();
+  if(!val||isNaN(val)){alert('กรุณากรอกราคาน้ำมันที่ถูกต้อง');return;}
+  db.fuelPrice = Number(val);
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  }
+  updateFuelPriceDisplay();
+  alert('✅ บันทึกราคาน้ำมัน ฿'+Number(val).toFixed(2)+'/ลิตร แล้ว');
+}
+
+function updateFuelPriceDisplay(){
+  const el=document.getElementById('fuel-price-display');
+  const inp=document.getElementById('fuel-price-input');
+  if(el){
+    const price=getFuelPrice();
+    el.textContent = price>0 ? 'ราคาปัจจุบัน: ฿'+price.toFixed(2)+'/ลิตร' : '(ยังไม่ได้ตั้งราคา)';
+  }
+  if(inp && !inp.value && getFuelPrice()>0) inp.value=getFuelPrice();
+}
+
+function onFuelUnitChange(prefix){
+  const unit=document.getElementById(prefix+'-fuel-unit').value;
+  const calcEl=document.getElementById(prefix+'-fuel-calc');
+  const inp=document.getElementById(prefix+'-fuel');
+  if(unit==='liter'){
+    const price=getFuelPrice();
+    if(!price){alert('กรุณาให้แอดมินตั้งราคาน้ำมันในหน้าตั้งค่าก่อน');document.getElementById(prefix+'-fuel-unit').value='baht';return;}
+    inp.placeholder='จำนวนลิตร เช่น 10';
+    calcEl.style.display='block';
+    updateFuelCalc(prefix);
+    inp.oninput=()=>updateFuelCalc(prefix);
+  } else {
+    inp.placeholder='จำนวนเงิน เช่น 300';
+    calcEl.style.display='none';
+    inp.oninput=null;
+  }
+}
+
+function updateFuelCalc(prefix){
+  const liters=Number(document.getElementById(prefix+'-fuel').value)||0;
+  const price=getFuelPrice();
+  const total=liters*price;
+  const el=document.getElementById(prefix+'-fuel-calc');
+  if(el) el.textContent=liters>0?`${liters} ลิตร × ฿${price.toFixed(2)} = ฿${total.toFixed(2)}`:'';
+}
+
+function getFuelBahtValue(prefix){
+  const unit=document.getElementById(prefix+'-fuel-unit')?.value||'baht';
+  const val=Number(document.getElementById(prefix+'-fuel').value)||0;
+  if(unit==='liter') return Math.round(val*getFuelPrice()*100)/100;
+  return val;
+}
+
 // Auto sync every 15s
 setInterval(pullFromGSheet,10000);
 setInterval(refreshSigCacheBackground,60000);
@@ -2532,7 +2951,7 @@ function submitPermitForm(){
   const detail=document.getElementById('pf-detail').value.trim();
   const car=getSelectedCar();
   const cartype=document.getElementById('pf-cartype').value.trim();
-  const fuel=document.getElementById('pf-fuel').value;
+  const fuel=getFuelBahtValue('pf');
   const date=document.getElementById('pf-date').value;
   const empSigName=document.getElementById('pf-emp-sig-name').value.trim();
   const errEl=document.getElementById('permit-form-err');
@@ -2826,5 +3245,123 @@ function renderPrintPage(p){
     </div>
   </div>
 </div>
+
+<!-- MODAL: FUEL CARD BOOKING -->
+<div class="modal-overlay" id="modal-fc-book">
+  <div class="modal">
+    <div class="modal-title">💳 จองการ์ดน้ำมัน</div>
+    <div id="fc-book-info" class="alert alert-info" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>ชื่อผู้จอง *</label><input type="text" id="fc-name" placeholder="ชื่อ-นามสกุล"></div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>วันที่เริ่มใช้ *</label><input type="datetime-local" id="fc-start"></div>
+      <div class="form-row"><label>วันที่คืน *</label><input type="datetime-local" id="fc-end"></div>
+    </div>
+    <div class="form-row"><label>เหตุผล / วัตถุประสงค์ *</label><input type="text" id="fc-reason" placeholder="ระบุเหตุผล"></div>
+    <div class="form-row">
+      <label>🔐 ตั้งรหัส PIN 4 หลัก *</label>
+      <div class="pin-input">
+        <input type="password" maxlength="1" id="fcpin1" inputmode="numeric" oninput="pinNext(this,'fcpin2')">
+        <input type="password" maxlength="1" id="fcpin2" inputmode="numeric" oninput="pinNext(this,'fcpin3')" onkeydown="pinBack(event,this,'fcpin1')">
+        <input type="password" maxlength="1" id="fcpin3" inputmode="numeric" oninput="pinNext(this,'fcpin4')" onkeydown="pinBack(event,this,'fcpin2')">
+        <input type="password" maxlength="1" id="fcpin4" inputmode="numeric" onkeydown="pinBack(event,this,'fcpin3')">
+      </div>
+    </div>
+    <div id="fc-book-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-fc-book')">ปิด</button>
+      <button class="btn btn-primary" onclick="submitFcBooking()">✅ ยืนยันจองการ์ด</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FUEL CARD SUCCESS -->
+<div class="modal-overlay" id="modal-fc-success">
+  <div class="modal" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:10px">✅</div>
+    <div class="modal-title" style="justify-content:center">จองการ์ดน้ำมันสำเร็จ!</div>
+    <div id="fc-success-detail" style="font-size:14px;color:var(--g600);margin-bottom:6px"></div>
+    <div class="alert alert-warning" style="text-align:left;margin:12px 0">
+      <div>🔐 <b>รหัส PIN ของคุณ:</b> <span id="fc-success-pin" style="font-size:20px;letter-spacing:6px;font-weight:700"></span><br>
+      <span style="font-size:12px">จำรหัสนี้ไว้ — ใช้ยืนยันตอนยกเลิกหรือคืนการ์ด</span></div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="closeModal('modal-fc-success')">รับทราบ</button>
+  </div>
+</div>
+
+<!-- MODAL: FUEL CARD STEP1 RETURN -->
+<div class="modal-overlay" id="modal-fc-step1">
+  <div class="modal">
+    <div style="text-align:center;font-weight:700;font-size:13px;color:#dc2626;animation:blink-red 1s ease-in-out infinite;margin-bottom:14px;padding:8px;background:#fef2f2;border-radius:8px;border:1.5px solid #fca5a5">
+      💳 โปรดตรวจสอบยอดเงินในการ์ดก่อนคืน
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">1</span>
+      <div class="modal-title" style="margin:0">ผู้ยืมแจ้งคืนการ์ด</div>
+    </div>
+    <div id="fc-s1-info" class="alert alert-info" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>ยอดที่ใช้ไป (บาท)</label>
+      <input type="number" id="fc-s1-used" placeholder="เช่น 500" min="0" inputmode="numeric">
+      <div style="font-size:12px;color:var(--g600);margin-top:4px">ถ้าไม่ได้ใช้ ใส่ 0</div>
+    </div>
+    <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
+    <div class="pin-input">
+      <input type="password" maxlength="1" id="fc1pin1" inputmode="numeric" oninput="pinNext(this,'fc1pin2')">
+      <input type="password" maxlength="1" id="fc1pin2" inputmode="numeric" oninput="pinNext(this,'fc1pin3')" onkeydown="pinBack(event,this,'fc1pin1')">
+      <input type="password" maxlength="1" id="fc1pin3" inputmode="numeric" oninput="pinNext(this,'fc1pin4')" onkeydown="pinBack(event,this,'fc1pin2')">
+      <input type="password" maxlength="1" id="fc1pin4" inputmode="numeric" onkeydown="pinBack(event,this,'fc1pin3')">
+    </div>
+    <div id="fc-s1-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-fc-step1')">ปิด</button>
+      <button class="btn btn-warning btn-sm" onclick="closeModal('modal-fc-step1');openFcAdminReturn()">🔒 แอดมินคืนแทน</button>
+      <button class="btn btn-primary" onclick="submitFcStep1()">➡️ แจ้งคืนการ์ด</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FUEL CARD STEP2 RETURN -->
+<div class="modal-overlay" id="modal-fc-step2">
+  <div class="modal">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="background:var(--success);color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">2</span>
+      <div class="modal-title" style="margin:0">เจ้าหน้าที่ยืนยันรับคืนการ์ด</div>
+    </div>
+    <div id="fc-s2-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>ยอดที่ใช้ไป (บาท) *</label>
+      <input type="number" id="fc-s2-used" placeholder="เช่น 500" min="0" inputmode="numeric">
+    </div>
+    <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
+      <select id="fc-s2-staff"></select>
+    </div>
+    <div class="form-row"><label>รหัสของเจ้าหน้าที่</label>
+      <input type="password" id="fc-s2-code" placeholder="ใส่รหัส">
+    </div>
+    <div id="fc-s2-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-fc-step2')">ปิด</button>
+      <button class="btn btn-success" onclick="submitFcStep2()">✅ ยืนยันรับกุญแจคืน</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FUEL CARD ADMIN RETURN -->
+<div class="modal-overlay" id="modal-fc-admin-return">
+  <div class="modal">
+    <div class="modal-title">🔒 แอดมินยืนยันคืนการ์ดแทน</div>
+    <div id="fc-admin-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>ยอดที่ใช้ไป (บาท)</label>
+      <input type="number" id="fc-admin-used" placeholder="เช่น 500" min="0" inputmode="numeric">
+    </div>
+    <div class="form-row"><label>รหัสแอดมิน</label>
+      <input type="password" id="fc-admin-pass" placeholder="ใส่รหัสแอดมิน">
+    </div>
+    <div id="fc-admin-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-fc-admin-return')">ปิด</button>
+      <button class="btn btn-success" onclick="submitFcAdminReturn()">✅ ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
