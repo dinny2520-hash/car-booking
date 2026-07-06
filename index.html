@@ -2307,13 +2307,22 @@ function confirmDeletePermit(){
   }
 
   const _permitIdToDelete = _deletePermitId;
+  const _permitToArchive = {...p}; // เก็บสำเนาก่อนลบ
+
+  // Archive permit ก่อนลบ
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
+  if(gsUrl&&db.syncEnabled){
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'archivepermit', permit:_permitToArchive})
+    }).catch(()=>{});
+  }
+
   db.permits = db.permits.filter(x=>x.id!==_permitIdToDelete);
   markDeleted('deletedPermitIds', _permitIdToDelete);
   deleteSigFromSheet(_permitIdToDelete);
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
     const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
