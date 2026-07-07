@@ -1005,7 +1005,9 @@ function submitBooking(){
   const car=db.cars.find(c=>c.id===selectedCarId&&c.active);
   if(!car){return showErr('ไม่พบรถที่เลือก กรุณาเลือกรถใหม่อีกครั้ง');}
   if(car.inService===true){return showErr('รถคันนี้อยู่ระหว่างเช็คระยะ/ซ่อม ไม่สามารถจองได้');}
-  if(!isCarFreeFor(selectedCarId,start,end,null)){return showErr('ขออภัย! ช่วงเวลานี้มีการจองทับซ้อนอยู่แล้ว กรุณาเลือกช่วงเวลาอื่น');}
+  if(!isCarFreeFor(selectedCarId,start,end,null)){
+    return showConflictErr('⛔ ช่วงเวลานี้มีคนจองไว้แล้ว<br>กรุณาเลือกช่วงวันเวลาใหม่');
+  }
   const bk={id:genId(),carId:selectedCarId,name,startDt:start,endDt:end,dest,reason,pin,status:'booked',createdAt:nowISO()};
   db.bookings.unshift(bk);
   const _syncTs=new Date().toISOString(); db._lastSync=_syncTs;
@@ -2309,21 +2311,18 @@ function confirmDeletePermit(){
   const _permitIdToDelete = _deletePermitId;
   const _permitToArchive = {...p}; // เก็บสำเนาก่อนลบ
 
-  // Archive permit ก่อนลบ
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'archivepermit', permit:_permitToArchive})
-    }).catch(()=>{});
-  }
-
   db.permits = db.permits.filter(x=>x.id!==_permitIdToDelete);
   markDeleted('deletedPermitIds', _permitIdToDelete);
   deleteSigFromSheet(_permitIdToDelete);
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
+    // Archive permit หลังจากลบออกจากระบบแล้ว
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'archivepermit', permit:_permitToArchive})
+    }).catch(()=>{});
     const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
   }
@@ -2856,6 +2855,14 @@ function getFuelBahtValue(prefix){
   return val;
 }
 
+
+function showConflictErr(msg){
+  const errEl = document.getElementById('booking-err');
+  errEl.innerHTML = msg;
+  errEl.style.cssText = 'display:flex;font-size:16px;font-weight:800;color:#fff;background:#dc2626;border:none;border-radius:10px;padding:16px;text-align:center;justify-content:center;animation:blink-red 0.7s ease-in-out infinite;line-height:1.5';
+  errEl.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
 // Auto sync every 15s
 setInterval(pullFromGSheet,10000);
 setInterval(refreshSigCacheBackground,60000);
@@ -3374,4 +3381,3 @@ function renderPrintPage(p){
 
 </body>
 </html>
-          
