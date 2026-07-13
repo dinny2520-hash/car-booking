@@ -2700,8 +2700,13 @@ function openFcStep1(id){
   const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
   const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
   document.getElementById('fc-s1-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name} | มูลค่าคงเหลือ: <b>฿${Number(fc?.value||0).toLocaleString('th-TH')}</b>`;
-  document.getElementById('fc-s1-used').value='';
-  document.getElementById('fc-s1-inv').value='';
+  _fcFueled = null;
+  document.getElementById('fc-s1-yes').className='btn btn-outline btn-sm';
+  document.getElementById('fc-s1-no').className='btn btn-outline btn-sm';
+  document.getElementById('fc-s1-inv-section').style.display='none';
+  document.getElementById('fc-s1-reason-section').style.display='none';
+  if(document.getElementById('fc-s1-inv')) document.getElementById('fc-s1-inv').value='';
+  if(document.getElementById('fc-s1-noreason')) document.getElementById('fc-s1-noreason').value='';
   clearPins('fc1pin');
   document.getElementById('fc-s1-err').style.display='none';
   openModal('modal-fc-step1');
@@ -2718,7 +2723,16 @@ function submitFcStep1(){
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
-  b.invTrace=inv;
+  b.fueled=_fcFueled;
+  if(_fcFueled){
+    b.invTrace=inv;
+    // คืนยอดถ้าไม่ได้เติม handled at step2
+  } else {
+    b.noFuelReason=noReason;
+    // คืนยอดการ์ดกรณีไม่ได้เติม
+    const fcRef=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+    if(fcRef&&b.fuelAmount>0){fcRef.value=(Number(fcRef.value)||0)+b.fuelAmount; b.fuelAmount=0;}
+  }
   syncNow();
   closeModal('modal-fc-step1');
   renderFcReturnList();
@@ -2982,7 +2996,8 @@ function renderFcHistory(){
           <div style="font-weight:700">💳 ${fc?fc.name:'?'} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px">${stLabel}</span></div>
           <div style="font-size:13px;color:var(--g600);margin-top:4px">👤 ${b.name} | 📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
           <div style="font-size:13px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
-          ${b.invTrace?`<div style="font-size:13px;color:var(--g600)">🧾 ${b.invTrace}</div>`:''}
+          ${b.invTrace?`<div style="font-size:13px;color:var(--g600)">🧾 INV: ${b.invTrace}</div>`:''}
+          ${b.noFuelReason?`<div style="font-size:13px;color:var(--warning)">🚫 ไม่ได้เติม: ${b.noFuelReason}</div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
         </div>
@@ -3064,6 +3079,18 @@ function switchReturnMode(mode, el){
     if(cardSec) cardSec.style.display='block';
     renderFcReturnList();
   }
+}
+
+
+var _fcFueled = null;
+
+function setFcFueled(fueled){
+  _fcFueled = fueled;
+  document.getElementById('fc-s1-yes').className = fueled ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+  document.getElementById('fc-s1-no').className = !fueled ? 'btn btn-danger btn-sm' : 'btn btn-outline btn-sm';
+  document.getElementById('fc-s1-inv-section').style.display = fueled ? 'block' : 'none';
+  document.getElementById('fc-s1-reason-section').style.display = !fueled ? 'block' : 'none';
+  // ถ้าไม่เติม ให้คืนยอดกลับการ์ด
 }
 
 // Auto sync every 15s
@@ -3530,12 +3557,22 @@ function renderPrintPage(p){
       <div class="modal-title" style="margin:0">ผู้ยืมแจ้งคืนการ์ด</div>
     </div>
     <div id="fc-s1-info" class="alert alert-info" style="margin-bottom:14px"></div>
-    <div class="form-row"><label>ยอดที่ใช้ไป (บาท)</label>
-      <input type="number" id="fc-s1-used" placeholder="เช่น 500" min="0" inputmode="numeric">
-      <div style="font-size:12px;color:var(--g600);margin-top:4px">ถ้าไม่ได้ใช้ ใส่ 0</div>
+    <div class="form-row">
+      <label>เติมน้ำมันหรือไม่?</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" id="fc-s1-yes" onclick="setFcFueled(true)" style="flex:1">⛽ เติมน้ำมัน</button>
+        <button class="btn btn-outline btn-sm" id="fc-s1-no" onclick="setFcFueled(false)" style="flex:1">🚫 ไม่ได้เติม</button>
+      </div>
     </div>
-    <div class="form-row" style="margin-bottom:12px"><label>เลขที่ INV/TRACE# * (6 หลัก)</label>
-      <input type="text" id="fc-s1-inv" placeholder="______" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="letter-spacing:6px;font-size:18px;font-weight:700;text-align:center">
+    <div id="fc-s1-inv-section" style="display:none">
+      <div class="form-row"><label>เลข INV/TRACE# * (6 หลัก)</label>
+        <input type="text" id="fc-s1-inv" placeholder="______" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="letter-spacing:6px;font-size:18px;font-weight:700;text-align:center">
+      </div>
+    </div>
+    <div id="fc-s1-reason-section" style="display:none">
+      <div class="form-row"><label>เหตุผลที่ไม่ได้เติมน้ำมัน *</label>
+        <input type="text" id="fc-s1-noreason" placeholder="ระบุเหตุผล">
+      </div>
     </div>
     <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
     <div class="pin-input">
