@@ -2742,19 +2742,24 @@ function openFcStep1(id){
 
 function submitFcStep1(){
   const pin=getModalPin('fc1pin');
-  const used=document.getElementById('fc-s1-used')?.value||'0';
-  const inv=document.getElementById('fc-s1-inv').value.trim();
-  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   const errEl=document.getElementById('fc-s1-err');
   errEl.style.display='none';
-  if(!inv){errEl.textContent='กรุณากรอกเลขที่ INV/TRACE#';errEl.style.display='flex';return;}
+  if(_fcFueled===null){errEl.textContent='กรุณาเลือกว่าเติมน้ำมันหรือไม่';errEl.style.display='flex';return;}
+  let inv='', noReason='';
+  if(_fcFueled){
+    inv=document.getElementById('fc-s1-inv').value.trim();
+    if(!/^\d{6}$/.test(inv)){errEl.textContent='กรุณากรอกเลข INV/TRACE# 6 หลัก';errEl.style.display='flex';return;}
+  } else {
+    noReason=document.getElementById('fc-s1-noreason').value.trim();
+    if(!noReason){errEl.textContent='กรุณาระบุเหตุผลที่ไม่ได้เติมน้ำมัน';errEl.style.display='flex';return;}
+  }
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
   b.fueled=_fcFueled;
   if(_fcFueled){
     b.invTrace=inv;
-    // คืนยอดถ้าไม่ได้เติม handled at step2
   } else {
     b.noFuelReason=noReason;
     // คืนยอดการ์ดกรณีไม่ได้เติม
