@@ -335,6 +335,11 @@ tr:hover td{background:var(--g50)}
           <tbody id="cs-tbody"></tbody>
         </table>
       </div>
+      </div><!-- /schedule-car-section -->
+      <div id="schedule-card-section" style="display:none">
+        <div class="card-title">💳 ตารางการจองการ์ดน้ำมัน</div>
+        <div id="fc-schedule-list"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -344,26 +349,33 @@ tr:hover td{background:var(--g50)}
   <div class="container">
     <div class="card">
       <div class="card-title">📜 ประวัติการจองทั้งหมด</div>
-      <div class="tabs">
-        <div class="tab active" onclick="filterHistory('all',this)">ทั้งหมด</div>
-        <div class="tab" onclick="filterHistory('in-use',this)">กำลังใช้งาน</div>
-        <div class="tab" onclick="filterHistory('upcoming',this)">รอใช้งาน</div>
-        <div class="tab" onclick="filterHistory('returned',this)">คืนแล้ว</div>
-        <div class="tab" onclick="filterHistory('cancelled',this)">ยกเลิก</div>
+      <div class="tab-bar" style="margin-bottom:10px">
+        <div class="tab active" onclick="switchHistoryMode('car',this)">🚗 ประวัติรถ</div>
+        <div class="tab" onclick="switchHistoryMode('card',this)">💳 ประวัติการ์ด</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <label style="font-size:13px;color:var(--g600);white-space:nowrap">📅 กรองตามวันที่:</label>
-        <input type="date" id="history-date-from" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
-        <span style="font-size:13px;color:var(--g600)">ถึง</span>
-        <input type="date" id="history-date-to" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
-        <button class="btn btn-outline btn-sm" onclick="clearHistoryDate()">ล้าง</button>
+      <div id="history-car-section">
+        <div class="tabs">
+          <div class="tab active" onclick="filterHistory('all',this)">ทั้งหมด</div>
+          <div class="tab" onclick="filterHistory('in-use',this)">กำลังใช้งาน</div>
+          <div class="tab" onclick="filterHistory('upcoming',this)">รอใช้งาน</div>
+          <div class="tab" onclick="filterHistory('returned',this)">คืนแล้ว</div>
+          <div class="tab" onclick="filterHistory('cancelled',this)">ยกเลิก</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <label style="font-size:13px;color:var(--g600);white-space:nowrap">📅 กรองตามวันที่:</label>
+          <input type="date" id="history-date-from" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+          <span style="font-size:13px;color:var(--g600)">ถึง</span>
+          <input type="date" id="history-date-to" onchange="renderHistory()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
+          <button class="btn btn-outline btn-sm" onclick="clearHistoryDate()">ล้าง</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>รถ</th><th>ผู้จอง</th><th>เริ่ม</th><th>คืน</th><th>สถานที่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+          <tbody id="history-tbody"></tbody>
+        </table></div>
       </div>
-      <div style="display:none">
+      <div id="history-card-section" style="display:none">
+        <div id="fc-history-list"></div>
       </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>รถ</th><th>ผู้จอง</th><th>เริ่ม</th><th>คืน</th><th>สถานที่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
-        <tbody id="history-tbody"></tbody>
-      </table></div>
     </div>
   </div>
 </div>
