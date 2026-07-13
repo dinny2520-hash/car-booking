@@ -2796,7 +2796,6 @@ function submitFcStep2(){
   if(staff.code!==code){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   if(!b) return;
-  const usedAmt=Number(used)||0;
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
