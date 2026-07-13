@@ -384,6 +384,16 @@ tr:hover td{background:var(--g50)}
 <div id="page-return" class="page">
   <div class="container">
 
+    <!-- แท็บสลับระหว่างรถและการ์ด -->
+    <div class="card" style="padding:10px 16px">
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchReturnMode('car',this)">🚗 คืนรถ</div>
+        <div class="tab" onclick="switchReturnMode('card',this)">💳 คืนการ์ด</div>
+      </div>
+    </div>
+
+    <!-- ส่วนคืนรถ -->
+    <div id="return-car-section">
     <!-- STEP 1: ผู้ยืม -->
     <div class="card">
       <div class="card-title">
@@ -402,6 +412,15 @@ tr:hover td{background:var(--g50)}
       </div>
       <div class="alert alert-warning" style="margin-bottom:14px">รายการด้านล่างคือรถที่ผู้ยืมแจ้งคืนแล้ว รอเจ้าหน้าที่กดยืนยันรับกุญแจ</div>
       <div id="step2-list"></div>
+    </div>
+    </div><!-- /return-car-section -->
+
+    <!-- ส่วนคืนการ์ด -->
+    <div id="return-card-section" style="display:none">
+      <div class="card">
+        <div class="card-title">💳 คืนการ์ดน้ำมัน</div>
+        <div id="fc-return-list"></div>
+      </div>
     </div>
 
   </div>
@@ -1135,7 +1154,6 @@ function confirmCancelAdmin(){
 
 // ---- RETURN (2 ขั้นตอน) ----
 function renderReturnList(){
-  renderFcReturnList();
   const n=new Date();
   // Step1: รถที่กำลังใช้งาน/เกินกำหนด และยังไม่ได้แจ้งคืน
   const step1Items=db.bookings.filter(b=>
@@ -2648,9 +2666,6 @@ function submitFcBooking(){
     setVal('uc-reason',reason);
     setVal('uc-empsig',name);
     setVal('uc-date',start.slice(0,10));
-    // เลือกการ์ดน้ำมันในช่องทะเบียน
-    const sel=document.getElementById('uc-car-select');
-    if(sel){sel.value='__other__';document.getElementById('uc-car-custom').style.display='block';setVal('uc-car-custom',fcName);}
     setVal('uc-fuel',fuelAmt);
     const deptEl=document.getElementById('uc-dept');
     if(deptEl){deptEl.focus();deptEl.scrollIntoView({behavior:'smooth',block:'center'});}
@@ -3029,6 +3044,22 @@ function renderFcSchedule(){
       }).join(''):'<div style="font-size:13px;color:var(--g400)">ไม่มีการจอง</div>'}
     </div>`;
   }).join('');
+}
+
+
+function switchReturnMode(mode, el){
+  document.querySelectorAll('#page-return .tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  if(el) el.classList.add('active');
+  const carSec=document.getElementById('return-car-section');
+  const cardSec=document.getElementById('return-card-section');
+  if(mode==='car'){
+    if(carSec) carSec.style.display='block';
+    if(cardSec) cardSec.style.display='none';
+  } else {
+    if(carSec) carSec.style.display='none';
+    if(cardSec) cardSec.style.display='block';
+    renderFcReturnList();
+  }
 }
 
 // Auto sync every 15s
