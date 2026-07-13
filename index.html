@@ -290,9 +290,9 @@ tr:hover td{background:var(--g50)}
 <div id="page-carschedule" class="page">
   <div class="container">
     <div class="card">
-      <div class="tab-bar" style="margin-bottom:12px">
-        <div class="tab active" onclick="switchScheduleMode('car',this)">🚗 ตารางรถ</div>
-        <div class="tab" onclick="switchScheduleMode('card',this)">💳 ตารางการ์ด</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-primary" id="stab-car" onclick="switchScheduleMode('car',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">🚗 ตารางรถ</button>
+        <button class="btn btn-outline" id="stab-card" onclick="switchScheduleMode('card',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">💳 ตารางการ์ด</button>
       </div>
       <div id="schedule-car-section">
       <div class="card-title">📅 ตารางการจองรายคัน</div>
@@ -349,9 +349,9 @@ tr:hover td{background:var(--g50)}
   <div class="container">
     <div class="card">
       <div class="card-title">📜 ประวัติการจองทั้งหมด</div>
-      <div class="tab-bar" style="margin-bottom:10px">
-        <div class="tab active" onclick="switchHistoryMode('car',this)">🚗 ประวัติรถ</div>
-        <div class="tab" onclick="switchHistoryMode('card',this)">💳 ประวัติการ์ด</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-primary" id="htab-car" onclick="switchHistoryMode('car',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">🚗 ประวัติรถ</button>
+        <button class="btn btn-outline" id="htab-card" onclick="switchHistoryMode('card',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">💳 ประวัติการ์ด</button>
       </div>
       <div id="history-car-section">
         <div class="tabs">
@@ -386,9 +386,9 @@ tr:hover td{background:var(--g50)}
 
     <!-- แท็บสลับระหว่างรถและการ์ด -->
     <div class="card" style="padding:10px 16px">
-      <div class="tab-bar">
-        <div class="tab active" onclick="switchReturnMode('car',this)">🚗 คืนรถ</div>
-        <div class="tab" onclick="switchReturnMode('card',this)">💳 คืนการ์ด</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="rtab-car" onclick="switchReturnMode('car',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">🚗 คืนรถ</button>
+        <button class="btn btn-outline" id="rtab-card" onclick="switchReturnMode('card',this)" style="flex:1;font-size:15px;padding:12px;border-radius:10px">💳 คืนการ์ด</button>
       </div>
     </div>
 
@@ -2995,8 +2995,10 @@ function renderFcHistory(){
 
 
 function switchHistoryMode(mode, el){
-  document.querySelectorAll('#page-history .tab-bar:first-child .tab').forEach(t=>t.classList.remove('active'));
-  if(el) el.classList.add('active');
+  document.getElementById('htab-car')?.classList.replace('btn-primary','btn-outline');
+  document.getElementById('htab-card')?.classList.replace('btn-primary','btn-outline');
+  if(mode==='car') document.getElementById('htab-car')?.classList.replace('btn-outline','btn-primary');
+  else document.getElementById('htab-card')?.classList.replace('btn-outline','btn-primary');
   const carSection = document.getElementById('history-car-section');
   const cardSection = document.getElementById('history-card-section');
   if(mode==='car'){
@@ -3011,8 +3013,10 @@ function switchHistoryMode(mode, el){
 
 
 function switchScheduleMode(mode, el){
-  document.querySelectorAll('#page-carschedule .tab-bar:first-child .tab').forEach(t=>t.classList.remove('active'));
-  if(el) el.classList.add('active');
+  document.getElementById('stab-car')?.classList.replace('btn-primary','btn-outline');
+  document.getElementById('stab-card')?.classList.replace('btn-primary','btn-outline');
+  if(mode==='car') document.getElementById('stab-car')?.classList.replace('btn-outline','btn-primary');
+  else document.getElementById('stab-card')?.classList.replace('btn-outline','btn-primary');
   const carSec=document.getElementById('schedule-car-section');
   const cardSec=document.getElementById('schedule-card-section');
   if(mode==='car'){
@@ -3048,8 +3052,10 @@ function renderFcSchedule(){
 
 
 function switchReturnMode(mode, el){
-  document.querySelectorAll('#page-return .tab-bar .tab').forEach(t=>t.classList.remove('active'));
-  if(el) el.classList.add('active');
+  document.getElementById('rtab-car')?.classList.replace('btn-primary','btn-outline');
+  document.getElementById('rtab-card')?.classList.replace('btn-primary','btn-outline');
+  if(mode==='car') document.getElementById('rtab-car')?.classList.replace('btn-outline','btn-primary');
+  else document.getElementById('rtab-card')?.classList.replace('btn-outline','btn-primary');
   const carSec=document.getElementById('return-car-section');
   const cardSec=document.getElementById('return-card-section');
   if(mode==='car'){
@@ -3530,8 +3536,8 @@ function renderPrintPage(p){
       <input type="number" id="fc-s1-used" placeholder="เช่น 500" min="0" inputmode="numeric">
       <div style="font-size:12px;color:var(--g600);margin-top:4px">ถ้าไม่ได้ใช้ ใส่ 0</div>
     </div>
-    <div class="form-row" style="margin-bottom:12px"><label>เลขที่ INV/TRACE# *</label>
-      <input type="text" id="fc-s1-inv" placeholder="เช่น INV-2026-001">
+    <div class="form-row" style="margin-bottom:12px"><label>เลขที่ INV/TRACE# * (6 หลัก)</label>
+      <input type="text" id="fc-s1-inv" placeholder="______" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="letter-spacing:6px;font-size:18px;font-weight:700;text-align:center">
     </div>
     <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
     <div class="pin-input">
