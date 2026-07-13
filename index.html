@@ -290,6 +290,11 @@ tr:hover td{background:var(--g50)}
 <div id="page-carschedule" class="page">
   <div class="container">
     <div class="card">
+      <div class="tab-bar" style="margin-bottom:12px">
+        <div class="tab active" onclick="switchScheduleMode('car',this)">🚗 ตารางรถ</div>
+        <div class="tab" onclick="switchScheduleMode('card',this)">💳 ตารางการ์ด</div>
+      </div>
+      <div id="schedule-car-section">
       <div class="card-title">📅 ตารางการจองรายคัน</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <label style="font-size:13px;font-weight:600;color:var(--g600)">เลือกรถ:</label>
@@ -2572,12 +2577,22 @@ function selectFuelCard(id){
   if(bk){ alert('การ์ดนี้กำลังถูกใช้งานอยู่ ไม่สามารถจองได้'); return; }
   selectedFcId = id;
   renderFuelCards();
-  // เปิด modal จอง
   document.getElementById('fc-book-info').innerHTML = `<b>${fc.name}</b> | มูลค่าคงเหลือ: <b>฿${Number(fc.value||0).toLocaleString('th-TH')}</b>`;
-  document.getElementById('fc-name').value='';
-  document.getElementById('fc-reason').value='';
-  document.getElementById('fc-start').value='';
-  document.getElementById('fc-end').value='';
+  ['fc-name','fc-reason','fc-start','fc-end'].forEach(x=>{document.getElementById(x).value='';});
+  document.getElementById('fc-fuel').value='';
+  document.getElementById('fc-fuel-unit').value='baht';
+  document.getElementById('fc-fuel-calc').style.display='none';
+  document.getElementById('fc-balance-after').textContent='';
+  document.getElementById('fc-fuel').oninput = function(){
+    const unit=document.getElementById('fc-fuel-unit').value;
+    const val=Number(this.value)||0;
+    const baht=unit==='liter'?val*getFuelPrice():val;
+    const after=Math.max(0,(Number(fc.value)||0)-baht);
+    const el=document.getElementById('fc-balance-after');
+    if(val>0) el.textContent='ยอดหลังเบิก: ฿'+after.toLocaleString('th-TH',{minimumFractionDigits:2});
+    else el.textContent='';
+    if(unit==='liter') updateFuelCalc('fc');
+  };
   clearPins('fcpin');
   document.getElementById('fc-book-err').style.display='none';
   openModal('modal-fc-book');
@@ -2589,23 +2604,45 @@ function submitFcBooking(){
   const start=document.getElementById('fc-start').value;
   const end=document.getElementById('fc-end').value;
   const pin=getModalPin('fcpin');
+  const fuelAmt=getFuelBahtValue('fc');
+  const fuelRaw=document.getElementById('fc-fuel').value;
   const errEl=document.getElementById('fc-book-err');
   errEl.style.display='none';
-  if(!name||!reason||!start||!end){errEl.textContent='กรุณากรอกข้อมูลให้ครบ';errEl.style.display='flex';return;}
+  if(!name||!reason||!start||!end||fuelRaw===''){errEl.textContent='กรุณากรอกข้อมูลให้ครบ';errEl.style.display='flex';return;}
   if(new Date(start)>=new Date(end)){errEl.textContent='เวลาคืนต้องมาหลังเวลาเริ่ม';errEl.style.display='flex';return;}
   if(pin.length!==4){errEl.textContent='กรุณาตั้ง PIN 4 หลัก';errEl.style.display='flex';return;}
   const fc=(db.fuelCards||[]).find(f=>f.id===selectedFcId);
   if(!fc){return;}
-  const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,reason,startDt:start,endDt:end,pin,status:'in-use',createdAt:nowISO()};
+  if(fuelAmt>(Number(fc.value)||0)){errEl.textContent='ยอดเบิกมากกว่ายอดคงเหลือในการ์ด';errEl.style.display='flex';return;}
+  // หักยอดการ์ดทันที
+  const prevValue = Number(fc.value)||0;
+  fc.value = Math.max(0, prevValue - fuelAmt);
+  fc.lastUsed = nowISO();
+  const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,reason,startDt:start,endDt:end,pin,
+    fuelAmount:fuelAmt,fuelUnit:document.getElementById('fc-fuel-unit').value,
+    fuelRaw:Number(fuelRaw),status:'in-use',createdAt:nowISO()};
   if(!db.fuelCardBookings) db.fuelCardBookings=[];
   db.fuelCardBookings.unshift(bk);
+  const fcName=fc.name;
   closeModal('modal-fc-book');
-  document.getElementById('fc-success-detail').innerHTML=`<b>${fc.name}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}`;
-  document.getElementById('fc-success-pin').textContent=pin;
   selectedFcId=null;
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   renderFuelCards();
-  openModal('modal-fc-success');
+  // พาไปหน้าใบออกนอกสถานที่ทันที พร้อม auto-fill
+  showPage('usecart', document.getElementById('nav-usecart'));
+  setTimeout(()=>{
+    const setVal=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
+    setVal('uc-name',name);
+    setVal('uc-reason',reason);
+    setVal('uc-empsig',name);
+    setVal('uc-date',start.slice(0,10));
+    // เลือกการ์ดน้ำมันในช่องทะเบียน
+    const sel=document.getElementById('uc-car-select');
+    if(sel){sel.value='__other__';document.getElementById('uc-car-custom').style.display='block';setVal('uc-car-custom',fcName);}
+    setVal('uc-fuel',fuelAmt);
+    const deptEl=document.getElementById('uc-dept');
+    if(deptEl){deptEl.focus();deptEl.scrollIntoView({behavior:'smooth',block:'center'});}
+  },300);
 }
 
 // ---- FUEL CARD RETURN ----
@@ -2626,6 +2663,7 @@ function renderFcReturnList(){
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
         ${isPending?`<button class="btn btn-success btn-sm" onclick="openFcStep2('${b.id}')">✅ เจ้าหน้าที่รับคืน</button>`:''}
+        ${!isPending?`<button class="btn btn-danger btn-sm" onclick="openFcCancel('${b.id}')">❌ ยกเลิก</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2637,6 +2675,7 @@ function openFcStep1(id){
   const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
   document.getElementById('fc-s1-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name} | มูลค่าคงเหลือ: <b>฿${Number(fc?.value||0).toLocaleString('th-TH')}</b>`;
   document.getElementById('fc-s1-used').value='';
+  document.getElementById('fc-s1-inv').value='';
   clearPins('fc1pin');
   document.getElementById('fc-s1-err').style.display='none';
   openModal('modal-fc-step1');
@@ -2644,15 +2683,16 @@ function openFcStep1(id){
 
 function submitFcStep1(){
   const pin=getModalPin('fc1pin');
-  const used=document.getElementById('fc-s1-used').value;
+  const used=document.getElementById('fc-s1-used')?.value||'0';
+  const inv=document.getElementById('fc-s1-inv').value.trim();
   const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   const errEl=document.getElementById('fc-s1-err');
   errEl.style.display='none';
-  if(used===''){errEl.textContent='กรุณากรอกยอดที่ใช้ไป (ถ้าไม่ได้ใช้ใส่ 0)';errEl.style.display='flex';return;}
+  if(!inv){errEl.textContent='กรุณากรอกเลขที่ INV/TRACE#';errEl.style.display='flex';return;}
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
-  b.usedAmount=Number(used);
+  b.invTrace=inv;
   syncNow();
   closeModal('modal-fc-step1');
   renderFcReturnList();
@@ -2664,7 +2704,7 @@ function openFcStep2(id){
   const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
   const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
   document.getElementById('fc-s2-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}<br>✅ ผู้ยืมยืนยันแล้ว | ยอดที่แจ้งใช้: <b>฿${Number(b?.usedAmount||0).toLocaleString('th-TH')}</b>`;
-  document.getElementById('fc-s2-used').value=b?.usedAmount??'';
+  document.getElementById('fc-s2-inv-display').innerHTML=b?.invTrace?`🧾 INV/TRACE#: <b>${b.invTrace}</b>`:'ไม่มีเลข INV/TRACE#';
   document.getElementById('fc-s2-code').value='';
   document.getElementById('fc-s2-err').style.display='none';
   const opts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
@@ -2675,28 +2715,23 @@ function openFcStep2(id){
 function submitFcStep2(){
   const staffId=document.getElementById('fc-s2-staff').value;
   const code=document.getElementById('fc-s2-code').value.trim();
-  const used=document.getElementById('fc-s2-used').value;
   const errEl=document.getElementById('fc-s2-err');
   errEl.style.display='none';
-  if(used===''){errEl.textContent='กรุณากรอกยอดที่ใช้ไป';errEl.style.display='flex';return;}
+  // ยอดถูกหักตอนจองแล้ว ไม่ต้องกรอกซ้ำ
   const staff=db.staff.find(s=>s.id===staffId);
   if(!staff){errEl.textContent='กรุณาเลือกเจ้าหน้าที่';errEl.style.display='flex';return;}
   if(staff.code!==code){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   if(!b) return;
   const usedAmt=Number(used)||0;
-  b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();b.usedAmount=usedAmt;
-  // หักมูลค่าการ์ด
+  b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-  if(fc && usedAmt>0){
-    fc.value=Math.max(0,(Number(fc.value)||0)-usedAmt);
-    fc.lastUsed=nowISO();
-  }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-fc-step2');
   renderFcReturnList();
   renderFuelCards();
   if(adminLoggedIn) renderSettings();
+  renderFcHistory();
   alert('✅ รับคืนการ์ดสำเร็จ! มูลค่าคงเหลือ: ฿'+Number(fc?.value||0).toLocaleString('th-TH'));
 }
 
@@ -2861,6 +2896,127 @@ function showConflictErr(msg){
   errEl.innerHTML = msg;
   errEl.style.cssText = 'display:flex;font-size:16px;font-weight:800;color:#fff;background:#dc2626;border:none;border-radius:10px;padding:16px;text-align:center;justify-content:center;animation:blink-red 0.7s ease-in-out infinite;line-height:1.5';
   errEl.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+
+// ---- FUEL CARD CANCEL ----
+var _fcCancelId = null;
+
+function openFcCancel(id){
+  _fcCancelId = id;
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
+  const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
+  document.getElementById('fc-cancel-info').innerHTML=`💳 <b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}`;
+  clearPins('fcc');
+  document.getElementById('fcc-admin').value='';
+  document.getElementById('fc-cancel-err').style.display='none';
+  openModal('modal-fc-cancel');
+}
+
+function confirmFcCancel(){
+  const pin=getModalPin('fcc');
+  const adminPass=document.getElementById('fcc-admin').value.trim();
+  const errEl=document.getElementById('fc-cancel-err');
+  errEl.style.display='none';
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===_fcCancelId);
+  if(!b) return;
+  let authorized=false;
+  if(adminPass===db.adminPass) authorized=true;
+  else if(pin.length===4&&pin===b.pin) authorized=true;
+  if(!authorized){errEl.textContent='PIN หรือรหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
+  // คืนยอดการ์ด
+  const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+  if(fc&&b.fuelAmount>0){
+    fc.value=(Number(fc.value)||0)+b.fuelAmount;
+  }
+  b.status='cancelled';b.cancelledAt=nowISO();
+  syncNow();
+  closeModal('modal-fc-cancel');
+  renderFcReturnList();
+  renderFuelCards();
+  renderFcHistory();
+  alert('✅ ยกเลิกการจองการ์ดสำเร็จ ยอดถูกคืนกลับแล้ว');
+}
+
+// ---- FUEL CARD HISTORY ----
+function renderFcHistory(){
+  const el=document.getElementById('fc-history-list');
+  if(!el) return;
+  const bks=(db.fuelCardBookings||[]).slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  if(!bks.length){
+    el.innerHTML='<div class="empty-state"><div style="font-size:30px">💳</div><div>ยังไม่มีประวัติการยืมการ์ด</div></div>';return;
+  }
+  el.innerHTML=bks.map(b=>{
+    const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+    const stColor=b.status==='returned'?'var(--success)':b.status==='cancelled'?'var(--g400)':b.returnStep==='pending'?'var(--warning)':'var(--primary)';
+    const stLabel=b.status==='returned'?'✅ คืนแล้ว':b.status==='cancelled'?'❌ ยกเลิก':b.returnStep==='pending'?'⏳ รอคืน':'🔵 ใช้งานอยู่';
+    return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-weight:700">💳 ${fc?fc.name:'?'} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px">${stLabel}</span></div>
+          <div style="font-size:13px;color:var(--g600);margin-top:4px">👤 ${b.name} | 📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
+          <div style="font-size:13px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
+          ${b.invTrace?`<div style="font-size:13px;color:var(--g600)">🧾 ${b.invTrace}</div>`:''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${b.status==='in-use'?`<button class="btn btn-danger btn-sm" onclick="openFcCancel('${b.id}')">❌ ยกเลิก</button>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+
+function switchHistoryMode(mode, el){
+  document.querySelectorAll('#page-history .tab-bar:first-child .tab').forEach(t=>t.classList.remove('active'));
+  if(el) el.classList.add('active');
+  const carSection = document.getElementById('history-car-section');
+  const cardSection = document.getElementById('history-card-section');
+  if(mode==='car'){
+    if(carSection) carSection.style.display='block';
+    if(cardSection) cardSection.style.display='none';
+  } else {
+    if(carSection) carSection.style.display='none';
+    if(cardSection) cardSection.style.display='block';
+    renderFcHistory();
+  }
+}
+
+
+function switchScheduleMode(mode, el){
+  document.querySelectorAll('#page-carschedule .tab-bar:first-child .tab').forEach(t=>t.classList.remove('active'));
+  if(el) el.classList.add('active');
+  const carSec=document.getElementById('schedule-car-section');
+  const cardSec=document.getElementById('schedule-card-section');
+  if(mode==='car'){
+    if(carSec) carSec.style.display='block';
+    if(cardSec) cardSec.style.display='none';
+  } else {
+    if(carSec) carSec.style.display='none';
+    if(cardSec) cardSec.style.display='block';
+    renderFcSchedule();
+  }
+}
+
+function renderFcSchedule(){
+  const el=document.getElementById('fc-schedule-list');
+  if(!el) return;
+  const cards=(db.fuelCards||[]).filter(f=>f.active!==false);
+  if(!cards.length){el.innerHTML='<p style="color:var(--g400)">ยังไม่มีการ์ดน้ำมันในระบบ</p>';return;}
+  el.innerHTML=cards.map(fc=>{
+    const bks=(db.fuelCardBookings||[]).filter(b=>b.fcId===fc.id&&b.status!=='cancelled').sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:8px">💳 ${fc.name} | มูลค่าคงเหลือ: ฿${Number(fc.value||0).toLocaleString('th-TH')}</div>
+      ${bks.length?bks.map(b=>{
+        const stColor=b.status==='returned'?'var(--success)':b.returnStep==='pending'?'var(--warning)':'var(--primary)';
+        return `<div style="border-left:3px solid ${stColor};padding:6px 10px;margin-bottom:6px;border-radius:0 6px 6px 0;background:var(--g50)">
+          <div style="font-size:13px;font-weight:600">👤 ${b.name}</div>
+          <div style="font-size:12px;color:var(--g600)">📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
+          <div style="font-size:12px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
+        </div>`;
+      }).join(''):'<div style="font-size:13px;color:var(--g400)">ไม่มีการจอง</div>'}
+    </div>`;
+  }).join('');
 }
 
 // Auto sync every 15s
@@ -3274,6 +3430,18 @@ function renderPrintPage(p){
     </div>
     <div class="form-row"><label>เหตุผล / วัตถุประสงค์ *</label><input type="text" id="fc-reason" placeholder="ระบุเหตุผล"></div>
     <div class="form-row">
+      <label>⛽ ต้องการเบิกน้ำมัน *</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="fc-fuel-unit" onchange="onFuelUnitChange('fc')" style="padding:9px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none">
+          <option value="baht">บาท</option>
+          <option value="liter">ลิตร</option>
+        </select>
+        <input type="number" id="fc-fuel" placeholder="กรอกจำนวน" min="0" step="0.01" style="flex:1;min-width:120px">
+      </div>
+      <div id="fc-fuel-calc" style="font-size:12px;color:var(--success);margin-top:4px;display:none"></div>
+      <div id="fc-balance-after" style="font-size:12px;color:var(--g600);margin-top:4px"></div>
+    </div>
+    <div class="form-row">
       <label>🔐 ตั้งรหัส PIN 4 หลัก *</label>
       <div class="pin-input">
         <input type="password" maxlength="1" id="fcpin1" inputmode="numeric" oninput="pinNext(this,'fcpin2')">
@@ -3319,6 +3487,9 @@ function renderPrintPage(p){
       <input type="number" id="fc-s1-used" placeholder="เช่น 500" min="0" inputmode="numeric">
       <div style="font-size:12px;color:var(--g600);margin-top:4px">ถ้าไม่ได้ใช้ ใส่ 0</div>
     </div>
+    <div class="form-row" style="margin-bottom:12px"><label>เลขที่ INV/TRACE# *</label>
+      <input type="text" id="fc-s1-inv" placeholder="เช่น INV-2026-001">
+    </div>
     <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง</div>
     <div class="pin-input">
       <input type="password" maxlength="1" id="fc1pin1" inputmode="numeric" oninput="pinNext(this,'fc1pin2')">
@@ -3343,9 +3514,7 @@ function renderPrintPage(p){
       <div class="modal-title" style="margin:0">เจ้าหน้าที่ยืนยันรับคืนการ์ด</div>
     </div>
     <div id="fc-s2-info" class="alert alert-warning" style="margin-bottom:14px"></div>
-    <div class="form-row"><label>ยอดที่ใช้ไป (บาท) *</label>
-      <input type="number" id="fc-s2-used" placeholder="เช่น 500" min="0" inputmode="numeric">
-    </div>
+    <div id="fc-s2-inv-display" class="alert alert-info" style="margin-bottom:12px;font-size:13px"></div>
     <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
       <select id="fc-s2-staff"></select>
     </div>
@@ -3375,6 +3544,31 @@ function renderPrintPage(p){
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-fc-admin-return')">ปิด</button>
       <button class="btn btn-success" onclick="submitFcAdminReturn()">✅ ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL: FUEL CARD CANCEL -->
+<div class="modal-overlay" id="modal-fc-cancel">
+  <div class="modal">
+    <div class="modal-title">❌ ยกเลิกการจองการ์ด</div>
+    <div id="fc-cancel-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลัก</div>
+    <div class="pin-input">
+      <input type="password" maxlength="1" id="fcc1" inputmode="numeric" oninput="pinNext(this,'fcc2')">
+      <input type="password" maxlength="1" id="fcc2" inputmode="numeric" oninput="pinNext(this,'fcc3')" onkeydown="pinBack(event,this,'fcc1')">
+      <input type="password" maxlength="1" id="fcc3" inputmode="numeric" oninput="pinNext(this,'fcc4')" onkeydown="pinBack(event,this,'fcc2')">
+      <input type="password" maxlength="1" id="fcc4" inputmode="numeric" onkeydown="pinBack(event,this,'fcc3')">
+    </div>
+    <div style="text-align:center;margin:8px 0;color:var(--g400);font-size:13px">— หรือ —</div>
+    <div class="form-row"><label>รหัสแอดมิน</label>
+      <input type="password" id="fcc-admin" placeholder="รหัสแอดมิน">
+    </div>
+    <div id="fc-cancel-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-fc-cancel')">ปิด</button>
+      <button class="btn btn-danger" onclick="confirmFcCancel()">❌ ยืนยันยกเลิก</button>
     </div>
   </div>
 </div>
