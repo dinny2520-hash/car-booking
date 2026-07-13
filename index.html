@@ -2688,9 +2688,8 @@ function renderFcReturnList(){
       <div style="font-size:13px;color:var(--g600)">👤 ${b.name} | 📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
       <div style="font-size:13px;color:var(--g600)">📝 ${b.reason}</div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
+          ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
         ${isPending?`<button class="btn btn-success btn-sm" onclick="openFcStep2('${b.id}')">✅ เจ้าหน้าที่รับคืน</button>`:''}
-        ${!isPending?`<button class="btn btn-danger btn-sm" onclick="openFcCancel('${b.id}')">❌ ยกเลิก</button>`:''}
       </div>
     </div>`;
   }).join('');
