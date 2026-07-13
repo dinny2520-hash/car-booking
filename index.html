@@ -633,15 +633,18 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
-        <h3>📊 รายงานสรุปค่าน้ำมัน</h3>
-        <div style="font-size:13px;color:var(--g600);margin-bottom:14px">เลือกช่วงวันที่ที่ต้องการ แล้วดาวน์โหลดเป็นไฟล์ Excel — สรุปแยกตามแผนกให้อัตโนมัติ</div>
+        <h3>📊 รายงานสรุปค่าน้ำมัน (ใบ permit)</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:14px">ดาวน์โหลดรายงาน permit แยกรถ และการ์ดน้ำมัน</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
           <label style="font-size:13px;color:var(--g600);white-space:nowrap">ช่วงวันที่:</label>
           <input type="date" id="fuel-report-from" style="padding:7px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
           <span style="font-size:13px;color:var(--g600)">ถึง</span>
           <input type="date" id="fuel-report-to" style="padding:7px 10px;border:1.5px solid var(--g200);border-radius:7px;font-size:13px;font-family:inherit">
         </div>
-        <button class="btn btn-primary btn-sm" onclick="exportFuelReport()">📥 ดาวน์โหลดรายงาน Excel</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="exportFuelReport()">📥 รายงานใบ permit</button>
+          <button class="btn btn-outline btn-sm" onclick="exportCardReport()">💳 รายงานการใช้การ์ด</button>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -2040,6 +2043,31 @@ function exportFuelReport(){
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
 
+  // ชีตใบ permit แยกรถ
+  if(carPermits.length){
+    const cRows=[['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ']];
+    carPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
+      const m=getMileage(p);
+      cRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,m.distance,
+        p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ']);
+    });
+    const cWs=XLSX.utils.aoa_to_sheet(cRows);
+    cWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,cWs,'ใบ permit (รถ)');
+  }
+
+  // ชีตใบ permit แยกการ์ดน้ำมัน
+  if(cardPermits.length){
+    const dRows=[['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','การ์ด/ทะเบียน','ค่าน้ำมัน (บาท)','สถานะ']];
+    cardPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
+      dRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,
+        p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ']);
+    });
+    const dWs=XLSX.utils.aoa_to_sheet(dRows);
+    dWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,dWs,'ใบ permit (การ์ด)');
+  }
+
   const filename = `รายงานค่าน้ำมัน_${fromVal}_ถึง_${toVal}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
@@ -3091,6 +3119,87 @@ function setFcFueled(fueled){
   document.getElementById('fc-s1-inv-section').style.display = fueled ? 'block' : 'none';
   document.getElementById('fc-s1-reason-section').style.display = !fueled ? 'block' : 'none';
   // ถ้าไม่เติม ให้คืนยอดกลับการ์ด
+}
+
+
+// ---- รายงานการใช้การ์ดน้ำมัน ----
+function exportCardReport(){
+  const fromEl=document.getElementById('fuel-report-from');
+  const toEl=document.getElementById('fuel-report-to');
+  const fromVal=fromEl?.value;
+  const toVal=toEl?.value;
+  if(!fromVal||!toVal){alert('กรุณาเลือกช่วงวันที่ก่อน');return;}
+  const fromDate=new Date(fromVal);
+  const toDate=new Date(toVal+'T23:59:59');
+  if(fromDate>toDate){alert('วันที่เริ่มต้องมาก่อนวันสิ้นสุด');return;}
+
+  const bks=(db.fuelCardBookings||[]).filter(b=>{
+    if(!b.startDt)return false;
+    const d=new Date(b.startDt);
+    return d>=fromDate&&d<=toDate;
+  });
+
+  if(!bks.length){alert('ไม่พบรายการใช้การ์ดในช่วงวันที่ที่เลือก');return;}
+
+  const wb=XLSX.utils.book_new();
+
+  // ชีตสรุปตามการ์ด
+  const cards=(db.fuelCards||[]);
+  const summaryRows=[['การ์ด','จำนวนครั้ง','ยอดเบิกรวม (บาท)','คืนแล้ว','ยกเลิก','ใช้งานอยู่']];
+  cards.forEach(fc=>{
+    const fcBks=bks.filter(b=>b.fcId===fc.id);
+    if(!fcBks.length)return;
+    const total=fcBks.reduce((s,b)=>s+(Number(b.fuelAmount)||0),0);
+    summaryRows.push([
+      fc.name, fcBks.length, total,
+      fcBks.filter(b=>b.status==='returned').length,
+      fcBks.filter(b=>b.status==='cancelled').length,
+      fcBks.filter(b=>b.status==='in-use').length
+    ]);
+  });
+  const sumWs=XLSX.utils.aoa_to_sheet(summaryRows);
+  sumWs['!cols']=[{wch:25},{wch:12},{wch:18},{wch:10},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,sumWs,'สรุปตามการ์ด');
+
+  // ชีตรายละเอียดทั้งหมด
+  const detailRows=[['การ์ด','ชื่อผู้ยืม','วันที่ยืม','วันที่คืน','เหตุผล','ยอดเบิก (บาท)','เลข INV','เหตุผลไม่เติม','สถานะ','คืนโดย']];
+  bks.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt)).forEach(b=>{
+    const fc=cards.find(f=>f.id===b.fcId);
+    const stLabel=b.status==='returned'?'คืนแล้ว':b.status==='cancelled'?'ยกเลิก':'ใช้งานอยู่';
+    detailRows.push([
+      fc?fc.name:'?', b.name||'-',
+      b.startDt?new Date(b.startDt):'', b.endDt?new Date(b.endDt):'',
+      b.reason||'-', Number(b.fuelAmount)||0,
+      b.invTrace||'', b.noFuelReason||'',
+      stLabel, b.returnedBy||''
+    ]);
+  });
+  const detWs=XLSX.utils.aoa_to_sheet(detailRows);
+  detWs['!cols']=[{wch:20},{wch:20},{wch:18},{wch:18},{wch:22},{wch:16},{wch:12},{wch:20},{wch:12},{wch:15}];
+  detWs['B2'] && (detWs['!rows']=[]);
+  XLSX.utils.book_append_sheet(wb,detWs,'รายละเอียด');
+
+  // ชีตแยกตามการ์ด
+  cards.forEach(fc=>{
+    const fcBks=bks.filter(b=>b.fcId===fc.id);
+    if(!fcBks.length)return;
+    const rows=[['ชื่อผู้ยืม','วันที่ยืม','วันที่คืน','เหตุผล','ยอดเบิก (บาท)','เลข INV','เหตุผลไม่เติม','สถานะ','คืนโดย']];
+    fcBks.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt)).forEach(b=>{
+      rows.push([b.name||'-',
+        b.startDt?new Date(b.startDt):'',b.endDt?new Date(b.endDt):'',
+        b.reason||'-',Number(b.fuelAmount)||0,b.invTrace||'',b.noFuelReason||'',
+        b.status==='returned'?'คืนแล้ว':b.status==='cancelled'?'ยกเลิก':'ใช้งานอยู่',
+        b.returnedBy||''
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:20},{wch:18},{wch:18},{wch:22},{wch:16},{wch:12},{wch:20},{wch:12},{wch:15}];
+    const safeName=fc.name.replace(/[\\/\?\*\[\]:]/g,'').slice(0,31)||'การ์ด';
+    XLSX.utils.book_append_sheet(wb,ws,safeName);
+  });
+
+  const filename=`รายงานการ์ดน้ำมัน_${fromVal}_ถึง_${toVal}.xlsx`;
+  XLSX.writeFile(wb,filename);
 }
 
 // Auto sync every 15s
