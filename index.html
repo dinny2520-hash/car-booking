@@ -2427,18 +2427,19 @@ function applyDeletedFilters(){
 }
 
 function buildSyncPayload(ts){
-  return {
+  const payload = {
     cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
     permits:stripSigs(db.permits||[]), ts: ts || new Date().toISOString(),
     fuelPrice:db.fuelPrice||0,
-    // ส่ง fuelCards เฉพาะถ้ามีข้อมูลอยู่ใน local เพื่อกันทับ Sheet
-    fuelCards:(db.fuelCards&&db.fuelCards.length>0)?db.fuelCards:undefined,
-    fuelCardBookings:(db.fuelCardBookings&&db.fuelCardBookings.length>0)?db.fuelCardBookings:undefined,
     deletedStaffIds:db.deletedStaffIds||[],
     deletedCarIds:db.deletedCarIds||[],
     deletedBookingIds:db.deletedBookingIds||[],
     deletedPermitIds:db.deletedPermitIds||[]
   };
+  // ส่ง fuelCards/fuelCardBookings เฉพาะถ้ามีข้อมูล กันทับ Sheet ด้วย empty array
+  if(db.fuelCards&&db.fuelCards.length>0) payload.fuelCards=db.fuelCards;
+  if(db.fuelCardBookings&&db.fuelCardBookings.length>0) payload.fuelCardBookings=db.fuelCardBookings;
+  return payload;
 }
 
 // Sync ขึ้น Sheet พร้อมป้องกัน race condition กับ pullFromGSheet
