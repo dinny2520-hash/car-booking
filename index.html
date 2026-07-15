@@ -680,10 +680,22 @@ tr:hover td{background:var(--g50)}
         <h3>🗑️ จัดการประวัติการจอง</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:6px">ลบรายการจองออกจากระบบ (เฉพาะที่ยกเลิกหรือคืนแล้ว)</div>
         <div style="font-size:12px;color:var(--success);margin-bottom:10px">🤖 ระบบลบรายการที่ยกเลิก/คืนแล้วเกิน 60 วันให้อัตโนมัติทุกวัน</div>
+
+        <!-- แท็บสลับรถ/การ์ด -->
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn-primary btn-sm" id="admtab-car" onclick="switchAdminHistoryTab('car')">🚗 จองรถ</button>
+          <button class="btn btn-outline btn-sm" id="admtab-card" onclick="switchAdminHistoryTab('card')">💳 จองการ์ด</button>
+        </div>
+
         <div id="admin-booking-list" style="max-height:300px;overflow-y:auto"></div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด</button>
+        <div id="admin-card-booking-list" style="max-height:300px;overflow-y:auto;display:none"></div>
+
+        <div id="admtab-car-btns" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด (รถ)</button>
           <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
+        </div>
+        <div id="admtab-card-btns" style="display:none;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllCardDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด (การ์ด)</button>
         </div>
       </div>
 
@@ -1345,6 +1357,7 @@ function renderSettings(){
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAdminBookingList();
   renderFcSettings();
+  switchAdminHistoryTab('car');
   document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
     <span style="font-size:12px;color:var(--g600)">รหัส: ${s.code}</span>
@@ -3204,6 +3217,59 @@ function exportCardReport(){
 
   const filename=`รายงานการ์ดน้ำมัน_${fromVal}_ถึง_${toVal}.xlsx`;
   XLSX.writeFile(wb,filename);
+}
+
+
+function switchAdminHistoryTab(mode){
+  document.getElementById('admtab-car').className = mode==='car'?'btn btn-primary btn-sm':'btn btn-outline btn-sm';
+  document.getElementById('admtab-card').className = mode==='card'?'btn btn-primary btn-sm':'btn btn-outline btn-sm';
+  document.getElementById('admin-booking-list').style.display = mode==='car'?'block':'none';
+  document.getElementById('admin-card-booking-list').style.display = mode==='card'?'block':'none';
+  document.getElementById('admtab-car-btns').style.display = mode==='car'?'flex':'none';
+  document.getElementById('admtab-card-btns').style.display = mode==='card'?'flex':'none';
+  if(mode==='card') renderAdminCardBookingList();
+}
+
+function renderAdminCardBookingList(){
+  const list = document.getElementById('admin-card-booking-list');
+  if(!list) return;
+  const deletable = (db.fuelCardBookings||[]).filter(b=>b.status==='returned'||b.status==='cancelled');
+  if(!deletable.length){
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่ลบได้</p>';return;
+  }
+  const cards = db.fuelCards||[];
+  list.innerHTML = deletable.map(b=>{
+    const fc = cards.find(f=>f.id===b.fcId);
+    const stLabel = b.status==='cancelled'?'ยกเลิก':'คืนแล้ว';
+    const stColor = b.status==='cancelled'?'var(--g400)':'var(--success)';
+    return `<div class="staff-item">
+      <div style="flex:1;font-size:13px">
+        <span style="font-weight:600">💳 ${fc?fc.name:'?'}</span>
+        <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
+        <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="adminDeleteCardBooking('${b.id}')">ลบ</button>
+    </div>`;
+  }).join('');
+}
+
+function adminDeleteCardBooking(id){
+  if(!confirm('ลบรายการจองการ์ดนี้ออกจากระบบ?'))return;
+  db.fuelCardBookings=(db.fuelCardBookings||[]).filter(b=>b.id!==id);
+  syncNow();
+  renderAdminCardBookingList();
+  renderFcHistory();
+}
+
+function adminDeleteAllCardDone(){
+  const toDelete=(db.fuelCardBookings||[]).filter(b=>b.status==='returned'||b.status==='cancelled');
+  if(!toDelete.length){alert('ไม่มีรายการที่ลบได้');return;}
+  if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${toDelete.length} รายการ?`))return;
+  db.fuelCardBookings=(db.fuelCardBookings||[]).filter(b=>b.status!=='returned'&&b.status!=='cancelled');
+  syncNow();
+  renderAdminCardBookingList();
+  renderFcHistory();
+  alert('✅ ลบสำเร็จ');
 }
 
 // Auto sync every 15s
