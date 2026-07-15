@@ -1562,9 +1562,10 @@ function pullFromGSheet(){
         db.staff = [...data.staff, ...localNewOnly];
       }
       if(data&&data.adminPass) db.adminPass=data.adminPass;
-      if(data&&data.fuelCards) db.fuelCards=data.fuelCards;
+      // อัปเดต fuelCards จาก Sheet เฉพาะถ้า Sheet มีข้อมูล (กันทับด้วย empty)
+      if(data&&data.fuelCards&&data.fuelCards.length>0) db.fuelCards=data.fuelCards;
       if(data&&data.fuelPrice!=null) db.fuelPrice=data.fuelPrice;
-      if(data&&data.fuelCardBookings) db.fuelCardBookings=data.fuelCardBookings;
+      if(data&&data.fuelCardBookings&&data.fuelCardBookings.length>0) db.fuelCardBookings=data.fuelCardBookings;
 
       // รวม deleted lists จาก Sheet เข้ากับ local (union)
       ['deletedStaffIds','deletedCarIds','deletedBookingIds','deletedPermitIds'].forEach(key=>{
@@ -2430,8 +2431,9 @@ function buildSyncPayload(ts){
     cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
     permits:stripSigs(db.permits||[]), ts: ts || new Date().toISOString(),
     fuelPrice:db.fuelPrice||0,
-    fuelCards:db.fuelCards||[],
-    fuelCardBookings:db.fuelCardBookings||[],
+    // ส่ง fuelCards เฉพาะถ้ามีข้อมูลอยู่ใน local เพื่อกันทับ Sheet
+    fuelCards:(db.fuelCards&&db.fuelCards.length>0)?db.fuelCards:undefined,
+    fuelCardBookings:(db.fuelCardBookings&&db.fuelCardBookings.length>0)?db.fuelCardBookings:undefined,
     deletedStaffIds:db.deletedStaffIds||[],
     deletedCarIds:db.deletedCarIds||[],
     deletedBookingIds:db.deletedBookingIds||[],
