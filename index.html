@@ -2627,13 +2627,15 @@ function renderFuelCards(){
     return;
   }
   grid.innerHTML = cards.map(fc=>{
-    const bk = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.status==='in-use');
     const pending = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.returnStep==='pending');
-    let statusLabel = '✅ ว่าง', statusStyle = '';
-    if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.75;'; }
-    else if(bk){ statusLabel='🔴 กำลังใช้งาน'; statusStyle='opacity:0.75;cursor:not-allowed'; }
+    const fcSt = getFcCardStatus(fc.id);
+    let statusLabel='✅ ว่าง', statusStyle='', blocked=false;
+    if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.75;'; blocked=true; }
+    else if(fcSt==='in-use'){ statusLabel='🔴 กำลังใช้งาน'; statusStyle='opacity:0.75;cursor:not-allowed'; blocked=true; }
+    else if(fcSt==='overdue'){ statusLabel='⚠️ เกินกำหนด'; statusStyle='opacity:0.75;cursor:not-allowed'; blocked=true; }
+    else if(fcSt==='upcoming'){ statusLabel='⏳ รอใช้งาน'; statusStyle=''; blocked=false; }
     const selected = selectedFcId===fc.id;
-    return `<div class="fuel-card${selected?' selected':''}${bk||pending?' in-use-card':''}"
+    return `<div class="fuel-card${selected?' selected':''}${blocked?' in-use-card':''}"
       style="${statusStyle}" onclick="selectFuelCard('${fc.id}')">
       <div class="fuel-card-icon">💳</div>
       <div class="fuel-card-name">${fc.name}</div>
@@ -2647,8 +2649,11 @@ function renderFuelCards(){
 function selectFuelCard(id){
   const fc = (db.fuelCards||[]).find(f=>f.id===id);
   if(!fc) return;
-  const bk = (db.fuelCardBookings||[]).find(b=>b.fcId===id&&(b.status==='in-use'||b.returnStep==='pending'));
-  if(bk){ alert('การ์ดนี้กำลังถูกใช้งานอยู่ ไม่สามารถจองได้'); return; }
+  const pending = (db.fuelCardBookings||[]).find(b=>b.fcId===id&&b.returnStep==='pending');
+  const fcSt = getFcCardStatus(id);
+  if(pending||fcSt==='in-use'||fcSt==='overdue'){
+    alert('การ์ดนี้กำลังถูกใช้งานอยู่ หรือรอคืน ไม่สามารถจองได้');return;
+  }
   selectedFcId = id;
   renderFuelCards();
   document.getElementById('fc-book-info').innerHTML = `<b>${fc.name}</b> | มูลค่าคงเหลือ: <b>฿${Number(fc.value||0).toLocaleString('th-TH')}</b>`;
@@ -2720,7 +2725,7 @@ function submitFcBooking(){
 function renderFcReturnList(){
   const el=document.getElementById('fc-return-list');
   if(!el) return;
-  const pending=(db.fuelCardBookings||[]).filter(b=>b.returnStep==='pending'||b.status==='in-use');
+  const pending=(db.fuelCardBookings||[]).filter(b=>b.returnStep==='pending'||getFcBkStatus(b)==='in-use'||getFcBkStatus(b)==='overdue');
   if(!pending.length){
     el.innerHTML='<div class="empty-state"><div style="font-size:30px">💳</div><div>ไม่มีการ์ดที่ต้องคืน</div></div>';return;
   }
@@ -3036,8 +3041,9 @@ function renderFcHistory(){
   }
   el.innerHTML=bks.map(b=>{
     const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-    const stColor=b.status==='returned'?'var(--success)':b.status==='cancelled'?'var(--g400)':b.returnStep==='pending'?'var(--warning)':'var(--primary)';
-    const stLabel=b.status==='returned'?'✅ คืนแล้ว':b.status==='cancelled'?'❌ ยกเลิก':b.returnStep==='pending'?'⏳ รอคืน':'🔵 ใช้งานอยู่';
+    const bkSt=getFcBkStatus(b);
+    const stColor=b.status==='returned'?'var(--success)':b.status==='cancelled'?'var(--g400)':b.returnStep==='pending'?'var(--warning)':bkSt==='overdue'?'var(--danger)':bkSt==='upcoming'?'var(--g400)':'var(--primary)';
+    const stLabel=b.status==='returned'?'✅ คืนแล้ว':b.status==='cancelled'?'❌ ยกเลิก':b.returnStep==='pending'?'⏳ รอคืน':bkSt==='overdue'?'⚠️ เกินกำหนด':bkSt==='upcoming'?'⏳ รอใช้งาน':'🔵 ใช้งานอยู่';
     return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1">
@@ -3273,6 +3279,29 @@ function adminDeleteAllCardDone(){
   renderAdminCardBookingList();
   renderFcHistory();
   alert('✅ ลบสำเร็จ');
+}
+
+
+// ---- FUEL CARD STATUS ----
+function getFcBkStatus(b){
+  if(b.status==='returned') return 'returned';
+  if(b.status==='cancelled') return 'cancelled';
+  const now = new Date();
+  const start = new Date(b.startDt);
+  const end = new Date(b.endDt);
+  if(now < start) return 'upcoming';
+  if(now > end) return 'overdue';
+  return 'in-use';
+}
+
+function getFcCardStatus(fcId){
+  const active = (db.fuelCardBookings||[]).filter(b=>
+    b.fcId===fcId && b.status!=='returned' && b.status!=='cancelled'
+  );
+  if(active.some(b=>getFcBkStatus(b)==='in-use')) return 'in-use';
+  if(active.some(b=>getFcBkStatus(b)==='overdue')) return 'overdue';
+  if(active.some(b=>getFcBkStatus(b)==='upcoming')) return 'upcoming';
+  return 'free';
 }
 
 // Auto sync every 15s
