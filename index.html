@@ -1608,6 +1608,7 @@ function pullFromGSheet(){
       db.syncEnabled=true;
       applyDeletedFilters();
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      checkPullChanges(data);
       updateSync(false,true);
       renderCars();
       renderHistory();
@@ -3304,8 +3305,60 @@ function getFcCardStatus(fcId){
   return 'free';
 }
 
+
+// ---- TAB BLINK NOTIFICATION ----
+var _tabBlinkInterval = null;
+var _originalTitle = document.title || 'ระบบจองรถบริษัท';
+
+function startTabBlink(msg){
+  if(_tabBlinkInterval) return; // กำลังกระพริบอยู่แล้ว
+  let show = true;
+  _tabBlinkInterval = setInterval(()=>{
+    document.title = show ? ('🔔 '+msg) : _originalTitle;
+    show = !show;
+  }, 800);
+  // หยุดกระพริบเมื่อ user กลับมาที่แท็บ
+  document.addEventListener('visibilitychange', stopTabBlink, {once:true});
+  window.addEventListener('focus', stopTabBlink, {once:true});
+}
+
+function stopTabBlink(){
+  if(_tabBlinkInterval){ clearInterval(_tabBlinkInterval); _tabBlinkInterval=null; }
+  document.title = _originalTitle;
+}
+
+// เช็คความเปลี่ยนแปลงจาก pull
+var _lastBookingCount = 0;
+var _lastFcBookingCount = 0;
+var _lastReturnedCount = 0;
+var _lastFcReturnedCount = 0;
+
+function checkPullChanges(data){
+  if(document.hasFocus()) return; // ไม่แจ้งถ้าอยู่ที่แท็บนี้อยู่แล้ว
+
+  const newBookings = (data.bookings||[]).filter(b=>b.status==='booked').length;
+  const newFcBookings = (data.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
+  const newReturned = (data.bookings||[]).filter(b=>b.status==='returned').length;
+  const newFcReturned = (data.fuelCardBookings||[]).filter(b=>b.status==='returned').length;
+
+  if(newBookings > _lastBookingCount) startTabBlink('มีการจองรถใหม่!');
+  else if(newFcBookings > _lastFcBookingCount) startTabBlink('มีการจองการ์ดใหม่!');
+  else if(newReturned > _lastReturnedCount) startTabBlink('มีการคืนรถ!');
+  else if(newFcReturned > _lastFcReturnedCount) startTabBlink('มีการคืนการ์ด!');
+
+  _lastBookingCount = newBookings;
+  _lastFcBookingCount = newFcBookings;
+  _lastReturnedCount = newReturned;
+  _lastFcReturnedCount = newFcReturned;
+}
+
 // Auto sync every 15s
 setInterval(pullFromGSheet,10000);
+// Init baseline counts
+_lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
+_lastFcBookingCount = (db.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
+_lastReturnedCount = (db.bookings||[]).filter(b=>b.status==='returned').length;
+_lastFcReturnedCount = (db.fuelCardBookings||[]).filter(b=>b.status==='returned').length;
 setInterval(refreshSigCacheBackground,60000);
 refreshSigCacheBackground();
 updateSync(false,null);
