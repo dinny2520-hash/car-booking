@@ -2763,7 +2763,7 @@ function openFcStep1(id){
   document.getElementById('fc-s1-no').className='btn btn-outline btn-sm';
   document.getElementById('fc-s1-inv-section').style.display='none';
   document.getElementById('fc-s1-reason-section').style.display='none';
-  if(document.getElementById('fc-s1-inv')) document.getElementById('fc-s1-inv').value='';
+  resetFcInvFields();
   if(document.getElementById('fc-s1-noreason')) document.getElementById('fc-s1-noreason').value='';
   if(document.getElementById('fc-s1-actual-amount')) document.getElementById('fc-s1-actual-amount').value='';
   if(document.getElementById('fc-s1-amount-hint')) document.getElementById('fc-s1-amount-hint').textContent='';
@@ -2780,8 +2780,12 @@ function submitFcStep1(){
   let inv='', noReason='';
   let actualAmount = null;
   if(_fcFueled){
-    inv=document.getElementById('fc-s1-inv').value.trim();
-    if(!/^\d{6}$/.test(inv)){errEl.textContent='กรุณากรอกเลข INV/TRACE# 6 หลัก';errEl.style.display='flex';return;}
+    const invValues=getFcInvValues();
+    if(!invValues.length){errEl.textContent='กรุณากรอกเลข INV/TRACE# อย่างน้อย 1 ใบ';errEl.style.display='flex';return;}
+    for(const v of invValues){
+      if(!/^\d{6}$/.test(v)){errEl.textContent='เลข INV/TRACE# ต้องเป็นตัวเลข 6 หลัก (พบ: '+v+')';errEl.style.display='flex';return;}
+    }
+    inv=invValues.join(', ');
     const actualVal=document.getElementById('fc-s1-actual-amount').value.trim();
     if(!actualVal){errEl.textContent='กรุณากรอกยอดที่เติมจริง';errEl.style.display='flex';return;}
     actualAmount=Number(actualVal);
@@ -3167,6 +3171,7 @@ function setFcFueled(fueled){
   document.getElementById('fc-s1-no').className = !fueled ? 'btn btn-danger btn-sm' : 'btn btn-outline btn-sm';
   document.getElementById('fc-s1-inv-section').style.display = fueled ? 'block' : 'none';
   document.getElementById('fc-s1-reason-section').style.display = !fueled ? 'block' : 'none';
+  if(fueled){ resetFcInvFields(); }
   if(fueled && fcReturnId){
     const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
     if(b){
@@ -3421,6 +3426,41 @@ function adminEditMileage(id){
   renderAdminBookingList();
   renderCars();
   alert('✅ แก้ไขเลขไมล์สำเร็จ');
+}
+
+
+// ---- MULTI INV FIELDS ----
+var _fcInvCount = 0;
+
+function addFcInvField(){
+  _fcInvCount++;
+  const list = document.getElementById('fc-inv-list');
+  if(!list) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;align-items:center';
+  row.id = 'fc-inv-row-'+_fcInvCount;
+  row.innerHTML = `<input type="text" id="fc-inv-${_fcInvCount}" placeholder="______" maxlength="6" inputmode="numeric"
+    style="letter-spacing:6px;font-size:16px;font-weight:700;text-align:center;flex:1;padding:8px;border:1.5px solid var(--g200);border-radius:7px">
+    ${_fcInvCount>1?`<button type="button" onclick="removeFcInvField(${_fcInvCount})" style="background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer">✕</button>`:''}`;
+  list.appendChild(row);
+}
+
+function removeFcInvField(n){
+  const row = document.getElementById('fc-inv-row-'+n);
+  if(row) row.remove();
+}
+
+function resetFcInvFields(){
+  _fcInvCount = 0;
+  const list = document.getElementById('fc-inv-list');
+  if(list) list.innerHTML='';
+  addFcInvField(); // เพิ่มช่องแรกอัตโนมัติ
+}
+
+function getFcInvValues(){
+  const list = document.getElementById('fc-inv-list');
+  if(!list) return [];
+  return Array.from(list.querySelectorAll('input')).map(i=>i.value.trim()).filter(v=>v);
 }
 
 // Auto sync every 15s
@@ -3905,8 +3945,10 @@ function renderPrintPage(p){
         <input type="number" id="fc-s1-actual-amount" placeholder="กรอกยอดที่เติมจริง" min="0" step="0.01" inputmode="numeric">
         <div id="fc-s1-amount-hint" style="font-size:12px;color:var(--g600);margin-top:4px"></div>
       </div>
-      <div class="form-row"><label>เลข INV/TRACE# * (6 หลัก)</label>
-        <input type="text" id="fc-s1-inv" placeholder="______" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="letter-spacing:6px;font-size:18px;font-weight:700;text-align:center">
+      <div class="form-row">
+        <label>เลข INV/TRACE# * (6 หลัก) — กดเพิ่มถ้ามีหลายใบ</label>
+        <div id="fc-inv-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addFcInvField()" style="align-self:flex-start">+ เพิ่ม INV</button>
       </div>
     </div>
     <div id="fc-s1-reason-section" style="display:none">
