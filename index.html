@@ -2702,10 +2702,7 @@ function submitFcBooking(){
   const fc=(db.fuelCards||[]).find(f=>f.id===selectedFcId);
   if(!fc){return;}
   if(fuelAmt>(Number(fc.value)||0)){errEl.textContent='ยอดเบิกมากกว่ายอดคงเหลือในการ์ด';errEl.style.display='flex';return;}
-  // หักยอดการ์ดทันที
-  const prevValue = Number(fc.value)||0;
-  fc.value = Math.max(0, prevValue - fuelAmt);
-  fc.lastUsed = nowISO();
+  // ไม่หักยอดตอนจอง — จะหักจริงตอนคืน
   const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,reason,startDt:start,endDt:end,pin,
     fuelAmount:fuelAmt,fuelUnit:document.getElementById('fc-fuel-unit').value,
     fuelRaw:Number(fuelRaw),status:'in-use',createdAt:nowISO()};
@@ -2801,18 +2798,11 @@ function submitFcStep1(){
   b.fueled=_fcFueled;
   if(_fcFueled){
     b.invTrace=inv;
-    // คืนส่วนต่างถ้าเติมจริงน้อยกว่าที่เบิกไว้
-    if(actualAmount!==null && actualAmount < (b.fuelAmount||0)){
-      const diff=(b.fuelAmount||0)-actualAmount;
-      const fcRef=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-      if(fcRef){ fcRef.value=(Number(fcRef.value)||0)+diff; }
-      b.fuelAmount=actualAmount; // อัปเดตยอดจริง
-    }
+    // บันทึกยอดจริงที่ใช้ (จะหักการ์ดตอน step2)
+    if(actualAmount!==null) b.actualAmount=actualAmount;
   } else {
     b.noFuelReason=noReason;
-    // คืนยอดการ์ดกรณีไม่ได้เติม
-    const fcRef=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-    if(fcRef&&b.fuelAmount>0){fcRef.value=(Number(fcRef.value)||0)+b.fuelAmount; b.fuelAmount=0;}
+    // ไม่ได้เติม — ไม่มีอะไรต้องคืน เพราะยังไม่ได้หักการ์ดตอนจอง
   }
   syncNow();
   closeModal('modal-fc-step1');
@@ -2846,6 +2836,12 @@ function submitFcStep2(){
   if(!b) return;
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+  // หักยอดจริงจากการ์ดตอนคืน
+  if(fc){
+    const deduct = b.fueled ? (b.actualAmount??b.fuelAmount??0) : 0;
+    fc.value = Math.max(0,(Number(fc.value)||0)-deduct);
+    fc.lastUsed = nowISO();
+  }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-fc-step2');
   renderFcReturnList();
@@ -2899,16 +2895,10 @@ function submitFcAdminReturn(){
   b.fueled=_fcAdminFueled;
   if(_fcAdminFueled){
     b.invTrace=adminInv;
-    if(adminActual!==null && adminActual<(b.fuelAmount||0)){
-      const diff=(b.fuelAmount||0)-adminActual;
-      const fcRef=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-      if(fcRef) fcRef.value=(Number(fcRef.value)||0)+diff;
-      b.fuelAmount=adminActual;
-    }
+    if(adminActual!==null) b.actualAmount=adminActual;
   } else {
     b.noFuelReason=adminNoReason;
-    const fcRef=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-    if(fcRef&&b.fuelAmount>0){fcRef.value=(Number(fcRef.value)||0)+b.fuelAmount; b.fuelAmount=0;}
+    // ไม่ได้เติม — ไม่มีอะไรต้องคืน
   }
   syncNow();
   closeModal('modal-fc-admin-return');
@@ -3078,11 +3068,7 @@ function confirmFcCancel(){
   if(adminPass===db.adminPass) authorized=true;
   else if(pin.length===4&&pin===b.pin) authorized=true;
   if(!authorized){errEl.textContent='PIN หรือรหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
-  // คืนยอดการ์ด
-  const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-  if(fc&&b.fuelAmount>0){
-    fc.value=(Number(fc.value)||0)+b.fuelAmount;
-  }
+  // ยกเลิกการจอง — ไม่ต้องคืนยอดเพราะยังไม่ได้หักการ์ดตอนจอง
   b.status='cancelled';b.cancelledAt=nowISO();
   syncNow();
   closeModal('modal-fc-cancel');
@@ -3314,20 +3300,27 @@ function renderAdminCardBookingList(){
   if(!list) return;
   const deletable = (db.fuelCardBookings||[]).filter(b=>b.status==='returned'||b.status==='cancelled');
   if(!deletable.length){
-    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่ลบได้</p>';return;
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่จัดการได้</p>';return;
   }
   const cards = db.fuelCards||[];
   list.innerHTML = deletable.map(b=>{
     const fc = cards.find(f=>f.id===b.fcId);
     const stLabel = b.status==='cancelled'?'ยกเลิก':'คืนแล้ว';
     const stColor = b.status==='cancelled'?'var(--g400)':'var(--success)';
-    return `<div class="staff-item">
-      <div style="flex:1;font-size:13px">
+    return `<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="flex:1;font-size:13px;min-width:200px">
         <span style="font-weight:600">💳 ${fc?fc.name:'?'}</span>
         <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
         <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        <div style="font-size:11px;color:var(--g500);margin-top:2px">⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}${b.invTrace?' | 🧾 '+b.invTrace:''}</div>
       </div>
-      <button class="btn btn-danger btn-sm" onclick="adminDeleteCardBooking('${b.id}')">ลบ</button>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${b.status==='returned'?`
+        <button class="btn btn-outline btn-sm" onclick="adminRevertFcBooking('${b.id}')">↩️ ย้อนสถานะ</button>
+        <button class="btn btn-outline btn-sm" onclick="adminEditFcAmount('${b.id}')">⛽ แก้ค่าน้ำมัน</button>
+        `:''}
+        <button class="btn btn-danger btn-sm" onclick="adminDeleteCardBooking('${b.id}')">ลบ</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -3549,6 +3542,52 @@ function getFcAdminInvValues(){
   const list=document.getElementById('fc-admin-inv-list');
   if(!list)return[];
   return Array.from(list.querySelectorAll('input')).map(i=>i.value.trim()).filter(v=>v);
+}
+
+
+function adminRevertFcBooking(id){
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
+  if(!b)return;
+  const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+  if(!confirm(`ย้อนสถานะ "${b.name}" กลับเป็น "ใช้งานอยู่"?`))return;
+  b.status='in-use';
+  b.returnStep=null;
+  b.returnedBy=null;
+  b.returnedAt=null;
+  b.invTrace=null;
+  b.noFuelReason=null;
+  b.actualAmount=null;
+  b.fueled=null;
+  // คืนยอดกลับการ์ด (เพราะ step2 หักไปแล้ว)
+  if(fc){
+    const deducted = b.actualAmount??b.fuelAmount??0;
+    fc.value=(Number(fc.value)||0)+deducted;
+  }
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  renderAdminCardBookingList();
+  renderFuelCards();
+  renderFcHistory();
+  alert('✅ ย้อนสถานะสำเร็จ');
+}
+
+function adminEditFcAmount(id){
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
+  if(!b)return;
+  const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
+  const cur=b.actualAmount??b.fuelAmount??0;
+  const val=prompt(`แก้ยอดค่าน้ำมัน — ${b.name}\nการ์ด: ${fc?fc.name:'?'}\nยอดปัจจุบัน: ฿${cur}`, cur);
+  if(val===null)return;
+  if(!/^\d+(\.\d+)?$/.test(val.trim())){alert('กรุณากรอกตัวเลขที่ถูกต้อง');return;}
+  const newAmt=Number(val.trim());
+  const diff=cur-newAmt;
+  // คืนส่วนต่างกลับการ์ด
+  if(fc&&diff!==0) fc.value=Math.max(0,(Number(fc.value)||0)+diff);
+  b.actualAmount=newAmt;
+  b.fuelAmount=newAmt;
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  renderAdminCardBookingList();
+  renderFuelCards();
+  alert('✅ แก้ยอดค่าน้ำมันสำเร็จ');
 }
 
 // Auto sync every 15s
