@@ -2294,13 +2294,21 @@ function renderAdminBookingList(){
     const car=db.cars.find(c=>c.id===b.carId);
     const stLabel=b.status==='cancelled'?'ยกเลิก':'คืนแล้ว';
     const stColor=b.status==='cancelled'?'var(--g400)':'var(--success)';
-    return `<div class="staff-item">
-      <div style="flex:1;font-size:13px">
+    const mileInfo = b.mileageOut!=null ? `🛣️ ${b.mileageOut}→${b.mileageIn} กม.` : '';
+    return `<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="flex:1;font-size:13px;min-width:200px">
         <span style="font-weight:600">${car?car.plate:'?'}</span>
         <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
         <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        ${mileInfo?`<div style="font-size:11px;color:var(--g500);margin-top:2px">${mileInfo}</div>`:''}
       </div>
-      <button class="btn btn-danger btn-sm" onclick="adminDeleteBooking('${b.id}')">ลบ</button>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${b.status==='returned'?`
+        <button class="btn btn-outline btn-sm" onclick="adminRevertBooking('${b.id}')">↩️ ย้อนสถานะ</button>
+        <button class="btn btn-outline btn-sm" onclick="adminEditMileage('${b.id}')">🛣️ แก้ไมล์</button>
+        `:''}
+        <button class="btn btn-danger btn-sm" onclick="adminDeleteBooking('${b.id}')">ลบ</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -3350,6 +3358,47 @@ function checkPullChanges(data){
   _lastFcBookingCount = newFcBookings;
   _lastReturnedCount = newReturned;
   _lastFcReturnedCount = newFcReturned;
+}
+
+
+function adminRevertBooking(id){
+  const b=db.bookings.find(x=>x.id===id);
+  if(!b)return;
+  if(!confirm(`ย้อนสถานะ "${b.name}" กลับเป็น "รอใช้งาน"?\nเลขไมล์และข้อมูลการคืนจะถูกล้าง`))return;
+  b.status='booked';
+  b.returnStep=null;
+  b.returnedBy=null;
+  b.returnedAt=null;
+  b.mileageIn=null;
+  b.mileageOut=null;
+  b._adminReturn=null;
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  renderAdminBookingList();
+  renderHistory();
+  renderCars();
+  renderReturnList();
+  alert('✅ ย้อนสถานะสำเร็จ รายการกลับเป็น "รอใช้งาน" แล้ว');
+}
+
+function adminEditMileage(id){
+  const b=db.bookings.find(x=>x.id===id);
+  if(!b)return;
+  const car=db.cars.find(c=>c.id===b.carId);
+  const outVal=prompt(`แก้เลขไมล์ขาออก (ตอนยืม) — ${car?car.plate:''} | ${b.name}\nค่าปัจจุบัน: ${b.mileageOut??'ไม่มี'}`, b.mileageOut??'');
+  if(outVal===null)return;
+  const inVal=prompt(`แก้เลขไมล์ขาเข้า (ตอนคืน)\nค่าปัจจุบัน: ${b.mileageIn??'ไม่มี'}`, b.mileageIn??'');
+  if(inVal===null)return;
+  if(outVal!==''&&!/^\d+$/.test(outVal)){alert('เลขไมล์ขาออกต้องเป็นตัวเลข');return;}
+  if(inVal!==''&&!/^\d+$/.test(inVal)){alert('เลขไมล์ขาเข้าต้องเป็นตัวเลข');return;}
+  if(outVal!==''&&inVal!==''&&Number(inVal)<Number(outVal)){alert('เลขไมล์ขาเข้าต้องไม่น้อยกว่าขาออก');return;}
+  b.mileageOut = outVal===''?null:Number(outVal);
+  b.mileageIn = inVal===''?null:Number(inVal);
+  // อัปเดตเลขไมล์ล่าสุดของรถด้วย
+  if(car&&b.mileageIn!=null) car.mileage=b.mileageIn;
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  renderAdminBookingList();
+  renderCars();
+  alert('✅ แก้ไขเลขไมล์สำเร็จ');
 }
 
 // Auto sync every 15s
