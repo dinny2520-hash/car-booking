@@ -696,6 +696,7 @@ tr:hover td{background:var(--g50)}
         </div>
         <div id="admtab-card-btns" style="display:none;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-danger btn-sm" onclick="adminDeleteAllCardDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด (การ์ด)</button>
+          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldFcBookings();renderAdminCardBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
         </div>
       </div>
 
@@ -2511,6 +2512,18 @@ function autoCleanupOldBookings(){
   syncNow();
 }
 
+function autoCleanupOldFcBookings(){
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - CLEANUP_DAYS);
+  const toRemove = (db.fuelCardBookings||[]).filter(b=>
+    (b.status==='cancelled'||b.status==='returned') && b.startDt && new Date(b.startDt) < cutoff
+  );
+  if(!toRemove.length) return;
+  db.fuelCardBookings = db.fuelCardBookings.filter(b=>!toRemove.find(r=>r.id===b.id));
+  console.log(`🧹 Auto-cleanup การ์ด: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ`);
+  syncNow();
+}
+
 // เช็คทุกครั้งที่เปิดแอป แต่จำกัดให้รันแค่วันละครั้งต่อเครื่อง (กันรันถี่เกินไป)
 function maybeRunCleanup(){
   try{
@@ -2520,6 +2533,7 @@ function maybeRunCleanup(){
     localStorage.setItem(CLEANUP_CHECK_KEY, today);
   }catch(e){}
   autoCleanupOldBookings();
+  autoCleanupOldFcBookings();
 }
 
 
@@ -2836,9 +2850,9 @@ function submitFcStep2(){
   if(!b) return;
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-  // หักยอดจริงจากการ์ดตอนคืน
-  if(fc){
-    const deduct = b.fueled ? (b.actualAmount??b.fuelAmount??0) : 0;
+  // หักยอดจริงจากการ์ดตอนคืน — เฉพาะถ้าเลือกว่าเติมน้ำมัน
+  if(fc && b.fueled===true){
+    const deduct = b.actualAmount??b.fuelAmount??0;
     fc.value = Math.max(0,(Number(fc.value)||0)-deduct);
     fc.lastUsed = nowISO();
   }
