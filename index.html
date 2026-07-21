@@ -2853,7 +2853,9 @@ function submitFcStep2(){
   // หักยอดจริงจากการ์ดตอนคืน — เฉพาะถ้าเลือกว่าเติมน้ำมัน
   if(fc && b.fueled===true){
     const deduct = b.actualAmount??b.fuelAmount??0;
+    b.valueBeforeDeduct = Number(fc.value)||0; // snapshot ก่อนหัก
     fc.value = Math.max(0,(Number(fc.value)||0)-deduct);
+    b.valueAfterDeduct = fc.value; // snapshot หลังหัก
     fc.lastUsed = nowISO();
   }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
