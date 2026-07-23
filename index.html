@@ -1573,7 +1573,7 @@ function pullFromGSheet(){
       if(data&&data.adminPass) db.adminPass=data.adminPass;
       // อัปเดต fuelCards จาก Sheet เฉพาะถ้า Sheet มีข้อมูล (กันทับด้วย empty)
       if(data&&data.fuelCards&&data.fuelCards.length>0) db.fuelCards=data.fuelCards;
-      if(data&&data.fuelPrice!=null) db.fuelPrice=data.fuelPrice;
+      if(data&&data.fuelPrice&&data.fuelPrice>0) db.fuelPrice=data.fuelPrice;
       if(data&&data.fuelCardBookings&&data.fuelCardBookings.length>0) db.fuelCardBookings=data.fuelCardBookings;
 
       // รวม deleted lists จาก Sheet เข้ากับ local (union)
@@ -2448,7 +2448,6 @@ function buildSyncPayload(ts){
   const payload = {
     cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
     permits:stripSigs(db.permits||[]), ts: ts || new Date().toISOString(),
-    fuelPrice:db.fuelPrice||0,
     deletedStaffIds:db.deletedStaffIds||[],
     deletedCarIds:db.deletedCarIds||[],
     deletedBookingIds:db.deletedBookingIds||[],
@@ -2457,6 +2456,7 @@ function buildSyncPayload(ts){
   // ส่ง fuelCards/fuelCardBookings เฉพาะถ้ามีข้อมูล กันทับ Sheet ด้วย empty array
   if(db.fuelCards&&db.fuelCards.length>0) payload.fuelCards=db.fuelCards;
   if(db.fuelCardBookings&&db.fuelCardBookings.length>0) payload.fuelCardBookings=db.fuelCardBookings;
+  // fuelPrice ไม่ส่งใน sync ปกติ — ส่งเฉพาะตอนแอดมินกดบันทึกราคาผ่าน saveFuelPrice()
   return payload;
 }
 
@@ -3006,10 +3006,13 @@ function saveFuelPrice(){
   db.fuelPrice = Number(val);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // sync fuelPrice ขึ้น Sheet แยกต่างหาก (ไม่ผ่าน buildSyncPayload ปกติ)
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+    const payload = {...buildSyncPayload(_ts), fuelPrice: db.fuelPrice};
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'sync',data:JSON.stringify(payload)})
+    }).catch(()=>{});
   }
   updateFuelPriceDisplay();
   alert('✅ บันทึกราคาน้ำมัน ฿'+Number(val).toFixed(2)+'/ลิตร แล้ว');
