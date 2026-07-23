@@ -1216,16 +1216,24 @@ function renderReturnList(){
   } else {
     const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
     document.getElementById('s2-staff-select').innerHTML='<option value="">-- เลือกชื่อ --</option>'+staffOpts;
-    s2.innerHTML=pendingStaff.map(b=>{
+    // เรียงตาม startDt — รอบที่เริ่มก่อนควรคืนก่อน
+    const sorted = [...pendingStaff].sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
+    s2.innerHTML=sorted.map((b,idx)=>{
       const car=db.cars.find(c=>c.id===b.carId);
-      return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--success)">
+      // เช็คว่ารถคันนี้มีการจองซ้อนกันไหม
+      const sameCarPending = pendingStaff.filter(x=>x.carId===b.carId);
+      const multiTrip = sameCarPending.length > 1;
+      const tripLabel = multiTrip ? `<span style="background:#f59e0b;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px">⚠️ รถคันนี้มี ${sameCarPending.length} รายการ</span>` : '';
+      return `<div class="card" style="margin-bottom:12px;border-left:4px solid ${multiTrip?'#f59e0b':'var(--success)'}">
         <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:180px">
-            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status st-busy" style="font-size:11px">รอเจ้าหน้าที่</span></div>
+            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status st-busy" style="font-size:11px">รอเจ้าหน้าที่</span>${tripLabel}</div>
             <div style="font-size:13px;color:var(--g600)">
-              <div>👤 ${b.name}</div>
+              <div>👤 <b>${b.name}</b></div>
+              <div>📅 เริ่ม: <b>${fmt(b.startDt)}</b></div>
+              <div>⏰ กำหนดคืน: <b>${fmt(b.endDt)}</b></div>
               <div>📍 ${b.dest}</div>
-              <div>⏰ กำหนดคืน: ${fmt(b.endDt)}</div>
+              ${b.mileageIn!=null?`<div style="color:var(--g500);font-size:12px">🛣️ ไมล์ขาเข้า: ${b.mileageIn.toLocaleString('th-TH')} กม.</div>`:''}
               <div style="color:var(--success);font-weight:600;margin-top:4px">✅ ผู้ยืมแจ้งคืนแล้ว รอรับกุญแจ</div>
             </div>
           </div>
