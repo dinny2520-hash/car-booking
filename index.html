@@ -2659,13 +2659,21 @@ function renderFuelCards(){
   }
   grid.innerHTML = cards.map(fc=>{
     const pending = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.returnStep==='pending');
+    const activeBk = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.status!=='returned'&&b.status!=='cancelled');
     const fcSt = getFcCardStatus(fc.id);
     let statusLabel='✅ ว่าง', statusStyle='', blocked=false;
-    if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.75;'; blocked=true; }
-    else if(fcSt==='in-use'){ statusLabel='🔴 กำลังใช้งาน'; statusStyle='opacity:0.75;cursor:not-allowed'; blocked=true; }
-    else if(fcSt==='overdue'){ statusLabel='⚠️ เกินกำหนด'; statusStyle='opacity:0.75;cursor:not-allowed'; blocked=true; }
+    if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.85;'; blocked=true; }
+    else if(fcSt==='in-use'){ statusLabel='🔴 กำลังใช้งาน'; statusStyle='opacity:0.85;cursor:not-allowed'; blocked=true; }
+    else if(fcSt==='overdue'){ statusLabel='⚠️ เกินกำหนด'; statusStyle='opacity:0.85;cursor:not-allowed'; blocked=true; }
     else if(fcSt==='upcoming'){ statusLabel='⏳ รอใช้งาน'; statusStyle=''; blocked=false; }
     const selected = selectedFcId===fc.id;
+    // แสดงชื่อผู้ยืมและเหตุผลถ้ากำลังถูกใช้งาน
+    const borrowerInfo = activeBk ? `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.3);font-size:12px">
+        <div>👤 <b>${activeBk.name}</b></div>
+        <div style="opacity:0.85">📝 ${activeBk.reason}</div>
+        <div style="opacity:0.85">📅 ${fmt(activeBk.startDt)} → ${fmt(activeBk.endDt)}</div>
+      </div>` : '';
     return `<div class="fuel-card${selected?' selected':''}${blocked?' in-use-card':''}"
       style="${statusStyle}" onclick="selectFuelCard('${fc.id}')">
       <div class="fuel-card-icon">💳</div>
@@ -2673,6 +2681,7 @@ function renderFuelCards(){
       <div class="fuel-card-value">฿${Number(fc.value||0).toLocaleString('th-TH')}</div>
       <div class="fuel-card-label">มูลค่าคงเหลือ</div>
       <span class="fuel-card-status">${statusLabel}</span>
+      ${borrowerInfo}
     </div>`;
   }).join('');
 }
