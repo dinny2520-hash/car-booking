@@ -2448,6 +2448,7 @@ function buildSyncPayload(ts){
   const payload = {
     cars:db.cars, bookings:db.bookings, staff:db.staff, adminPass:db.adminPass,
     permits:stripSigs(db.permits||[]), ts: ts || new Date().toISOString(),
+    fuelPrice:db.fuelPrice||0,
     deletedStaffIds:db.deletedStaffIds||[],
     deletedCarIds:db.deletedCarIds||[],
     deletedBookingIds:db.deletedBookingIds||[],
@@ -2456,7 +2457,6 @@ function buildSyncPayload(ts){
   // ส่ง fuelCards/fuelCardBookings เฉพาะถ้ามีข้อมูล กันทับ Sheet ด้วย empty array
   if(db.fuelCards&&db.fuelCards.length>0) payload.fuelCards=db.fuelCards;
   if(db.fuelCardBookings&&db.fuelCardBookings.length>0) payload.fuelCardBookings=db.fuelCardBookings;
-  // fuelPrice ไม่ส่งใน sync ปกติ — ส่งเฉพาะตอนแอดมินกดบันทึกราคาผ่าน saveFuelPrice()
   return payload;
 }
 
@@ -3018,7 +3018,7 @@ function saveFuelPrice(){
   // sync fuelPrice ขึ้น Sheet แยกต่างหาก (ไม่ผ่าน buildSyncPayload ปกติ)
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl&&db.syncEnabled){
-    const payload = {...buildSyncPayload(_ts), fuelPrice: db.fuelPrice};
+    const payload = {...buildSyncPayload(_ts), fuelPrice: db.fuelPrice, _fuelPriceUpdated: true};
     fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify({action:'sync',data:JSON.stringify(payload)})
     }).catch(()=>{});
