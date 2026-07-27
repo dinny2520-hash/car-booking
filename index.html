@@ -2867,12 +2867,13 @@ function submitFcStep2(){
   if(!b) return;
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   const fc=(db.fuelCards||[]).find(f=>f.id===b.fcId);
-  // หักยอดจริงจากการ์ดตอนคืน — เฉพาะถ้าเลือกว่าเติมน้ำมัน
-  if(fc && b.fueled===true){
+  // หักยอดจริงจากการ์ดตอนคืน
+  // ถ้า fueled===true หรือ fueled===undefined (รายการเก่าก่อนมีระบบ fueled) ให้หัก
+  if(fc && b.fueled !== false){
     const deduct = b.actualAmount??b.fuelAmount??0;
-    b.valueBeforeDeduct = Number(fc.value)||0; // snapshot ก่อนหัก
+    b.valueBeforeDeduct = Number(fc.value)||0;
     fc.value = Math.max(0,(Number(fc.value)||0)-deduct);
-    b.valueAfterDeduct = fc.value; // snapshot หลังหัก
+    b.valueAfterDeduct = fc.value;
     fc.lastUsed = nowISO();
   }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
