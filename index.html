@@ -1106,14 +1106,18 @@ function submitBooking(){
           if(fcSection) fcSection.scrollIntoView({behavior:'smooth', block:'start'});
           // ถ้าเลือกการ์ดแล้ว auto-fill ข้อมูลจากการจองรถ
           if(latestBk){
-            // เก็บข้อมูลไว้ใน global เพื่อ auto-fill ตอน selectFuelCard
-            window._pendingFcAutoFill = {
+            const afData = {
               name: latestBk.name,
               reason: latestBk.dest + (latestBk.reason?' - '+latestBk.reason:''),
               startDt: latestBk.startDt,
               endDt: latestBk.endDt,
-              pin: latestBk.pin
+              pin: latestBk.pin,
+              dest: latestBk.dest,
+              bookingReason: latestBk.reason,
+              carId: latestBk.carId
             };
+            window._pendingFcAutoFill = afData;
+            window._pendingFcAutoFillCar = afData; // ใช้ใน submitFcBooking เพื่อ auto-fill permit
           }
         }, 300);
       } else {
@@ -2811,6 +2815,8 @@ function submitFcBooking(){
   if(!db.fuelCardBookings) db.fuelCardBookings=[];
   db.fuelCardBookings.unshift(bk);
   const fcName=fc.name;
+  // ดึงข้อมูลจาก _pendingFcAutoFill ถ้ามาจากรถทดลองขับ
+  const _af = window._pendingFcAutoFillCar||null;
   closeModal('modal-fc-book');
   selectedFcId=null;
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
@@ -2818,12 +2824,28 @@ function submitFcBooking(){
   // พาไปหน้าใบออกนอกสถานที่ทันที พร้อม auto-fill
   showPage('usecart', document.getElementById('nav-usecart'));
   setTimeout(()=>{
-    const setVal=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
+    const setVal=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
     setVal('uc-name',name);
     setVal('uc-reason',reason);
     setVal('uc-empsig',name);
     setVal('uc-date',start.slice(0,10));
     setVal('uc-fuel',fuelAmt);
+    // auto-fill จากรถทดลองขับ
+    if(_af){
+      setVal('uc-location', _af.dest||'');
+      setVal('uc-detail', _af.bookingReason||'');
+      // เลือกทะเบียนรถ
+      const carObj = db.cars.find(c=>c.id===_af.carId);
+      if(carObj){
+        const sel=document.getElementById('uc-car-select');
+        if(sel){
+          const opt = Array.from(sel.options).find(o=>o.value===carObj.plate);
+          if(opt) sel.value=carObj.plate;
+          else { sel.value='__other__'; const cu=document.getElementById('uc-car-custom'); if(cu){cu.style.display='block';cu.value=carObj.plate;} }
+        }
+      }
+      window._pendingFcAutoFillCar=null;
+    }
     const deptEl=document.getElementById('uc-dept');
     if(deptEl){deptEl.focus();deptEl.scrollIntoView({behavior:'smooth',block:'center'});}
   },300);
@@ -4303,4 +4325,3 @@ function renderPrintPage(p){
 
 </body>
 </html>
-  
