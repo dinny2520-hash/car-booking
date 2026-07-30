@@ -1097,11 +1097,24 @@ function submitBooking(){
       const choice = confirm('🚗 รถทดลองขับ\n\nต้องการเติมน้ำมันไหม?\n\n✅ ตกลง = ไปเลือกการ์ดน้ำมัน\n❌ ยกเลิก = ไปหน้าใบขออนุมัติเลย');
       closeModal('modal-success');
       if(choice){
+        // หา booking ที่เพิ่งจองไป
+        const latestBk = db.bookings.find(b=>b.carId===_bookedCarId&&b.status==='booked');
         // ไปหน้าจอง เพื่อเลือกการ์ด
         showPage('booking', document.getElementById('nav-booking'));
         setTimeout(()=>{
           const fcSection = document.getElementById('fuel-cards-section');
           if(fcSection) fcSection.scrollIntoView({behavior:'smooth', block:'start'});
+          // ถ้าเลือกการ์ดแล้ว auto-fill ข้อมูลจากการจองรถ
+          if(latestBk){
+            // เก็บข้อมูลไว้ใน global เพื่อ auto-fill ตอน selectFuelCard
+            window._pendingFcAutoFill = {
+              name: latestBk.name,
+              reason: latestBk.dest + (latestBk.reason?' - '+latestBk.reason:''),
+              startDt: latestBk.startDt,
+              endDt: latestBk.endDt,
+              pin: latestBk.pin
+            };
+          }
         }, 300);
       } else {
         goToPermitFromBooking();
@@ -2758,6 +2771,21 @@ function selectFuelCard(id){
   clearPins('fcpin');
   document.getElementById('fc-book-err').style.display='none';
   openModal('modal-fc-book');
+  // auto-fill ถ้ามาจากการจองรถทดลองขับ
+  if(window._pendingFcAutoFill){
+    const af = window._pendingFcAutoFill;
+    document.getElementById('fc-name').value = af.name||'';
+    document.getElementById('fc-reason').value = af.reason||'';
+    document.getElementById('fc-start').value = af.startDt||'';
+    document.getElementById('fc-end').value = af.endDt||'';
+    if(af.pin && af.pin.length===4){
+      ['fcpin1','fcpin2','fcpin3','fcpin4'].forEach((id,i)=>{
+        const el=document.getElementById(id);
+        if(el) el.value=af.pin[i]||'';
+      });
+    }
+    window._pendingFcAutoFill = null;
+  }
 }
 
 function submitFcBooking(){
@@ -4275,3 +4303,4 @@ function renderPrintPage(p){
 
 </body>
 </html>
+  
