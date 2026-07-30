@@ -1087,10 +1087,11 @@ function submitBooking(){
   }
   document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
   document.getElementById('success-pin').textContent=pin;
+  const _bookedCarId = selectedCarId; // บันทึกไว้ก่อน cancelBookingForm จะ reset
   cancelBookingForm();
   openModal('modal-success');
   // ถ้าเป็นรถทดลองขับ ถามเรื่องน้ำมัน
-  const bookedCar = db.cars.find(c=>c.id===selectedCarId);
+  const bookedCar = db.cars.find(c=>c.id===_bookedCarId);
   if(bookedCar?.testDrive){
     setTimeout(()=>{
       const choice = confirm('🚗 รถทดลองขับ\n\nต้องการเติมน้ำมันไหม?\n\n✅ ตกลง = ไปเลือกการ์ดน้ำมัน\n❌ ยกเลิก = ไปหน้าใบขออนุมัติเลย');
