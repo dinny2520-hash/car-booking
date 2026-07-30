@@ -243,9 +243,14 @@ tr:hover td{background:var(--g50)}
     <div id="overdue-banner" class="overdue-banner">⚠️ มีรถที่เกินกำหนดคืน กรุณาติดต่อผู้ใช้รถ</div>
 
     <div class="card">
-      <div class="card-title">🚘 เลือกรถที่ต้องการจอง</div>
+      <div class="card-title">🚘 รถใช้งาน</div>
       <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">💡 รถที่มีสถานะ <b>กำลังใช้งาน</b> หรือ <b>ติดจอง</b> สามารถจองช่วงเวลาอื่นได้ — กดที่การ์ดรถเพื่อดูว่างหรือเลือกเวลาจอง</div>
       <div class="car-grid" id="car-grid"></div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">🚗 รถทดลองขับระยอง</div>
+      <div class="car-grid" id="car-grid-testdrive"></div>
     </div>
 
     <div class="card" id="fuel-cards-section" style="margin-top:4px">
@@ -659,8 +664,12 @@ tr:hover td{background:var(--g50)}
 
       <div class="settings-section">
         <h3>🚗 จัดการรถ</h3>
-        <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap;align-items:center">
           <input type="text" id="new-car-plate" placeholder="ทะเบียนรถ เช่น กข 1234" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer">
+            <input type="checkbox" id="new-car-testdrive" style="width:16px;height:16px">
+            🚗 รถทดลองขับระยอง
+          </label>
           <button class="btn btn-primary btn-sm" onclick="addCar()">+ เพิ่มรถ</button>
         </div>
         <div id="car-list-settings"></div>
@@ -983,7 +992,9 @@ function openModal(id){document.getElementById(id).classList.add('open');}
 function renderCars(){
   renderFuelCards();
   const grid=document.getElementById('car-grid');
+  const gridTD=document.getElementById('car-grid-testdrive');
   grid.innerHTML='';
+  if(gridTD) gridTD.innerHTML='';
   let hasOverdue=false;
   db.cars.filter(c=>c.active).forEach(car=>{
     const st=getCarStatus(car.id);
@@ -999,7 +1010,9 @@ function renderCars(){
     if(car.inService===true) div.classList.add('in-service');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=(car.inService!==true)?()=>selectCar(car.id):null;
-    grid.appendChild(div);
+    // แยกใส่ grid ตาม flag testDrive
+    if(car.testDrive && gridTD) gridTD.appendChild(div);
+    else grid.appendChild(div);
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
 }
@@ -1076,6 +1089,24 @@ function submitBooking(){
   document.getElementById('success-pin').textContent=pin;
   cancelBookingForm();
   openModal('modal-success');
+  // ถ้าเป็นรถทดลองขับ ถามเรื่องน้ำมัน
+  const bookedCar = db.cars.find(c=>c.id===selectedCarId);
+  if(bookedCar?.testDrive){
+    setTimeout(()=>{
+      const choice = confirm('🚗 รถทดลองขับ\n\nต้องการเติมน้ำมันไหม?\n\n✅ ตกลง = ไปเลือกการ์ดน้ำมัน\n❌ ยกเลิก = ไปหน้าใบขออนุมัติเลย');
+      closeModal('modal-success');
+      if(choice){
+        // ไปหน้าจอง เพื่อเลือกการ์ด
+        showPage('booking', document.getElementById('nav-booking'));
+        setTimeout(()=>{
+          const fcSection = document.getElementById('fuel-cards-section');
+          if(fcSection) fcSection.scrollIntoView({behavior:'smooth', block:'start'});
+        }, 300);
+      } else {
+        goToPermitFromBooking();
+      }
+    }, 300);
+  }
 }
 
 // ---- HISTORY ----
@@ -1358,9 +1389,10 @@ function renderSettings(){
   updateFuelPriceDisplay();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
-      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}</span>
+      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''}</span>
       <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
       <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
+      <button class="btn btn-sm" style="background:${c.testDrive?'#6b7280':'#10b981'};color:#fff;border:none" onclick="toggleCarTestDrive('${c.id}')">${c.testDrive?'ยกเลิกทดลองขับ':'🚗 ตั้งเป็นทดลองขับ'}</button>
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
@@ -1371,6 +1403,14 @@ function renderSettings(){
     <div class="staff-item"><span class="staff-name">👤 ${s.name}</span>
     <span style="font-size:12px;color:var(--g600)">รหัส: ${s.code}</span>
     <button class="btn btn-danger btn-sm" onclick="removeStaff('${s.id}')">ลบ</button></div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีเจ้าหน้าที่</p>';
+}
+
+function toggleCarTestDrive(id){
+  const car=db.cars.find(c=>c.id===id);
+  if(!car)return;
+  car.testDrive=!car.testDrive;
+  syncNow();
+  renderSettings();
 }
 
 function editCarMileage(id){
@@ -1399,10 +1439,12 @@ function editCarMileage(id){
 
 function addCar(){
   const plate=document.getElementById('new-car-plate').value.trim();
+  const isTestDrive=document.getElementById('new-car-testdrive')?.checked||false;
   if(!plate)return alert('กรุณาใส่ทะเบียนรถ');
   if(db.cars.find(c=>c.plate===plate&&c.active))return alert('ทะเบียนนี้มีอยู่แล้ว');
-  db.cars.push({id:'c'+Date.now(),plate,active:true});
+  db.cars.push({id:'c'+Date.now(),plate,active:true,testDrive:isTestDrive});
   document.getElementById('new-car-plate').value='';
+  if(document.getElementById('new-car-testdrive')) document.getElementById('new-car-testdrive').checked=false;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
