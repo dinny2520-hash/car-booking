@@ -2535,8 +2535,55 @@ function syncNow(onSuccess, onFail){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl = db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl && db.syncEnabled){
-    const body = JSON.stringify({action:'sync', data: JSON.stringify(buildSyncPayload(_ts))});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body})
+    // ดึงข้อมูลจาก Sheet ก่อน เพื่อ merge ป้องกัน local เก่าทับสถานะที่ดีกว่า
+    fetch(gsUrl+'?action=get&t='+Date.now())
+      .then(r=>r.json())
+      .then(sheetData=>{
+        const payload = buildSyncPayload(_ts);
+        // Merge bookings — ถ้า Sheet มีสถานะสูงกว่า ให้ยึด Sheet
+        if(sheetData.bookings && payload.bookings){
+          const rank = {'booked':1,'upcoming':1,'in-use':2,'overdue':2,'pending':3,'returned':4,'cancelled':4};
+          payload.bookings = payload.bookings.map(b=>{
+            const inSheet = sheetData.bookings.find(s=>s.id===b.id);
+            if(!inSheet) return b;
+            if(b._forceRevert) return {...b, _forceRevert:undefined};
+            const sheetRank = rank[inSheet.status]||(inSheet.returnStep==='pending'?3:1);
+            const localRank = rank[b.status]||1;
+            return sheetRank > localRank ? inSheet : b;
+          });
+        }
+        // Merge fuelCardBookings — ถ้า Sheet มีสถานะสูงกว่า ให้ยึด Sheet
+        if(sheetData.fuelCardBookings && payload.fuelCardBookings){
+          payload.fuelCardBookings = payload.fuelCardBookings.map(b=>{
+            const inSheet = sheetData.fuelCardBookings.find(s=>s.id===b.id);
+            if(!inSheet) return b;
+            if(b._forceRevert) return {...b, _forceRevert:undefined};
+            const sheetDone = inSheet.status==='returned'||inSheet.returnStep==='done';
+            const localStale = b.status==='in-use'||b.status==='upcoming';
+            if(sheetDone && localStale) return inSheet;
+            if(b.status==='returned') return b;
+            return b;
+          });
+          // เพิ่ม booking ที่มีใน Sheet แต่ไม่มีใน local
+          sheetData.fuelCardBookings.forEach(s=>{
+            if(!payload.fuelCardBookings.find(b=>b.id===s.id)) payload.fuelCardBookings.push(s);
+          });
+        }
+        // ป้องกัน fuelCards ค่า 0 ทับ Sheet
+        if(sheetData.fuelCards && payload.fuelCards){
+          payload.fuelCards = payload.fuelCards.map(fc=>{
+            const inSheet = sheetData.fuelCards.find(s=>s.id===fc.id);
+            if(inSheet && (!fc.value||fc.value===0) && inSheet.value>0) return {...fc, value:inSheet.value};
+            return fc;
+          });
+        }
+        // ป้องกัน fuelPrice ถูกทับ
+        if(sheetData.fuelPrice && sheetData.fuelPrice>0 && !payload._fuelPriceUpdated){
+          payload.fuelPrice = sheetData.fuelPrice;
+        }
+        const body = JSON.stringify({action:'sync', data: JSON.stringify(payload)});
+        return fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body});
+      })
       .then(r=>r.json())
       .then(res=>{ if(onSuccess) onSuccess(); })
       .catch(()=>{ if(onFail) onFail(); });
