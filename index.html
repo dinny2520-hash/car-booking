@@ -2129,6 +2129,11 @@ function exportFuelReport(){
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
 
+  // แยก permit รถ vs การ์ดน้ำมัน
+  const carPlates = new Set((db.cars||[]).map(c=>c.plate.split(' ')[0]));
+  const carPermits = permits.filter(p=>!p.car||(db.cars||[]).some(c=>p.car.includes(c.plate.split(' ')[0])));
+  const cardPermits = permits.filter(p=>p.car&&!(db.cars||[]).some(c=>p.car.includes(c.plate.split(' ')[0])));
+
   // ชีตใบ permit แยกรถ
   if(carPermits.length){
     const cRows=[['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ']];
@@ -3738,7 +3743,11 @@ _lastFcReturnedCount = (db.fuelCardBookings||[]).filter(b=>b.status==='returned'
 setInterval(refreshSigCacheBackground,60000);
 refreshSigCacheBackground();
 updateSync(false,null);
-// รัน cleanup หลังโหลดข้อมูลครั้งแรกเสร็จ (รอ 3 วิให้ pull แรกเสร็จก่อน)
+// Pull ทันทีเมื่อ user กลับมาที่ tab (แก้ปัญหา mobile browser throttle)
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible') pullFromGSheet();
+});
+window.addEventListener('focus', pullFromGSheet);
 setTimeout(maybeRunCleanup, 3000);
 renderCars();
 
