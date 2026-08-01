@@ -2535,57 +2535,32 @@ function syncNow(onSuccess, onFail){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const gsUrl = db.gsUrl||DEFAULT_GS_URL;
   if(gsUrl && db.syncEnabled){
-    // ดึงข้อมูลจาก Sheet ก่อน เพื่อ merge ป้องกัน local เก่าทับสถานะที่ดีกว่า
-    fetch(gsUrl+'?action=get&t='+Date.now())
+    const payload = buildSyncPayload(_ts);
+    const body = JSON.stringify({action:'sync', data: JSON.stringify(payload)});
+    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body})
       .then(r=>r.json())
-      .then(sheetData=>{
-        const payload = buildSyncPayload(_ts);
-        // Merge bookings — ถ้า Sheet มีสถานะสูงกว่า ให้ยึด Sheet
-        if(sheetData.bookings && payload.bookings){
-          const rank = {'booked':1,'upcoming':1,'in-use':2,'overdue':2,'pending':3,'returned':4,'cancelled':4};
-          payload.bookings = payload.bookings.map(b=>{
-            const inSheet = sheetData.bookings.find(s=>s.id===b.id);
-            if(!inSheet) return b;
-            if(b._forceRevert) return {...b, _forceRevert:undefined};
-            const sheetRank = rank[inSheet.status]||(inSheet.returnStep==='pending'?3:1);
-            const localRank = rank[b.status]||1;
-            return sheetRank > localRank ? inSheet : b;
-          });
+      .then(res=>{
+        if(res.status==='stale' && res.current){
+          // Sheet มีข้อมูลใหม่กว่า — update local แล้ว retry sync
+          console.log('⚠️ Local เก่ากว่า Sheet — update local แล้ว retry');
+          const sheetData = res.current;
+          if(sheetData.bookings) db.bookings = sheetData.bookings;
+          if(sheetData.permits) db.permits = sheetData.permits;
+          if(sheetData.fuelCardBookings) db.fuelCardBookings = sheetData.fuelCardBookings;
+          if(sheetData.fuelCards) db.fuelCards = sheetData.fuelCards;
+          if(sheetData.fuelPrice && sheetData.fuelPrice>0) db.fuelPrice = sheetData.fuelPrice;
+          // retry sync ด้วยข้อมูลที่ merge แล้ว
+          const newTs = new Date().toISOString();
+          db._lastSync = newTs;
+          try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+          const retryPayload = buildSyncPayload(newTs);
+          const retryBody = JSON.stringify({action:'sync', data: JSON.stringify(retryPayload)});
+          return fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:retryBody})
+            .then(r=>r.json())
+            .then(()=>{ renderCars(); renderFuelCards(); if(onSuccess) onSuccess(); });
         }
-        // Merge fuelCardBookings — ถ้า Sheet มีสถานะสูงกว่า ให้ยึด Sheet
-        if(sheetData.fuelCardBookings && payload.fuelCardBookings){
-          payload.fuelCardBookings = payload.fuelCardBookings.map(b=>{
-            const inSheet = sheetData.fuelCardBookings.find(s=>s.id===b.id);
-            if(!inSheet) return b;
-            if(b._forceRevert) return {...b, _forceRevert:undefined};
-            const sheetDone = inSheet.status==='returned'||inSheet.returnStep==='done';
-            const localStale = b.status==='in-use'||b.status==='upcoming';
-            if(sheetDone && localStale) return inSheet;
-            if(b.status==='returned') return b;
-            return b;
-          });
-          // เพิ่ม booking ที่มีใน Sheet แต่ไม่มีใน local
-          sheetData.fuelCardBookings.forEach(s=>{
-            if(!payload.fuelCardBookings.find(b=>b.id===s.id)) payload.fuelCardBookings.push(s);
-          });
-        }
-        // ป้องกัน fuelCards ค่า 0 ทับ Sheet
-        if(sheetData.fuelCards && payload.fuelCards){
-          payload.fuelCards = payload.fuelCards.map(fc=>{
-            const inSheet = sheetData.fuelCards.find(s=>s.id===fc.id);
-            if(inSheet && (!fc.value||fc.value===0) && inSheet.value>0) return {...fc, value:inSheet.value};
-            return fc;
-          });
-        }
-        // ป้องกัน fuelPrice ถูกทับ
-        if(sheetData.fuelPrice && sheetData.fuelPrice>0 && !payload._fuelPriceUpdated){
-          payload.fuelPrice = sheetData.fuelPrice;
-        }
-        const body = JSON.stringify({action:'sync', data: JSON.stringify(payload)});
-        return fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body});
+        if(onSuccess) onSuccess();
       })
-      .then(r=>r.json())
-      .then(res=>{ if(onSuccess) onSuccess(); })
       .catch(()=>{ if(onFail) onFail(); });
   }
 }
@@ -3781,7 +3756,7 @@ function adminEditFcAmount(id){
 }
 
 // Auto sync every 15s
-setInterval(pullFromGSheet,7000);
+setInterval(pullFromGSheet,9000);
 // Init baseline counts
 _lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
 _lastFcBookingCount = (db.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
@@ -3796,6 +3771,30 @@ document.addEventListener('visibilitychange', ()=>{
 });
 window.addEventListener('focus', pullFromGSheet);
 setTimeout(maybeRunCleanup, 3000);
+
+// บังคับดึงข้อมูลจาก Sheet ทันทีที่เปิดแอป และ update local ถ้า Sheet ใหม่กว่า
+(function forcePullOnLoad(){
+  const gsUrl = db.gsUrl||DEFAULT_GS_URL;
+  if(!gsUrl||!db.syncEnabled) return;
+  fetch(gsUrl+'?action=get&t='+Date.now())
+    .then(r=>r.json())
+    .then(sheetData=>{
+      if(!sheetData.bookings) return;
+      const sheetTs = sheetData.ts ? new Date(sheetData.ts).getTime() : 0;
+      const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
+      if(sheetTs > localTs){
+        console.log('🔄 Sheet ใหม่กว่า local — update ทันที');
+        Object.assign(db, sheetData);
+        db.syncEnabled = true;
+        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        renderCars();
+        renderHistory();
+        renderReturnList();
+        renderUcPermitList();
+        renderFuelCards();
+      }
+    }).catch(()=>{});
+})();
 renderCars();
 
 // Check ?approve= on page load
