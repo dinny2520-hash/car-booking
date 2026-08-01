@@ -3729,7 +3729,7 @@ function adminEditFcAmount(id){
 }
 
 // Auto sync every 15s
-setInterval(pullFromGSheet,10000);
+setInterval(pullFromGSheet,7000);
 // Init baseline counts
 _lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
 _lastFcBookingCount = (db.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
