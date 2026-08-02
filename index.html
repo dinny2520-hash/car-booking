@@ -2673,13 +2673,25 @@ function syncNow(onSuccess, onFail){
 // ---- Smart Push — ส่งเฉพาะที่เปลี่ยน ----
 let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push ขึ้น Firebase
 
+function _getItemKey(item){
+  // เปรียบเทียบเฉพาะ field สำคัญ ไม่ใช่ทั้ง object
+  const {id, status, returnStep, mileageIn, mileageOut, returnedBy, returnedAt,
+    fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
+    managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
+    fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt} = item;
+  return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, returnedBy,
+    fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
+    managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
+    fcId, fuelAmount, active, plate, value, pin, createdAt});
+}
+
 function _getChanged(newItems, colName, idField='id'){
   const lastMap = _lastPushed[colName] || {};
   const changed = [];
   newItems.forEach(item=>{
     const id = item[idField];
     const lastStr = lastMap[id];
-    const newStr = JSON.stringify(item);
+    const newStr = _getItemKey(item);
     if(lastStr !== newStr) changed.push(item);
   });
   return changed;
@@ -2687,7 +2699,7 @@ function _getChanged(newItems, colName, idField='id'){
 
 function _updateLastPushed(items, colName, idField='id'){
   if(!_lastPushed[colName]) _lastPushed[colName] = {};
-  items.forEach(item=>{ _lastPushed[colName][item[idField]] = JSON.stringify(item); });
+  items.forEach(item=>{ _lastPushed[colName][item[idField]] = _getItemKey(item); });
 }
 
 function _pushToFirebase(){
