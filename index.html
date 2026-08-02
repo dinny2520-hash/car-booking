@@ -1045,16 +1045,32 @@ async function _smartPull(){
     ]);
 
     // merge — เก็บ local ใหม่ที่ยังไม่ push
-    const fbBkIds = new Set(fbBookings.map(b=>b.id));
+    // echo suppression: ถ้า record เพิ่งถูก push เองไม่เกิน ECHO_SUPPRESS_MS ให้ใช้ค่า local แทนค่าจาก Firebase
+    // (กันอาการ "เด้งกลับ" ที่ค่าจาก Firebase ยังไม่ทันอัปเดตจริงมาทับ optimistic update ของตัวเอง)
+    const localBkMap = {};
+    (db.bookings||[]).forEach(b=>{ localBkMap[b.id]=b; });
+    const fbBookingsFiltered = fbBookings.map(b=>(_isRecentlyPushed(b.id) && localBkMap[b.id]) ? localBkMap[b.id] : b);
+    const fbBkIds = new Set(fbBookingsFiltered.map(b=>b.id));
     const localNewBk = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id)&&!deletedBookings.has(b.id));
-    db.bookings = [...localNewBk, ...fbBookings].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+    db.bookings = [...localNewBk, ...fbBookingsFiltered].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
-    const fbPIds = new Set(fbPermits.map(p=>p.id));
+    const localPMap = {};
+    (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
+    const fbPermitsFiltered = fbPermits.map(p=>(_isRecentlyPushed(p.id) && localPMap[p.id]) ? localPMap[p.id] : p);
+    const fbPIds = new Set(fbPermitsFiltered.map(p=>p.id));
     const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id)&&!deletedPermits.has(p.id));
-    db.permits = [...localNewP, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+    db.permits = [...localNewP, ...fbPermitsFiltered].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
-    if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
-    if(fbFc.length) db.fuelCards = fbFc;
+    if(fbFcBk.length){
+      const localFcBkMap = {};
+      (db.fuelCardBookings||[]).forEach(b=>{ localFcBkMap[b.id]=b; });
+      db.fuelCardBookings = fbFcBk.map(b=>(_isRecentlyPushed(b.id) && localFcBkMap[b.id]) ? localFcBkMap[b.id] : b);
+    }
+    if(fbFc.length){
+      const localFcMap = {};
+      (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
+      db.fuelCards = fbFc.map(f=>(_isRecentlyPushed(f.id) && localFcMap[f.id]) ? localFcMap[f.id] : f);
+    }
 
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
     // ทำครั้งเดียวหลัง pull แรก เพื่อกัน push ทั้งหมดตอนเปิดแอป
@@ -2673,6 +2689,18 @@ function syncNow(onSuccess, onFail){
 // ---- Smart Push — ส่งเฉพาะที่เปลี่ยน ----
 let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push ขึ้น Firebase
 
+// ---- Echo suppression — กัน pull ทับ record ที่เพิ่ง push เอง ----
+let _recentlyPushedAt = {}; // { id: timestamp } เวลาที่เพิ่ง push record นี้ล่าสุด
+const ECHO_SUPPRESS_MS = 5000; // ภายใน 5 วิหลัง push เอง ไม่เอาค่าจาก Firebase มาทับ
+function _markPushed(items){
+  const now = Date.now();
+  items.forEach(item=>{ if(item && item.id) _recentlyPushedAt[item.id] = now; });
+}
+function _isRecentlyPushed(id){
+  const t = _recentlyPushedAt[id];
+  return t && (Date.now() - t) < ECHO_SUPPRESS_MS;
+}
+
 function _getItemKey(item){
   // เปรียบเทียบเฉพาะ field สำคัญ ไม่ใช่ทั้ง object
   const {id, status, returnStep, mileageIn, mileageOut, returnedBy, returnedAt,
@@ -2764,6 +2792,12 @@ function _pushToFirebase(){
     _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
     _updateLastPushed(db.fuelCards||[], 'fuelCards');
     _updateLastPushed(db.cars||[], 'cars');
+    // กัน echo — mark เฉพาะรายการที่เพิ่งเปลี่ยนจริงว่าเพิ่ง push ไป
+    _markPushed(changedBookings);
+    _markPushed(changedPermits);
+    _markPushed(changedFcBk);
+    _markPushed(changedFc);
+    _markPushed(changedCars);
     updateSync(false, true);
   }).catch(err=>{
     console.error('Firebase push error:', err);
