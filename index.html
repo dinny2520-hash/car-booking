@@ -1030,6 +1030,28 @@ function startRealtimeSync(){
   });
   _fbListeners.push(unsubP);
 
+  // ฟัง deletedIds แบบ real-time — ทุกเครื่องรู้ว่าอะไรถูกลบ
+  const unsubDel = _fbDb.collection('config').doc('deletedIds').onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const data = snap.data();
+    if(data.deletedPermitIds){
+      db.deletedPermitIds = [...new Set([...(db.deletedPermitIds||[]), ...data.deletedPermitIds])];
+      // ลบออกจาก local ทันที
+      db.permits = (db.permits||[]).filter(p=>!db.deletedPermitIds.includes(p.id));
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      renderUcPermitList();
+      renderPermitList();
+    }
+    if(data.deletedBookingIds){
+      db.deletedBookingIds = [...new Set([...(db.deletedBookingIds||[]), ...data.deletedBookingIds])];
+      db.bookings = (db.bookings||[]).filter(b=>!db.deletedBookingIds.includes(b.id));
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      renderCars();
+      renderHistory();
+    }
+  });
+  _fbListeners.push(unsubDel);
+
   console.log('✅ Real-time sync started');
 }
 
@@ -2555,6 +2577,12 @@ function confirmDeletePermit(){
   deleteSigFromSheet(_permitIdToDelete);
   // ลบออกจาก Firebase โดยตรงทันที
   fbDeleteDoc('permits', _permitIdToDelete);
+  // sync deletedIds ขึ้น Firebase เพื่อให้ทุกเครื่องรู้
+  fbSetDoc('config','deletedIds',{
+    deletedPermitIds: db.deletedPermitIds||[],
+    deletedBookingIds: db.deletedBookingIds||[],
+    updatedAt: new Date().toISOString()
+  });
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
