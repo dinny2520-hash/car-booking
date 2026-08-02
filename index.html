@@ -1720,8 +1720,6 @@ function syncToGSheet(){
 }
 
 function pullFromGSheet(){
-  // ใช้ Firebase real-time แทน — ไม่ต้อง pull แบบเดิมอีกแล้ว
-  // แต่ยังเรียกได้เพื่อ force refresh
   if(!_fbReady) return;
   updateSync(true);
   Promise.all([
@@ -1731,13 +1729,25 @@ function pullFromGSheet(){
     fbGetAll('fuelCardBookings'),
     fbGetAll('cars'),
     fbGetAll('staff')
-  ]).then(([bookings, permits, fuelCards, fuelCardBookings, cars, staff])=>{
-    db.bookings = bookings;
-    db.permits = permits;
-    db.fuelCards = fuelCards;
-    db.fuelCardBookings = fuelCardBookings;
-    db.cars = cars;
-    db.staff = staff;
+  ]).then(([fbBookings, fbPermits, fbFuelCards, fbFuelCardBookings, fbCars, fbStaff])=>{
+    // Merge — เก็บ local ที่ใหม่กว่า Firebase ไว้
+    const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
+    
+    // Bookings — เก็บ local ที่สร้างหลัง lastSync (ยังไม่ push Firebase)
+    const fbBkIds = new Set(fbBookings.map(b=>b.id));
+    const localNewBks = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id) && b.createdAt && new Date(b.createdAt).getTime() > localTs - 60000);
+    db.bookings = [...localNewBks, ...fbBookings];
+
+    // Permits — เก็บ local ที่สร้างหลัง lastSync
+    const fbPIds = new Set(fbPermits.map(p=>p.id));
+    const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id) && p.createdAt && new Date(p.createdAt).getTime() > localTs - 60000);
+    db.permits = [...localNewP, ...fbPermits];
+
+    if(fbFuelCards.length) db.fuelCards = fbFuelCards;
+    if(fbFuelCardBookings.length) db.fuelCardBookings = fbFuelCardBookings;
+    if(fbCars.length) db.cars = fbCars;
+    if(fbStaff.length) db.staff = fbStaff;
+    
     db.syncEnabled = true;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     updateSync(false, true);
@@ -2558,28 +2568,34 @@ function buildSyncPayload(ts){
 function syncNow(onSuccess, onFail){
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
+  // บันทึกลง local ก่อนเสมอ
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(onSuccess) onSuccess(); // แจ้งสำเร็จทันที (optimistic)
 
-  if(!_fbReady){ 
-    // Firebase ยังไม่พร้อม — retry หลัง 2 วินาที
-    setTimeout(()=>syncNow(onSuccess, onFail), 2000);
-    return; 
+  if(!_fbReady){
+    // Firebase ยังไม่พร้อม — queue ไว้แล้ว retry
+    setTimeout(()=>{
+      if(_fbReady) _pushToFirebase();
+    }, 3000);
+    return;
   }
+  _pushToFirebase();
+}
 
-  // บันทึกข้อมูลลง Firebase — ไม่มีปัญหา sync ทับอีกแล้ว
+function _pushToFirebase(){
   Promise.all([
     fbSaveCollection('bookings', db.bookings),
     fbSaveCollection('permits', db.permits),
     fbSaveCollection('fuelCardBookings', db.fuelCardBookings||[]),
     fbSaveCollection('fuelCards', db.fuelCards||[]),
     fbSaveCollection('cars', db.cars),
-    fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:_ts})
+    fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()})
   ]).then(()=>{
     updateSync(false, true);
-    if(onSuccess) onSuccess();
   }).catch(err=>{
-    console.error('Firebase sync error:', err);
-    if(onFail) onFail();
+    console.error('Firebase push error:', err);
+    // retry อีกครั้ง
+    setTimeout(_pushToFirebase, 5000);
   });
 }
 
