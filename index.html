@@ -988,9 +988,10 @@ function startRealtimeSync(){
 
   // ฟัง bookings แบบ real-time
   const unsubBk = _fbDb.collection('bookings').onSnapshot(snap=>{
-    const newBks = snap.docs.map(d=>d.data());
+    const deletedIds = new Set(db.deletedBookingIds||[]);
+    const newBks = snap.docs.map(d=>d.data()).filter(b=>!deletedIds.has(b.id));
     const fbIds = new Set(newBks.map(b=>b.id));
-    const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id));
+    const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id) && !deletedIds.has(b.id));
     if(localNew.length > 0) localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
     db.bookings = [...localNew, ...newBks].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1017,9 +1018,10 @@ function startRealtimeSync(){
 
   // ฟัง permits แบบ real-time
   const unsubP = _fbDb.collection('permits').onSnapshot(snap=>{
-    const fbPermits = snap.docs.map(d=>d.data());
+    const deletedIds = new Set(db.deletedPermitIds||[]);
+    const fbPermits = snap.docs.map(d=>d.data()).filter(p=>!deletedIds.has(p.id));
     const fbIds = new Set(fbPermits.map(p=>p.id));
-    const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id));
+    const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id) && !deletedIds.has(p.id));
     if(localNew.length > 0) localNew.forEach(p=>fbSetDoc('permits', p.id, p));
     db.permits = [...localNew, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -2620,20 +2622,22 @@ function syncNow(onSuccess, onFail){
 }
 
 function _pushToFirebase(){
-  // หยุด listener ชั่วคราวเพื่อกัน overwrite ระหว่าง push
-  const unsubs = _fbListeners.splice(0);
-  unsubs.forEach(u=>u());
+  const deletedPermits = new Set(db.deletedPermitIds||[]);
+  const deletedBookings = new Set(db.deletedBookingIds||[]);
+
+  // กรองออก deleted items ก่อน push
+  const permitsToSync = (db.permits||[]).filter(p=>!deletedPermits.has(p.id));
+  const bookingsToSync = (db.bookings||[]).filter(b=>!deletedBookings.has(b.id));
 
   Promise.all([
-    fbSaveCollection('bookings', db.bookings),
-    fbSaveCollection('permits', db.permits),
+    fbSaveCollection('bookings', bookingsToSync),
+    fbSaveCollection('permits', permitsToSync),
     fbSaveCollection('fuelCardBookings', db.fuelCardBookings||[]),
     fbSaveCollection('fuelCards', db.fuelCards||[]),
     fbSaveCollection('cars', db.cars),
     fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()})
   ]).then(()=>{
     updateSync(false, true);
-    // เปิด listener ใหม่หลัง push เสร็จ
     startRealtimeSync();
   }).catch(err=>{
     console.error('Firebase push error:', err);
