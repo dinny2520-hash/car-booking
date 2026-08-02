@@ -207,12 +207,8 @@ tr:hover td{background:var(--g50)}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <!-- Firebase SDK -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, doc, onSnapshot, setDoc, getDoc, getDocs, writeBatch, deleteDoc } 
-      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-    window._firebaseModules = { initializeApp, getFirestore, collection, doc, onSnapshot, setDoc, getDoc, getDocs, writeBatch, deleteDoc };
-  </script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -902,27 +898,32 @@ let _fbUnsub = null; // realtime listener
 async function initFirebase(){
   if(_fbReady) return true;
   try {
-    const { initializeApp, getFirestore } = window._firebaseModules || {};
-    if(!initializeApp) { console.warn('Firebase SDK not loaded yet'); return false; }
-    _fbApp = initializeApp(FIREBASE_CONFIG);
-    _fbDb = getFirestore(_fbApp);
+    if(!window.firebase) { console.warn('Firebase SDK not loaded yet'); return false; }
+    firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDb = firebase.firestore();
     _fbReady = true;
     console.log('✅ Firebase ready');
     return true;
-  } catch(e) { console.error('Firebase init error:', e); return false; }
+  } catch(e) {
+    // ถ้า init ซ้ำให้ใช้ app เดิม
+    try {
+      _fbDb = firebase.firestore();
+      _fbReady = true;
+      return true;
+    } catch(e2) { console.error('Firebase init error:', e2); return false; }
+  }
 }
 
 // ---- Firebase Sync Functions ----
 async function fbSaveCollection(colName, items, idField='id'){
   if(!_fbReady || !items || !items.length) return;
-  const { collection, doc, writeBatch } = window._firebaseModules;
   const BATCH_SIZE = 400;
   for(let i=0; i<items.length; i+=BATCH_SIZE){
-    const batch = writeBatch(_fbDb);
+    const batch = _fbDb.batch();
     items.slice(i,i+BATCH_SIZE).forEach(item=>{
       const id = item[idField]||('item_'+Date.now());
       const clean = JSON.parse(JSON.stringify(item));
-      batch.set(doc(collection(_fbDb, colName), id), clean);
+      batch.set(_fbDb.collection(colName).doc(id), clean);
     });
     await batch.commit();
   }
@@ -930,39 +931,44 @@ async function fbSaveCollection(colName, items, idField='id'){
 
 async function fbDeleteDoc(colName, id){
   if(!_fbReady) return;
-  const { collection, doc, deleteDoc } = window._firebaseModules;
-  await deleteDoc(doc(collection(_fbDb, colName), id));
+  await _fbDb.collection(colName).doc(id).delete();
 }
 
 async function fbSetDoc(colName, id, data){
   if(!_fbReady) return;
-  const { collection, doc, setDoc } = window._firebaseModules;
   const clean = JSON.parse(JSON.stringify(data));
-  await setDoc(doc(collection(_fbDb, colName), id), clean);
+  await _fbDb.collection(colName).doc(id).set(clean);
 }
 
 async function fbGetAll(colName){
   if(!_fbReady) return [];
-  const { collection, getDocs } = window._firebaseModules;
-  const snap = await getDocs(collection(_fbDb, colName));
+  const snap = await _fbDb.collection(colName).get();
   return snap.docs.map(d=>d.data());
 }
 
 // ---- Real-time listener ----
 function startRealtimeSync(){
   if(!_fbReady || _fbUnsub) return;
-  const { collection, onSnapshot } = window._firebaseModules;
   // ฟัง bookings แบบ real-time
-  _fbUnsub = onSnapshot(collection(_fbDb, 'bookings'), snap=>{
+  _fbUnsub = _fbDb.collection('bookings').onSnapshot(snap=>{
     const newBks = snap.docs.map(d=>d.data());
-    if(JSON.stringify(newBks) !== JSON.stringify(db.bookings)){
-      db.bookings = newBks;
-      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      renderCars();
-      renderHistory();
-      renderReturnList();
-      checkPullChanges({bookings:newBks, fuelCardBookings:db.fuelCardBookings});
-    }
+    db.bookings = newBks;
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    renderCars();
+    renderHistory();
+    const step2Open = document.getElementById('modal-step2-return')?.classList.contains('open');
+    const step1Open = document.getElementById('modal-step1-return')?.classList.contains('open');
+    if(!step2Open && !step1Open) renderReturnList();
+    checkPullChanges({bookings:newBks, fuelCardBookings:db.fuelCardBookings});
+    updateSync(false, true);
+  });
+  // ฟัง fuelCardBookings แบบ real-time
+  _fbDb.collection('fuelCardBookings').onSnapshot(snap=>{
+    db.fuelCardBookings = snap.docs.map(d=>d.data());
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    renderFuelCards();
+    renderFcHistory();
+    renderFcReturnList();
   });
   console.log('✅ Real-time sync started');
 }
@@ -1539,10 +1545,8 @@ function editCarMileage(id){
   }
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();
   renderCars();
@@ -1558,10 +1562,8 @@ function addCar(){
   if(document.getElementById('new-car-testdrive')) document.getElementById('new-car-testdrive').checked=false;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();renderCars();
 }
@@ -1571,10 +1573,8 @@ function removeCar(id){
   markDeleted('deletedCarIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();renderCars();
 }
@@ -1587,10 +1587,8 @@ function addStaff(){
   document.getElementById('new-staff-code').value='';
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();
 }
@@ -1600,10 +1598,8 @@ function removeStaff(id){
   markDeleted('deletedStaffIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();
 }
@@ -1905,24 +1901,15 @@ function stopPermitPoll(){
   if(_permitPollTimer){ clearInterval(_permitPollTimer); _permitPollTimer=null; }
 }
 function refreshPermitList(){
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(!gsUrl){ renderPermitList(); return; }
-  fetch(gsUrl+'?action=get&t='+Date.now())
-    .then(r=>r.json())
-    .then(data=>{
-      if(data&&data.permits) db.permits=data.permits;
-      if(data&&data.bookings) db.bookings=data.bookings;
-      if(data&&data.staff&&data.staff.length){
-        const sheetStaffIds = new Set(data.staff.map(s=>s.id));
-        const localNewOnly = (db.staff||[]).filter(s=>!sheetStaffIds.has(s.id));
-        db.staff = [...data.staff, ...localNewOnly];
-      }
-      if(data&&data.adminPass) db.adminPass=data.adminPass;
+  // ดึง permits จาก Firebase แล้ว render
+  if(!_fbReady){ renderPermitList(); return; }
+  _fbDb.collection('permits').get()
+    .then(snap=>{
+      db.permits = snap.docs.map(d=>d.data());
       db.syncEnabled=true;
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       renderPermitList();
-    })
-    .catch(()=>renderPermitList());
+    }).catch(()=>renderPermitList());
 }
 
 
@@ -1963,28 +1950,14 @@ function stripSigs(permits){
 }
 
 function syncViaGet(data, onSuccess, onFail){
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl){ if(onFail) onFail(); return; }
-  // ตัดลายเซ็นออกก่อน sync เพื่อลดขนาดข้อมูล
-  const cleanData = {...data, permits: stripSigs(data.permits)};
-  fetch(gsUrl, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({action:'sync', data: JSON.stringify(cleanData)})
-  })
-  .then(r=>r.json())
-  .then(res=>{ if(res.status==='ok'){ if(onSuccess) onSuccess(); } else { if(onFail) onFail(); } })
-  .catch(()=>{ if(onFail) onFail(); });
+  // ใช้ Firebase แทน — syncNow จัดการให้
+  syncNow(onSuccess, onFail);
 }
 
 function saveSigToSheet(permitId, sigData){
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl || !sigData) return;
-  fetch(gsUrl, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({action:'savesig', id: permitId+'_mgr', sig: sigData})
-  }).catch(()=>{});
+  if(!sigData) return;
+  // บันทึก signature ใน Firebase
+  fbSetDoc('signatures', permitId+'_mgr', {id: permitId+'_mgr', sig: sigData});
 }
 
 // Also update pullFromGSheet to get sigs
@@ -2267,9 +2240,7 @@ function submitUseCar(){
   errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
 
-  fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'sync',data:JSON.stringify(syncData)})})
-    .then(r=>r.json())
-    .then(()=>{
+  syncNow(()=>{
       db.syncEnabled=true;try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       errEl.style.display='none';
       // ล้างฟอร์ม
@@ -2439,10 +2410,8 @@ function adminDeleteBooking(id){
   markDeleted('deletedBookingIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderAdminBookingList();
   renderHistory();
@@ -2457,10 +2426,8 @@ function adminDeleteAllDone(){
   db.bookings=db.bookings.filter(b=>b.status!=='cancelled'&&b.status!=='returned');
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderAdminBookingList();
   renderHistory();
@@ -2523,14 +2490,10 @@ function confirmDeletePermit(){
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    // Archive permit หลังจากลบออกจากระบบแล้ว
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'archivepermit', permit:_permitToArchive})
-    }).catch(()=>{});
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  // Archive permit ใน Firebase
+  if(_permitToArchive) fbSetDoc('permitArchive', _permitToArchive.id, {..._permitToArchive, archivedAt: new Date().toISOString()});
+    if(db.syncEnabled){
+    syncNow();
   }
   closeModal('modal-delete-permit');
   renderPermitList();
@@ -2625,13 +2588,9 @@ function autoCleanupOldBookings(){
   );
   if(!toRemove.length) return;
 
-  // Archive ก่อนลบ — เก็บสำรองไว้ใน Sheet "Archive"
-  const gsUrl = db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl){
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'archive', bookings:toRemove})
-    }).catch(()=>{});
-  }
+  // Archive ก่อนลบ — เก็บสำรองไว้ใน Firebase "bookingArchive"
+  const now = new Date().toISOString();
+  toRemove.forEach(b=>fbSetDoc('bookingArchive', b.id, {...b, archivedAt: now}));
 
   toRemove.forEach(b=>markDeleted('deletedBookingIds', b.id));
   const removeIds = new Set(toRemove.map(b=>b.id));
@@ -2692,38 +2651,31 @@ function fetchManagerSig(permitId, callback){
   const cache = getSigCache();
   const cached = cache[permitId+'_mgr'];
   if(cached){ callback(cached); return; }
-
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl){ callback(null); return; }
-  fetch(gsUrl + '?action=getsigs&t=' + Date.now())
-    .then(r=>r.json())
-    .then(sigs=>{
-      if(sigs) setSigCache(sigs); // เก็บ cache ทั้งหมด
-      const sig = sigs && sigs[permitId+'_mgr'];
-      callback(sig || null);
+  // ดึง sig จาก Firebase
+  if(!_fbReady){ callback(null); return; }
+  _fbDb.collection('signatures').doc(permitId+'_mgr').get()
+    .then(snap=>{
+      const sig = snap.exists ? snap.data()?.sig : null;
+      if(sig){ const c=getSigCache(); c[permitId+'_mgr']=sig; setSigCache(c); }
+      callback(sig||null);
     })
     .catch(()=>callback(null));
 }
 
 // ดึง sig cache เบื้องหลังเป็นระยะ (เพื่อให้พิมพ์ PDF ได้ทันทีโดยไม่ต้องรอ)
 function refreshSigCacheBackground(){
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl) return;
-  fetch(gsUrl + '?action=getsigs&t=' + Date.now())
-    .then(r=>r.json())
-    .then(sigs=>{ if(sigs) setSigCache(sigs); })
-    .catch(()=>{});
+  if(!_fbReady) return;
+  _fbDb.collection('signatures').get()
+    .then(snap=>{
+      const sigs={};
+      snap.docs.forEach(d=>{ if(d.data()?.sig) sigs[d.id]=d.data().sig; });
+      if(Object.keys(sigs).length) setSigCache(sigs);
+    }).catch(()=>{});
 }
 
-
 function deleteSigFromSheet(permitId){
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl) return;
-  fetch(gsUrl, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({action:'deletesig', id: permitId+'_mgr'})
-  }).catch(()=>{});
+  // ลบ signature จาก Firebase
+  fbDeleteDoc('signatures', permitId+'_mgr');
   // ลบจาก cache local ด้วย
   const cache = getSigCache();
   delete cache[permitId+'_mgr'];
@@ -2737,10 +2689,8 @@ function toggleCarService(id){
   car.inService = !car.inService;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(),ts:_ts})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
+  if(db.syncEnabled){
+    syncNow();
   }
   renderSettings();renderCars();
 }
@@ -3120,11 +3070,7 @@ function addFuelCard(){
   document.getElementById('new-fc-value').value='';
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
-  }
+  syncNow();
   renderFcSettings();renderFuelCards();
 }
 
@@ -3133,11 +3079,7 @@ function removeFuelCard(id){
   db.fuelCards=(db.fuelCards||[]).filter(f=>f.id!==id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
-  }
+  syncNow();
   renderFcSettings();renderFuelCards();
 }
 
@@ -3150,11 +3092,7 @@ function editFcValue(id){
   fc.value=Number(val.trim());
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_ts)})});
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:body}).catch(()=>{});
-  }
+  syncNow();
   renderFcSettings();renderFuelCards();
 }
 
@@ -3170,14 +3108,8 @@ function saveFuelPrice(){
   db.fuelPrice = Number(val);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  // sync fuelPrice ขึ้น Sheet แยกต่างหาก (ไม่ผ่าน buildSyncPayload ปกติ)
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(gsUrl&&db.syncEnabled){
-    const payload = {...buildSyncPayload(_ts), fuelPrice: db.fuelPrice, _fuelPriceUpdated: true};
-    fetch(gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'sync',data:JSON.stringify(payload)})
-    }).catch(()=>{});
-  }
+  // sync fuelPrice ขึ้น Firebase
+  fbSetDoc('config','app',{fuelPrice:db.fuelPrice, adminPass:db.adminPass, updatedAt:_ts});
   updateFuelPriceDisplay();
   alert('✅ บันทึกราคาน้ำมัน ฿'+Number(val).toFixed(2)+'/ลิตร แล้ว');
 }
@@ -3803,7 +3735,9 @@ setInterval(checkAppVersion, 5*60*1000);
 setTimeout(checkAppVersion, 10*1000);
 
 // Auto sync every 15s
-setInterval(pullFromGSheet,9000);
+// ใช้ Firebase real-time แทน interval pull
+// initFirebase แล้ว startRealtimeSync จะฟังการเปลี่ยนแปลงแบบ real-time
+setInterval(pullFromGSheet, 60000); // pull ทุก 60 วิเป็น backup เท่านั้น
 // Init Firebase และเริ่ม real-time sync
 initFirebase().then(ready=>{
   if(ready){
@@ -3830,24 +3764,8 @@ setTimeout(maybeRunCleanup, 3000);
 (function forcePullOnLoad(){
   const gsUrl = db.gsUrl||DEFAULT_GS_URL;
   if(!gsUrl||!db.syncEnabled) return;
-  fetch(gsUrl+'?action=get&t='+Date.now())
-    .then(r=>r.json())
-    .then(sheetData=>{
-      if(!sheetData.bookings) return;
-      const sheetTs = sheetData.ts ? new Date(sheetData.ts).getTime() : 0;
-      const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-      if(sheetTs > localTs){
-        console.log('🔄 Sheet ใหม่กว่า local — update ทันที');
-        Object.assign(db, sheetData);
-        db.syncEnabled = true;
-        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-        renderCars();
-        renderHistory();
-        renderReturnList();
-        renderUcPermitList();
-        renderFuelCards();
-      }
-    }).catch(()=>{});
+  // ใช้ Firebase pull แทน
+  pullFromGSheet();
 })();
 renderCars();
 
@@ -3866,22 +3784,19 @@ window.addEventListener('load', function(){
   document.querySelector('#page-approve .btn-success').style.display='';
   document.querySelector('#page-approve .btn-danger').style.display='';
 
-  const gsUrl = db.gsUrl || DEFAULT_GS_URL;
-  if(!gsUrl){ loadApprovalPage(approveId); return; }
-
-  fetch(gsUrl + '?action=get&t=' + Date.now())
-    .then(r=>r.json())
-    .then(data=>{
-      if(data.permits) db.permits = data.permits;
-      if(data.cars) db.cars = data.cars;
-      if(data.bookings) db.bookings = data.bookings;
-      if(data.staff) db.staff = data.staff;
-      if(data.adminPass) db.adminPass = data.adminPass;
-      db.syncEnabled = true;
-      try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
-      loadApprovalPage(approveId);
-    })
-    .catch(()=>loadApprovalPage(approveId));
+  // ดึงข้อมูลจาก Firebase แล้วโหลดหน้า approve
+  if(!_fbReady){ loadApprovalPage(approveId); return; }
+  Promise.all([
+    fbGetAll('permits'), fbGetAll('cars'), fbGetAll('bookings'), fbGetAll('staff')
+  ]).then(([permits, cars, bookings, staff])=>{
+    if(permits.length) db.permits = permits;
+    if(cars.length) db.cars = cars;
+    if(bookings.length) db.bookings = bookings;
+    if(staff.length) db.staff = staff;
+    db.syncEnabled = true;
+    try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
+    loadApprovalPage(approveId);
+  }).catch(()=>loadApprovalPage(approveId));
 });
 // ===== PERMIT / APPROVAL SYSTEM =====
 
