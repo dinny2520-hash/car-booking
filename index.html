@@ -215,7 +215,7 @@ tr:hover td{background:var(--g50)}
 <nav class="nav">
   <span class="nav-logo">🚗 <span class="nav-logo-text">ระบบจองรถบริษัท</span></span>
   <div style="display:flex;align-items:center;gap:6px;margin-right:6px">
-    <div id="sync-dot" title="สถานะซิงค์" style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;cursor:pointer" onclick="showSyncToast()"></div>
+    <div id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;display:none"></div>
     <button onclick="hardReset()" title="รีเซ็ตข้อมูล" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0">🔄</button>
   </div>
   <div class="nav-tabs">
@@ -879,8 +879,26 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20260802-002'; // Firebase version
+const APP_VERSION = '20260802-003'; // Force reload version
 const DB_KEY = 'cbsys_v2';
+
+// ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
+(function forceUpdateCheck(){
+  try {
+    const raw = localStorage.getItem('cbsys_v2');
+    if(raw){
+      const old = JSON.parse(raw);
+      // ถ้ายังมี gsUrl (ใช้ Apps Script) ให้ล้างแล้ว reload
+      if(old.gsUrl || !old._firebaseVersion){
+        console.log('🔄 พบข้อมูลเก่า — ล้าง cache แล้ว reload');
+        localStorage.clear();
+        sessionStorage.clear();
+        location.reload(true);
+        return;
+      }
+    }
+  } catch(e) {}
+})();
 
 // ---- Firebase Init ----
 const FIREBASE_CONFIG = {
@@ -897,21 +915,22 @@ let _fbUnsub = null; // realtime listener
 
 async function initFirebase(){
   if(_fbReady) return true;
+  // รอ Firebase SDK โหลดก่อน (retry สูงสุด 10 ครั้ง)
+  for(let i=0; i<10; i++){
+    if(window.firebase) break;
+    await new Promise(r=>setTimeout(r, 300));
+  }
   try {
     if(!window.firebase) { console.warn('Firebase SDK not loaded yet'); return false; }
-    firebase.initializeApp(FIREBASE_CONFIG);
+    try { firebase.initializeApp(FIREBASE_CONFIG); } catch(e) {} // ถ้า init ซ้ำข้ามไป
     _fbDb = firebase.firestore();
     _fbReady = true;
+    db._firebaseVersion = true;
+    db.gsUrl = null;
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     console.log('✅ Firebase ready');
     return true;
-  } catch(e) {
-    // ถ้า init ซ้ำให้ใช้ app เดิม
-    try {
-      _fbDb = firebase.firestore();
-      _fbReady = true;
-      return true;
-    } catch(e2) { console.error('Firebase init error:', e2); return false; }
-  }
+  } catch(e) { console.error('Firebase init error:', e); return false; }
 }
 
 // ---- Firebase Sync Functions ----
@@ -2541,7 +2560,11 @@ function syncNow(onSuccess, onFail){
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
 
-  if(!_fbReady){ if(onFail) onFail(); return; }
+  if(!_fbReady){ 
+    // Firebase ยังไม่พร้อม — retry หลัง 2 วินาที
+    setTimeout(()=>syncNow(onSuccess, onFail), 2000);
+    return; 
+  }
 
   // บันทึกข้อมูลลง Firebase — ไม่มีปัญหา sync ทับอีกแล้ว
   Promise.all([
@@ -3738,12 +3761,19 @@ setTimeout(checkAppVersion, 10*1000);
 // ใช้ Firebase real-time แทน interval pull
 // initFirebase แล้ว startRealtimeSync จะฟังการเปลี่ยนแปลงแบบ real-time
 setInterval(pullFromGSheet, 60000); // pull ทุก 60 วิเป็น backup เท่านั้น
-// Init Firebase และเริ่ม real-time sync
-initFirebase().then(ready=>{
-  if(ready){
-    pullFromGSheet();
-    startRealtimeSync();
-  }
+// Init Firebase และเริ่ม real-time sync — รอ DOM พร้อมก่อน
+window.addEventListener('load', ()=>{
+  initFirebase().then(ready=>{
+    if(ready){
+      pullFromGSheet();
+      startRealtimeSync();
+    } else {
+      // retry อีกครั้งหลัง 2 วินาที
+      setTimeout(()=>{
+        initFirebase().then(r=>{ if(r){ pullFromGSheet(); startRealtimeSync(); }});
+      }, 2000);
+    }
+  });
 });
 // Init baseline counts
 _lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
