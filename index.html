@@ -2734,12 +2734,11 @@ function _pushToFirebase(){
     _lastPushed['deletedIds'] = delStr;
   }
 
-  if(ops.length === 0){ updateSync(false, true); return; }
-
-  // เพิ่ม lastUpdate timestamp เสมอ เพื่อบอกเครื่องอื่นให้ pull ใหม่
+  // เขียน lastUpdate เสมอ ไม่เช็ค เพื่อให้ทุกเครื่อง pull ใหม่
   const nowTs = new Date().toISOString();
-  ops.push(fbSetDoc('config','lastUpdate',{updatedAt: nowTs}));
-  _lastPushed['lastUpdate'] = nowTs; // อัปเดต local ด้วย
+  ops.push(_fbDb.collection('config').doc('lastUpdate').set({updatedAt: nowTs}));
+
+  if(ops.length === 0){ updateSync(false, true); return; }
 
   console.log(`📤 Push ${ops.length} changes to Firebase`);
   Promise.all(ops).then(()=>{
