@@ -1003,6 +1003,17 @@ function startRealtimeSync(){
     renderFcHistory();
     renderFcReturnList();
   });
+  // ฟัง permits แบบ real-time
+  _fbDb.collection('permits').onSnapshot(snap=>{
+    const fbPermits = snap.docs.map(d=>d.data());
+    // เก็บ local ที่ยังไม่ push
+    const fbIds = new Set(fbPermits.map(p=>p.id));
+    const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id));
+    db.permits = [...localNew, ...fbPermits];
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    renderUcPermitList();
+    renderPermitList();
+  });
   console.log('✅ Real-time sync started');
 }
 
@@ -2280,28 +2291,23 @@ function submitUseCar(){
   const gsUrl=db.gsUrl||DEFAULT_GS_URL;
   const syncData={...buildSyncPayload(_ts)};
 
-  errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet...';
+  errEl.textContent='⏳ กำลังบันทึก...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
 
-  syncNow(()=>{
-      db.syncEnabled=true;try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      errEl.style.display='none';
-      // ล้างฟอร์ม
-      ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
-        const el=document.getElementById(id);if(el)el.value='';
-      });
-      document.getElementById('uc-car-select').value='';
-      document.getElementById('uc-car-custom').value='';
-      document.getElementById('uc-car-custom').style.display='none';
-      renderUcPermitList();
-      copyLink(link);
-      alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
-    })
-    .catch(()=>{
-      errEl.style.display='none';
-      renderUcPermitList();
-      alert('⚠️ บันทึกแล้ว แต่ซิงค์ไม่ได้\n\nลิงก์:\n'+link);
-    });
+  syncNow();
+  db.syncEnabled=true;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  errEl.style.display='none';
+  // ล้างฟอร์ม
+  ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  document.getElementById('uc-car-select').value='';
+  document.getElementById('uc-car-custom').value='';
+  document.getElementById('uc-car-custom').style.display='none';
+  renderUcPermitList();
+  copyLink(link);
+  alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
 }
 
 function renderUcPermitList(){
