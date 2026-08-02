@@ -2649,35 +2649,84 @@ function syncNow(onSuccess, onFail){
   _pushToFirebase();
 }
 
+// ---- Smart Push — ส่งเฉพาะที่เปลี่ยน ----
+let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push ขึ้น Firebase
+
+function _getChanged(newItems, colName, idField='id'){
+  const lastMap = _lastPushed[colName] || {};
+  const changed = [];
+  newItems.forEach(item=>{
+    const id = item[idField];
+    const lastStr = lastMap[id];
+    const newStr = JSON.stringify(item);
+    if(lastStr !== newStr) changed.push(item);
+  });
+  return changed;
+}
+
+function _updateLastPushed(items, colName, idField='id'){
+  if(!_lastPushed[colName]) _lastPushed[colName] = {};
+  items.forEach(item=>{ _lastPushed[colName][item[idField]] = JSON.stringify(item); });
+}
+
 function _pushToFirebase(){
   const deletedPermits = new Set(db.deletedPermitIds||[]);
   const deletedBookings = new Set(db.deletedBookingIds||[]);
 
-  // กรองออก deleted items ก่อน push
+  // กรองออก deleted items
   const permitsToSync = (db.permits||[]).filter(p=>!deletedPermits.has(p.id));
   const bookingsToSync = (db.bookings||[]).filter(b=>!deletedBookings.has(b.id));
 
-  // ลบ deleted items ออกจาก Firebase ให้แน่ใจ
-  deletedPermits.forEach(id=>fbDeleteDoc('permits', id));
-  deletedBookings.forEach(id=>fbDeleteDoc('bookings', id));
+  // ส่งเฉพาะที่เปลี่ยน
+  const changedBookings = _getChanged(bookingsToSync, 'bookings');
+  const changedPermits = _getChanged(permitsToSync, 'permits');
+  const changedFcBk = _getChanged(db.fuelCardBookings||[], 'fuelCardBookings');
+  const changedFc = _getChanged(db.fuelCards||[], 'fuelCards');
+  const changedCars = _getChanged(db.cars||[], 'cars');
 
-  Promise.all([
-    fbSaveCollection('bookings', bookingsToSync),
-    fbSaveCollection('permits', permitsToSync),
-    fbSaveCollection('fuelCardBookings', db.fuelCardBookings||[]),
-    fbSaveCollection('fuelCards', db.fuelCards||[]),
-    fbSaveCollection('cars', db.cars),
-    fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()}),
-    fbSetDoc('config','deletedIds',{
+  // ลบ deleted items ออกจาก Firebase
+  deletedPermits.forEach(id=>{ fbDeleteDoc('permits', id); if(_lastPushed['permits']) delete _lastPushed['permits'][id]; });
+  deletedBookings.forEach(id=>{ fbDeleteDoc('bookings', id); if(_lastPushed['bookings']) delete _lastPushed['bookings'][id]; });
+
+  const ops = [];
+  changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
+  changedPermits.forEach(p=>ops.push(fbSetDoc('permits', p.id, p)));
+  changedFcBk.forEach(b=>ops.push(fbSetDoc('fuelCardBookings', b.id, b)));
+  changedFc.forEach(f=>ops.push(fbSetDoc('fuelCards', f.id, f)));
+  changedCars.forEach(c=>ops.push(fbSetDoc('cars', c.id, c)));
+
+  // config เฉพาะถ้า adminPass หรือ fuelPrice เปลี่ยน
+  const configStr = JSON.stringify({fuelPrice:db.fuelPrice||0, adminPass:db.adminPass});
+  if(configStr !== _lastPushed['config']){
+    ops.push(fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()}));
+    _lastPushed['config'] = configStr;
+  }
+
+  // deletedIds
+  const delStr = JSON.stringify({p:[...deletedPermits], b:[...deletedBookings]});
+  if(delStr !== _lastPushed['deletedIds']){
+    ops.push(fbSetDoc('config','deletedIds',{
       deletedPermitIds:[...deletedPermits],
       deletedBookingIds:[...deletedBookings],
       updatedAt:new Date().toISOString()
-    })
-  ]).then(()=>{
+    }));
+    _lastPushed['deletedIds'] = delStr;
+  }
+
+  if(ops.length === 0){ updateSync(false, true); return; }
+
+  console.log(`📤 Push ${ops.length} changes to Firebase`);
+  Promise.all(ops).then(()=>{
+    // อัปเดต snapshot หลัง push สำเร็จ
+    _updateLastPushed(bookingsToSync, 'bookings');
+    _updateLastPushed(permitsToSync, 'permits');
+    _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
+    _updateLastPushed(db.fuelCards||[], 'fuelCards');
+    _updateLastPushed(db.cars||[], 'cars');
     updateSync(false, true);
   }).catch(err=>{
     console.error('Firebase push error:', err);
-    setTimeout(_pushToFirebase, 5000);
+    setTimeout(_pushToFirebase, 10000);
   });
 }
 
