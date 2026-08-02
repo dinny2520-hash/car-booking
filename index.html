@@ -1278,14 +1278,7 @@ function submitBooking(){
   db.bookings.unshift(bk);
   const _syncTs=new Date().toISOString(); db._lastSync=_syncTs;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const _gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  if(_gsUrl&&db.syncEnabled){
-    const _body=JSON.stringify({action:'sync',data:JSON.stringify({...buildSyncPayload(_syncTs)})});
-    fetch(_gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:_body})
-      .then(r=>r.json())
-      .then(()=>showSyncToast(true))
-      .catch(()=>showSyncToast(false));
-  }
+  syncNow();
   document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
   document.getElementById('success-pin').textContent=pin;
   const _bookedCarId = selectedCarId; // บันทึกไว้ก่อน cancelBookingForm จะ reset
