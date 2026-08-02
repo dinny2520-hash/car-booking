@@ -1025,7 +1025,7 @@ function startRealtimeSync(){
 let _lastServerTs = null;
 let _isPulling = false;
 let _lastPullTime = 0;
-const MIN_PULL_INTERVAL = 10000; // pull ได้ทุก 10 วินาทีเท่านั้น
+const MIN_PULL_INTERVAL = 3000; // pull ได้ทุก 3 วินาที
 
 async function _smartPull(){
   const now = Date.now();
@@ -1058,6 +1058,7 @@ async function _smartPull(){
 
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     updateSync(false, true);
+    checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
     renderCars(); renderHistory(); renderFuelCards();
     renderUcPermitList(); renderPermitList();
     const s2=document.getElementById('modal-step2-return')?.classList.contains('open');
