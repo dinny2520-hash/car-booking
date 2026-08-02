@@ -983,60 +983,15 @@ async function fbGetAll(colName){
 function startRealtimeSync(){
   if(!_fbReady) return;
   // ปิด listener เก่าถ้ามี
-  _fbListeners.forEach(u=>u());
+  _fbListeners.forEach(u=>{ try{u();}catch(e){} });
   _fbListeners = [];
 
-  // ฟัง bookings แบบ real-time
-  const unsubBk = _fbDb.collection('bookings').onSnapshot(snap=>{
-    const deletedIds = new Set(db.deletedBookingIds||[]);
-    const newBks = snap.docs.map(d=>d.data()).filter(b=>!deletedIds.has(b.id));
-    const fbIds = new Set(newBks.map(b=>b.id));
-    const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id) && !deletedIds.has(b.id));
-    if(localNew.length > 0) localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
-    db.bookings = [...localNew, ...newBks].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    renderCars();
-    renderHistory();
-    const step2Open = document.getElementById('modal-step2-return')?.classList.contains('open');
-    const step1Open = document.getElementById('modal-step1-return')?.classList.contains('open');
-    if(!step2Open && !step1Open) renderReturnList();
-    checkPullChanges({bookings:newBks, fuelCardBookings:db.fuelCardBookings});
-    updateSync(false, true);
-  });
-  _fbListeners.push(unsubBk);
-  _fbUnsub = unsubBk;
-
-  // ฟัง fuelCardBookings แบบ real-time
-  const unsubFc = _fbDb.collection('fuelCardBookings').onSnapshot(snap=>{
-    db.fuelCardBookings = snap.docs.map(d=>d.data());
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    renderFuelCards();
-    renderFcHistory();
-    renderFcReturnList();
-  });
-  _fbListeners.push(unsubFc);
-
-  // ฟัง permits แบบ real-time
-  const unsubP = _fbDb.collection('permits').onSnapshot(snap=>{
-    const deletedIds = new Set(db.deletedPermitIds||[]);
-    const fbPermits = snap.docs.map(d=>d.data()).filter(p=>!deletedIds.has(p.id));
-    const fbIds = new Set(fbPermits.map(p=>p.id));
-    const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id) && !deletedIds.has(p.id));
-    if(localNew.length > 0) localNew.forEach(p=>fbSetDoc('permits', p.id, p));
-    db.permits = [...localNew, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    renderUcPermitList();
-    renderPermitList();
-  });
-  _fbListeners.push(unsubP);
-
-  // ฟัง deletedIds แบบ real-time — ทุกเครื่องรู้ว่าอะไรถูกลบ
+  // ฟังเฉพาะ config/deletedIds — collection เล็ก เปลี่ยนน้อย
   const unsubDel = _fbDb.collection('config').doc('deletedIds').onSnapshot(snap=>{
     if(!snap.exists) return;
     const data = snap.data();
     if(data.deletedPermitIds){
       db.deletedPermitIds = [...new Set([...(db.deletedPermitIds||[]), ...data.deletedPermitIds])];
-      // ลบออกจาก local ทันที
       db.permits = (db.permits||[]).filter(p=>!db.deletedPermitIds.includes(p.id));
       try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       renderUcPermitList();
@@ -1052,7 +1007,62 @@ function startRealtimeSync(){
   });
   _fbListeners.push(unsubDel);
 
-  console.log('✅ Real-time sync started');
+  // ฟัง config/lastUpdate — timestamp เล็กมาก ใช้ read น้อย
+  const unsubTs = _fbDb.collection('config').doc('lastUpdate').onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const serverTs = snap.data()?.updatedAt;
+    if(serverTs && serverTs !== _lastServerTs){
+      _lastServerTs = serverTs;
+      // มีการเปลี่ยนแปลง — pull ข้อมูลใหม่
+      _smartPull();
+    }
+  });
+  _fbListeners.push(unsubTs);
+
+  console.log('✅ Real-time sync started (lightweight mode)');
+}
+
+let _lastServerTs = null;
+let _isPulling = false;
+
+async function _smartPull(){
+  if(_isPulling) return;
+  _isPulling = true;
+  try {
+    const deletedPermits = new Set(db.deletedPermitIds||[]);
+    const deletedBookings = new Set(db.deletedBookingIds||[]);
+
+    const [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
+      _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
+      _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
+      _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data())),
+      _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))
+    ]);
+
+    // merge — เก็บ local ใหม่ที่ยังไม่ push
+    const fbBkIds = new Set(fbBookings.map(b=>b.id));
+    const localNewBk = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id)&&!deletedBookings.has(b.id));
+    db.bookings = [...localNewBk, ...fbBookings].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+
+    const fbPIds = new Set(fbPermits.map(p=>p.id));
+    const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id)&&!deletedPermits.has(p.id));
+    db.permits = [...localNewP, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+
+    if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
+    if(fbFc.length) db.fuelCards = fbFc;
+
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    updateSync(false, true);
+    renderCars(); renderHistory(); renderFuelCards();
+    renderUcPermitList(); renderPermitList();
+    const s2=document.getElementById('modal-step2-return')?.classList.contains('open');
+    const s1=document.getElementById('modal-step1-return')?.classList.contains('open');
+    if(!s2&&!s1) renderReturnList();
+    if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
+  } catch(e){
+    console.error('Smart pull error:', e);
+  }
+  _isPulling = false;
 }
 
 // ---- Replace syncNow with Firebase ----
@@ -2714,6 +2724,9 @@ function _pushToFirebase(){
   }
 
   if(ops.length === 0){ updateSync(false, true); return; }
+
+  // เพิ่ม lastUpdate timestamp เพื่อบอกเครื่องอื่นให้ pull ใหม่
+  ops.push(fbSetDoc('config','lastUpdate',{updatedAt: new Date().toISOString()}));
 
   console.log(`📤 Push ${ops.length} changes to Firebase`);
   Promise.all(ops).then(()=>{
