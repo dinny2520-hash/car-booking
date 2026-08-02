@@ -2471,6 +2471,7 @@ function adminDeleteBooking(id){
   if(!confirm('ลบรายการจองนี้ออกจากระบบ?'))return;
   db.bookings=db.bookings.filter(b=>b.id!==id);
   markDeleted('deletedBookingIds', id);
+  fbDeleteDoc('bookings', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   if(db.syncEnabled){
@@ -2485,7 +2486,7 @@ function adminDeleteAllDone(){
   const toDelete = db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned');
   if(!toDelete.length){alert('ไม่มีรายการที่ลบได้');return;}
   if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${toDelete.length} รายการ?`))return;
-  toDelete.forEach(b=>markDeleted('deletedBookingIds', b.id));
+  toDelete.forEach(b=>{ markDeleted('deletedBookingIds', b.id); fbDeleteDoc('bookings', b.id); });
   db.bookings=db.bookings.filter(b=>b.status!=='cancelled'&&b.status!=='returned');
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -2550,6 +2551,8 @@ function confirmDeletePermit(){
   db.permits = db.permits.filter(x=>x.id!==_permitIdToDelete);
   markDeleted('deletedPermitIds', _permitIdToDelete);
   deleteSigFromSheet(_permitIdToDelete);
+  // ลบออกจาก Firebase โดยตรงทันที
+  fbDeleteDoc('permits', _permitIdToDelete);
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -3530,6 +3533,7 @@ function renderAdminCardBookingList(){
 function adminDeleteCardBooking(id){
   if(!confirm('ลบรายการจองการ์ดนี้ออกจากระบบ?'))return;
   db.fuelCardBookings=(db.fuelCardBookings||[]).filter(b=>b.id!==id);
+  fbDeleteDoc('fuelCardBookings', id);
   syncNow();
   renderAdminCardBookingList();
   renderFcHistory();
