@@ -2657,19 +2657,26 @@ function _pushToFirebase(){
   const permitsToSync = (db.permits||[]).filter(p=>!deletedPermits.has(p.id));
   const bookingsToSync = (db.bookings||[]).filter(b=>!deletedBookings.has(b.id));
 
+  // ลบ deleted items ออกจาก Firebase ให้แน่ใจ
+  deletedPermits.forEach(id=>fbDeleteDoc('permits', id));
+  deletedBookings.forEach(id=>fbDeleteDoc('bookings', id));
+
   Promise.all([
     fbSaveCollection('bookings', bookingsToSync),
     fbSaveCollection('permits', permitsToSync),
     fbSaveCollection('fuelCardBookings', db.fuelCardBookings||[]),
     fbSaveCollection('fuelCards', db.fuelCards||[]),
     fbSaveCollection('cars', db.cars),
-    fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()})
+    fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()}),
+    fbSetDoc('config','deletedIds',{
+      deletedPermitIds:[...deletedPermits],
+      deletedBookingIds:[...deletedBookings],
+      updatedAt:new Date().toISOString()
+    })
   ]).then(()=>{
     updateSync(false, true);
-    startRealtimeSync();
   }).catch(err=>{
     console.error('Firebase push error:', err);
-    startRealtimeSync();
     setTimeout(_pushToFirebase, 5000);
   });
 }
