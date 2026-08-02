@@ -1067,6 +1067,12 @@ async function _smartPull(){
   } catch(e){
     console.error('Smart pull error:', e);
   }
+  // หลัง pull เสร็จ init _lastPushed เพื่อกัน push ซ้ำ
+  _updateLastPushed(db.bookings||[], 'bookings');
+  _updateLastPushed(db.permits||[], 'permits');
+  _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
+  _updateLastPushed(db.fuelCards||[], 'fuelCards');
+  _updateLastPushed(db.cars||[], 'cars');
   _isPulling = false;
 }
 
@@ -3972,10 +3978,8 @@ setTimeout(maybeRunCleanup, 3000);
 
 // บังคับดึงข้อมูลจาก Sheet ทันทีที่เปิดแอป และ update local ถ้า Sheet ใหม่กว่า
 (function forcePullOnLoad(){
-  const gsUrl = db.gsUrl||DEFAULT_GS_URL;
-  if(!gsUrl||!db.syncEnabled) return;
-  // ใช้ Firebase pull แทน
-  pullFromGSheet();
+  // Firebase listener จัดการ pull แทนแล้ว
+  // ไม่ต้อง pull เพิ่มเติมตอนเปิด
 })();
 renderCars();
 
