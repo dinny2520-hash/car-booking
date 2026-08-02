@@ -926,6 +926,7 @@ const FIREBASE_CONFIG = {
 
 let _fbApp = null, _fbDb = null, _fbReady = false;
 let _fbUnsub = null; // realtime listener
+let _fbListeners = []; // track all listeners
 
 async function initFirebase(){
   if(_fbReady) return true;
@@ -979,18 +980,18 @@ async function fbGetAll(colName){
   return snap.docs.map(d=>d.data());
 }
 
-// ---- Real-time listener ----
 function startRealtimeSync(){
-  if(!_fbReady || _fbUnsub) return;
+  if(!_fbReady) return;
+  // ปิด listener เก่าถ้ามี
+  _fbListeners.forEach(u=>u());
+  _fbListeners = [];
+
   // ฟัง bookings แบบ real-time
-  _fbUnsub = _fbDb.collection('bookings').onSnapshot(snap=>{
+  const unsubBk = _fbDb.collection('bookings').onSnapshot(snap=>{
     const newBks = snap.docs.map(d=>d.data());
     const fbIds = new Set(newBks.map(b=>b.id));
-    // เก็บและ push local ที่ยังไม่มีใน Firebase
     const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id));
-    if(localNew.length > 0){
-      localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
-    }
+    if(localNew.length > 0) localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
     db.bookings = [...localNew, ...newBks];
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderCars();
@@ -1001,29 +1002,32 @@ function startRealtimeSync(){
     checkPullChanges({bookings:newBks, fuelCardBookings:db.fuelCardBookings});
     updateSync(false, true);
   });
+  _fbListeners.push(unsubBk);
+  _fbUnsub = unsubBk;
+
   // ฟัง fuelCardBookings แบบ real-time
-  _fbDb.collection('fuelCardBookings').onSnapshot(snap=>{
+  const unsubFc = _fbDb.collection('fuelCardBookings').onSnapshot(snap=>{
     db.fuelCardBookings = snap.docs.map(d=>d.data());
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderFuelCards();
     renderFcHistory();
     renderFcReturnList();
   });
+  _fbListeners.push(unsubFc);
+
   // ฟัง permits แบบ real-time
-  _fbDb.collection('permits').onSnapshot(snap=>{
+  const unsubP = _fbDb.collection('permits').onSnapshot(snap=>{
     const fbPermits = snap.docs.map(d=>d.data());
     const fbIds = new Set(fbPermits.map(p=>p.id));
-    // เก็บ local ที่ยังไม่มีใน Firebase (สร้างใหม่ยังไม่ push)
     const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id));
-    // push local ใหม่ขึ้น Firebase ด้วย
-    if(localNew.length > 0){
-      localNew.forEach(p=>fbSetDoc('permits', p.id, p));
-    }
+    if(localNew.length > 0) localNew.forEach(p=>fbSetDoc('permits', p.id, p));
     db.permits = [...localNew, ...fbPermits];
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderUcPermitList();
     renderPermitList();
   });
+  _fbListeners.push(unsubP);
+
   console.log('✅ Real-time sync started');
 }
 
@@ -2613,6 +2617,10 @@ function syncNow(onSuccess, onFail){
 }
 
 function _pushToFirebase(){
+  // หยุด listener ชั่วคราวเพื่อกัน overwrite ระหว่าง push
+  const unsubs = _fbListeners.splice(0);
+  unsubs.forEach(u=>u());
+
   Promise.all([
     fbSaveCollection('bookings', db.bookings),
     fbSaveCollection('permits', db.permits),
@@ -2622,9 +2630,11 @@ function _pushToFirebase(){
     fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()})
   ]).then(()=>{
     updateSync(false, true);
+    // เปิด listener ใหม่หลัง push เสร็จ
+    startRealtimeSync();
   }).catch(err=>{
     console.error('Firebase push error:', err);
-    // retry อีกครั้ง
+    startRealtimeSync();
     setTimeout(_pushToFirebase, 5000);
   });
 }
