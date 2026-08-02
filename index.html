@@ -992,7 +992,7 @@ function startRealtimeSync(){
     const fbIds = new Set(newBks.map(b=>b.id));
     const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id));
     if(localNew.length > 0) localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
-    db.bookings = [...localNew, ...newBks];
+    db.bookings = [...localNew, ...newBks].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderCars();
     renderHistory();
@@ -1021,7 +1021,7 @@ function startRealtimeSync(){
     const fbIds = new Set(fbPermits.map(p=>p.id));
     const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id));
     if(localNew.length > 0) localNew.forEach(p=>fbSetDoc('permits', p.id, p));
-    db.permits = [...localNew, ...fbPermits];
+    db.permits = [...localNew, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderUcPermitList();
     renderPermitList();
@@ -1775,12 +1775,12 @@ function pullFromGSheet(){
     // Bookings — เก็บ local ที่สร้างหลัง lastSync (ยังไม่ push Firebase)
     const fbBkIds = new Set(fbBookings.map(b=>b.id));
     const localNewBks = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id) && b.createdAt && new Date(b.createdAt).getTime() > localTs - 60000);
-    db.bookings = [...localNewBks, ...fbBookings];
+    db.bookings = [...localNewBks, ...fbBookings].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
     // Permits — เก็บ local ที่สร้างหลัง lastSync
     const fbPIds = new Set(fbPermits.map(p=>p.id));
     const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id) && p.createdAt && new Date(p.createdAt).getTime() > localTs - 60000);
-    db.permits = [...localNewP, ...fbPermits];
+    db.permits = [...localNewP, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
     if(fbFuelCards.length) db.fuelCards = fbFuelCards;
     if(fbFuelCardBookings.length) db.fuelCardBookings = fbFuelCardBookings;
