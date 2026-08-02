@@ -1056,6 +1056,18 @@ async function _smartPull(){
     if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
     if(fbFc.length) db.fuelCards = fbFc;
 
+    // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
+    // ทำครั้งเดียวหลัง pull แรก เพื่อกัน push ทั้งหมดตอนเปิดแอป
+    if(!_lastPushed['_initialized']){
+      _updateLastPushed(db.bookings||[], 'bookings');
+      _updateLastPushed(db.permits||[], 'permits');
+      _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
+      _updateLastPushed(db.fuelCards||[], 'fuelCards');
+      _updateLastPushed(db.cars||[], 'cars');
+      _lastPushed['_initialized'] = true;
+      console.log('✅ _lastPushed initialized');
+    }
+
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     updateSync(false, true);
     checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
@@ -1068,12 +1080,6 @@ async function _smartPull(){
   } catch(e){
     console.error('Smart pull error:', e);
   }
-  // หลัง pull เสร็จ init _lastPushed เพื่อกัน push ซ้ำ
-  _updateLastPushed(db.bookings||[], 'bookings');
-  _updateLastPushed(db.permits||[], 'permits');
-  _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
-  _updateLastPushed(db.fuelCards||[], 'fuelCards');
-  _updateLastPushed(db.cars||[], 'cars');
   _isPulling = false;
 }
 
