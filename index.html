@@ -2736,8 +2736,10 @@ function _pushToFirebase(){
 
   if(ops.length === 0){ updateSync(false, true); return; }
 
-  // เพิ่ม lastUpdate timestamp เพื่อบอกเครื่องอื่นให้ pull ใหม่
-  ops.push(fbSetDoc('config','lastUpdate',{updatedAt: new Date().toISOString()}));
+  // เพิ่ม lastUpdate timestamp เสมอ เพื่อบอกเครื่องอื่นให้ pull ใหม่
+  const nowTs = new Date().toISOString();
+  ops.push(fbSetDoc('config','lastUpdate',{updatedAt: nowTs}));
+  _lastPushed['lastUpdate'] = nowTs; // อัปเดต local ด้วย
 
   console.log(`📤 Push ${ops.length} changes to Firebase`);
   Promise.all(ops).then(()=>{
