@@ -985,7 +985,13 @@ function startRealtimeSync(){
   // ฟัง bookings แบบ real-time
   _fbUnsub = _fbDb.collection('bookings').onSnapshot(snap=>{
     const newBks = snap.docs.map(d=>d.data());
-    db.bookings = newBks;
+    const fbIds = new Set(newBks.map(b=>b.id));
+    // เก็บและ push local ที่ยังไม่มีใน Firebase
+    const localNew = (db.bookings||[]).filter(b=>!fbIds.has(b.id));
+    if(localNew.length > 0){
+      localNew.forEach(b=>fbSetDoc('bookings', b.id, b));
+    }
+    db.bookings = [...localNew, ...newBks];
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderCars();
     renderHistory();
@@ -1006,9 +1012,13 @@ function startRealtimeSync(){
   // ฟัง permits แบบ real-time
   _fbDb.collection('permits').onSnapshot(snap=>{
     const fbPermits = snap.docs.map(d=>d.data());
-    // เก็บ local ที่ยังไม่ push
     const fbIds = new Set(fbPermits.map(p=>p.id));
+    // เก็บ local ที่ยังไม่มีใน Firebase (สร้างใหม่ยังไม่ push)
     const localNew = (db.permits||[]).filter(p=>!fbIds.has(p.id));
+    // push local ใหม่ขึ้น Firebase ด้วย
+    if(localNew.length > 0){
+      localNew.forEach(p=>fbSetDoc('permits', p.id, p));
+    }
     db.permits = [...localNew, ...fbPermits];
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     renderUcPermitList();
