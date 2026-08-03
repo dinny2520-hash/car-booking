@@ -716,6 +716,18 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>🗄️ ใบ permit ที่ถูกลบ</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใบที่ถูกลบจากหน้าใช้งานจะถูกเก็บสำรองไว้ที่นี่ ดึงรายงานรายเดือนหรือลบถาวรได้</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <input type="month" id="permit-archive-month" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <button class="btn btn-primary btn-sm" onclick="loadPermitArchive()">🔍 ดูรายการ</button>
+          <button class="btn btn-outline btn-sm" onclick="exportPermitArchiveReport()">📊 ดึงรายงานเดือนนี้ (Excel)</button>
+          <button class="btn btn-danger btn-sm" onclick="permanentDeleteAllArchivedInMonth()">🗑️ ลบถาวรทั้งหมดในเดือนนี้</button>
+        </div>
+        <div id="permit-archive-list" style="max-height:400px;overflow-y:auto"></div>
+      </div>
+
+      <div class="settings-section">
         <h3>⛽ ราคาน้ำมันปัจจุบัน</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใช้คำนวณเมื่อผู้ใช้เลือกกรอกน้ำมันเป็นลิตร</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -4211,6 +4223,146 @@ function deletePermit(id){
   renderUcPermitList();
 }
 
+// ---- Permit Archive: ดูใบที่ถูกลบ / รายงานรายเดือน / ลบถาวร ----
+let _permitArchiveCache = []; // ใบที่โหลดมาจาก permitArchive ล่าสุด (กรองตามเดือนที่เลือก)
+
+async function loadPermitArchive(){
+  const monthVal = document.getElementById('permit-archive-month').value; // 'YYYY-MM'
+  const listEl = document.getElementById('permit-archive-list');
+  if(!monthVal){ alert('กรุณาเลือกเดือน'); return; }
+  listEl.innerHTML = '<div class="empty-state">⏳ กำลังโหลด...</div>';
+
+  if(!_fbReady){
+    listEl.innerHTML = '<div class="alert alert-danger">ยังไม่ได้เชื่อมต่อ Firebase</div>';
+    return;
+  }
+
+  try{
+    const snap = await _fbDb.collection('permitArchive').get();
+    const all = snap.docs.map(d=>d.data());
+    const filtered = all.filter(p=>{
+      const dt = p.date || p.archivedAt;
+      if(!dt) return false;
+      return String(dt).slice(0,7) === monthVal;
+    }).sort((a,b)=>new Date(b.archivedAt||0)-new Date(a.archivedAt||0));
+
+    _permitArchiveCache = filtered;
+
+    if(!filtered.length){
+      listEl.innerHTML = '<div class="empty-state"><div style="font-size:30px">🗄️</div><div>ไม่พบใบที่ถูกลบในเดือนนี้</div></div>';
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(p=>{
+      const archivedDate = p.archivedAt ? new Date(p.archivedAt).toLocaleString('th-TH') : '-';
+      return `<div class="card" style="border-left:4px solid var(--danger);margin-bottom:10px">
+        <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700;font-size:15px">${p.name||'-'}</div>
+            <div style="font-size:13px;color:var(--g600);margin-top:4px">
+              <div>📅 ${p.date||'-'} &nbsp;|&nbsp; 🚗 ${p.car||'-'} &nbsp;|&nbsp; ⛽ ${p.fuel||0} บาท</div>
+              <div>📍 ${p.location||'-'} &nbsp;|&nbsp; 📝 ${p.detail||'-'}</div>
+              <div style="color:var(--danger);margin-top:2px">🗑️ ลบเมื่อ ${archivedDate}</div>
+            </div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="openPermanentDeleteModal('${p.id}')">ลบถาวร</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(err){
+    console.error('loadPermitArchive error:', err);
+    listEl.innerHTML = '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง</div>';
+  }
+}
+
+function exportPermitArchiveReport(){
+  const monthVal = document.getElementById('permit-archive-month').value;
+  if(!monthVal){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
+  if(!_permitArchiveCache.length){ alert('ไม่พบข้อมูลใบที่ถูกลบในเดือนนี้ กรุณากด "ดูรายการ" ก่อน'); return; }
+
+  const rows = [['วันที่ใบ permit','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','สถานะ','วันที่ลบ']];
+  let total = 0;
+  _permitArchiveCache.forEach(p=>{
+    rows.push([p.date||'-', p.name||'-', p.dept||'-', p.location||'-', p.reason||'-', p.detail||'-', p.car||'-',
+      Number(p.fuel)||0,
+      p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
+      p.archivedAt ? new Date(p.archivedAt).toLocaleString('th-TH') : '-']);
+    total += Number(p.fuel)||0;
+  });
+  rows.push(['','','','','','','รวม', total,'','']);
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:14},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:16},{wch:16},{wch:14},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws, 'ใบที่ถูกลบ');
+  XLSX.writeFile(wb, `รายงานใบที่ถูกลบ_${monthVal}.xlsx`);
+}
+
+var _permanentDeletePermitId = null;
+
+function openPermanentDeleteModal(id){
+  _permanentDeletePermitId = id;
+  const p = _permitArchiveCache.find(x=>x.id===id);
+  document.getElementById('permanent-delete-permit-info').innerHTML = p
+    ? `<b>${p.name||'-'}</b> | 🚗 ${p.car||'-'} | 📅 ${p.date||'-'}<br>📍 ${p.location||'-'}`
+    : 'ใบ permit นี้';
+  document.getElementById('pdp-admin-pass').value = '';
+  document.getElementById('permanent-delete-permit-err').style.display = 'none';
+  openModal('modal-permanent-delete-permit');
+}
+
+async function confirmPermanentDeletePermit(){
+  const errEl = document.getElementById('permanent-delete-permit-err');
+  const adminPass = document.getElementById('pdp-admin-pass').value.trim();
+  errEl.style.display = 'none';
+
+  if(!adminPass || adminPass !== db.adminPass){
+    errEl.textContent = 'รหัสแอดมินไม่ถูกต้อง';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  const id = _permanentDeletePermitId;
+  if(!id) return;
+
+  try{
+    await fbDeleteDoc('permitArchive', id);
+    _permitArchiveCache = _permitArchiveCache.filter(p=>p.id!==id);
+    closeModal('modal-permanent-delete-permit');
+    loadPermitArchive();
+  }catch(err){
+    console.error('confirmPermanentDeletePermit error:', err);
+    errEl.textContent = 'ลบไม่สำเร็จ ลองใหม่อีกครั้ง';
+    errEl.style.display = 'flex';
+  }
+}
+
+async function permanentDeleteAllArchivedInMonth(){
+  const monthVal = document.getElementById('permit-archive-month').value;
+  if(!monthVal){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
+  if(!_permitArchiveCache.length){ alert('ไม่พบใบที่ถูกลบในเดือนนี้'); return; }
+  const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยันการลบถาวรทั้งหมด ('+_permitArchiveCache.length+' รายการ)');
+  if(adminPass === null) return;
+  if(adminPass !== db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+  if(!confirm('ยืนยันลบถาวร '+_permitArchiveCache.length+' รายการ? การลบนี้ไม่สามารถกู้คืนได้')) return;
+
+  const listEl = document.getElementById('permit-archive-list');
+  listEl.innerHTML = '<div class="empty-state">⏳ กำลังลบ...</div>';
+  try{
+    for(const p of _permitArchiveCache){
+      await fbDeleteDoc('permitArchive', p.id);
+    }
+    _permitArchiveCache = [];
+    alert('✅ ลบถาวรเรียบร้อย');
+    loadPermitArchive();
+  }catch(err){
+    console.error('permanentDeleteAllArchivedInMonth error:', err);
+    alert('⚠️ ลบไม่สำเร็จบางรายการ ลองใหม่อีกครั้ง');
+    loadPermitArchive();
+  }
+}
+
+
 function loadApprovalPage(permitId){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-approve').classList.add('active');
@@ -4417,6 +4569,24 @@ function renderPrintPage(p){
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-delete-permit')">ปิด</button>
       <button class="btn btn-danger" onclick="confirmDeletePermit()">🗑️ ลบ</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PERMANENT DELETE ARCHIVED PERMIT -->
+<div class="modal-overlay" id="modal-permanent-delete-permit">
+  <div class="modal">
+    <div class="modal-title">⚠️ ลบถาวรจากระบบ Firebase</div>
+    <div id="permanent-delete-permit-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="alert alert-danger" style="margin-bottom:14px">การลบนี้ถาวร ไม่สามารถกู้คืนได้อีก ข้อมูลจะหายจาก Firebase ทั้งหมด</div>
+    <div class="form-row">
+      <label>รหัสแอดมิน (ยืนยันตัวตน)</label>
+      <input type="password" id="pdp-admin-pass" placeholder="รหัสแอดมิน">
+    </div>
+    <div id="permanent-delete-permit-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-permanent-delete-permit')">ยกเลิก</button>
+      <button class="btn btn-danger" onclick="confirmPermanentDeletePermit()">🗑️ ลบถาวร</button>
     </div>
   </div>
 </div>
