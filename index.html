@@ -2058,21 +2058,16 @@ let _permitPollTimer = null;
 
 function startPermitPoll(){
   stopPermitPoll();
-  _permitPollTimer = setInterval(refreshPermitList, 10000);
+  // ไม่ใช้ interval poll แล้ว — onSnapshot listener + polling fallback 30 วิ จัดการให้
+  renderPermitList();
 }
 function stopPermitPoll(){
   if(_permitPollTimer){ clearInterval(_permitPollTimer); _permitPollTimer=null; }
 }
 function refreshPermitList(){
-  // ดึง permits จาก Firebase แล้ว render
-  if(!_fbReady){ renderPermitList(); return; }
-  _fbDb.collection('permits').get()
-    .then(snap=>{
-      db.permits = snap.docs.map(d=>d.data());
-      db.syncEnabled=true;
-      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-      renderPermitList();
-    }).catch(()=>renderPermitList());
+  // ใช้ local data ที่ sync มาแล้วแทนการดึง Firebase ใหม่ทุกครั้ง
+  // การอัปเดตจริงจะมาจาก onSnapshot → _smartPull → render
+  renderPermitList();
 }
 
 
@@ -4051,7 +4046,7 @@ _lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
 _lastFcBookingCount = (db.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
 _lastReturnedCount = (db.bookings||[]).filter(b=>b.status==='returned').length;
 _lastFcReturnedCount = (db.fuelCardBookings||[]).filter(b=>b.status==='returned').length;
-setInterval(refreshSigCacheBackground,60000);
+// sig cache — ดึงครั้งเดียวตอนเปิดแอป ไม่ต้อง interval (ลายเซ็นไม่เปลี่ยนบ่อย)
 refreshSigCacheBackground();
 updateSync(false,null);
 // Pull ทันทีเมื่อ user กลับมาที่ tab (แก้ปัญหา mobile browser throttle)
@@ -4083,19 +4078,20 @@ window.addEventListener('load', function(){
   document.querySelector('#page-approve .btn-success').style.display='';
   document.querySelector('#page-approve .btn-danger').style.display='';
 
-  // ดึงข้อมูลจาก Firebase แล้วโหลดหน้า approve
+  // ดึงเฉพาะ permit ใบที่ต้องการ (1 read) แทนการดึงทั้ง 4 collections
   if(!_fbReady){ loadApprovalPage(approveId); return; }
-  Promise.all([
-    fbGetAll('permits'), fbGetAll('cars'), fbGetAll('bookings'), fbGetAll('staff')
-  ]).then(([permits, cars, bookings, staff])=>{
-    if(permits.length) db.permits = permits;
-    if(cars.length) db.cars = cars;
-    if(bookings.length) db.bookings = bookings;
-    if(staff.length) db.staff = staff;
-    db.syncEnabled = true;
-    try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
-    loadApprovalPage(approveId);
-  }).catch(()=>loadApprovalPage(approveId));
+  _fbDb.collection('permits').doc(approveId).get()
+    .then(doc=>{
+      if(doc.exists){
+        // upsert permit ใบนี้เข้า local
+        const p = doc.data();
+        const idx = (db.permits||[]).findIndex(x=>x.id===approveId);
+        if(idx>=0) db.permits[idx]=p; else { db.permits=db.permits||[]; db.permits.unshift(p); }
+        db.syncEnabled = true;
+        try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
+      }
+      loadApprovalPage(approveId);
+    }).catch(()=>loadApprovalPage(approveId));
 });
 // ===== PERMIT / APPROVAL SYSTEM =====
 
