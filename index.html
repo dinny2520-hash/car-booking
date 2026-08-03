@@ -1883,48 +1883,18 @@ function syncToGSheet(){
     .then(()=>updateSync(false,true)).catch(()=>updateSync(false,false));
 }
 
+let _pullFromGSheetTimer = null;
+let _lastPullFromGSheetTime = 0;
+const MIN_PULL_GSHEET_INTERVAL = 30000; // pull ได้ทุก 30 วินาทีเท่านั้น
+
 function pullFromGSheet(){
   if(!_fbReady) return;
-  updateSync(true);
-  Promise.all([
-    fbGetAll('bookings'),
-    fbGetAll('permits'),
-    fbGetAll('fuelCards'),
-    fbGetAll('fuelCardBookings'),
-    fbGetAll('cars'),
-    fbGetAll('staff')
-  ]).then(([fbBookings, fbPermits, fbFuelCards, fbFuelCardBookings, fbCars, fbStaff])=>{
-    // Merge — เก็บ local ที่ใหม่กว่า Firebase ไว้
-    const localTs = db._lastSync ? new Date(db._lastSync).getTime() : 0;
-    
-    // Bookings — เก็บ local ที่สร้างหลัง lastSync (ยังไม่ push Firebase)
-    const fbBkIds = new Set(fbBookings.map(b=>b.id));
-    const localNewBks = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id) && b.createdAt && new Date(b.createdAt).getTime() > localTs - 60000);
-    db.bookings = [...localNewBks, ...fbBookings].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-
-    // Permits — เก็บ local ที่สร้างหลัง lastSync
-    const fbPIds = new Set(fbPermits.map(p=>p.id));
-    const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id) && p.createdAt && new Date(p.createdAt).getTime() > localTs - 60000);
-    db.permits = [...localNewP, ...fbPermits].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-
-    if(fbFuelCards.length) db.fuelCards = fbFuelCards;
-    if(fbFuelCardBookings.length) db.fuelCardBookings = fbFuelCardBookings;
-    if(fbCars.length) db.cars = fbCars;
-    if(fbStaff.length) db.staff = fbStaff;
-    
-    db.syncEnabled = true;
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    updateSync(false, true);
-    renderCars();
-    renderHistory();
-    const step2Open = document.getElementById('modal-step2-return')?.classList.contains('open');
-    const step1Open = document.getElementById('modal-step1-return')?.classList.contains('open');
-    if(!step2Open && !step1Open) renderReturnList();
-    renderUcPermitList();
-    renderPermitList();
-    renderFuelCards();
-    if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
-  }).catch(()=>updateSync(false,false));
+  // debounce — กัน trigger ถี่เกินไป (เช่น สลับแท็บบ่อยๆ หรือ focus หลายครั้ง)
+  const now = Date.now();
+  if(now - _lastPullFromGSheetTime < MIN_PULL_GSHEET_INTERVAL) return;
+  _lastPullFromGSheetTime = now;
+  // ใช้ _smartPull แทน — มี incremental + full pull logic อยู่แล้ว
+  _smartPull();
 }
 
 
@@ -4838,4 +4808,3 @@ function renderPrintPage(p){
 
 </body>
 </html>
-  
