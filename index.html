@@ -1032,6 +1032,23 @@ function startRealtimeSync(){
   _fbListeners.push(unsubTs);
 
   console.log('✅ Real-time sync started (lightweight mode)');
+
+  // ---- Polling fallback ทุก 30 วิ ----
+  // กัน edge case ที่ listener ไม่ trigger (เช่น network สะดุด, แท็บ resume)
+  // ดึงแค่ config/lastUpdate (1 read/รอบ) → ถ้า timestamp เปลี่ยนค่อย smartPull
+  if(window._pollInterval) clearInterval(window._pollInterval);
+  window._pollInterval = setInterval(async ()=>{
+    if(!_fbReady) return;
+    try{
+      const snap = await _fbDb.collection('config').doc('lastUpdate').get();
+      if(!snap.exists) return;
+      const serverTs = snap.data()?.updatedAt;
+      if(serverTs && serverTs !== _lastServerTs){
+        _lastServerTs = serverTs;
+        _smartPull();
+      }
+    }catch(e){ /* network error — รอรอบหน้า */ }
+  }, 30000); // 30 วินาที
 }
 
 let _lastServerTs = null;
