@@ -1022,13 +1022,19 @@ function startRealtimeSync(){
   _fbListeners.push(unsubDel);
 
   // ฟัง config/lastUpdate — timestamp เล็กมาก ใช้ read น้อย
+  // debounce: กัน trigger smartPull ถี่เกินไปถ้า Firebase ส่ง snapshot หลายรอบติดกัน
+  let _snapDebounceTimer = null;
   const unsubTs = _fbDb.collection('config').doc('lastUpdate').onSnapshot(snap=>{
     if(!snap.exists) return;
+    // ข้าม fromCache snapshot — Firebase มักส่ง cached snapshot ก่อนแล้วค่อยส่งของจริง
+    // fromCache อ่านได้แต่ไม่นับ read quota อยู่แล้ว แต่ถ้า trigger _smartPull ซ้ำก็เปลือง
+    if(snap.metadata && snap.metadata.fromCache) return;
     const serverTs = snap.data()?.updatedAt;
     if(serverTs && serverTs !== _lastServerTs){
       _lastServerTs = serverTs;
-      // มีการเปลี่ยนแปลง — pull ข้อมูลใหม่
-      _smartPull();
+      // debounce 1 วิ — กัน trigger ซ้ำถ้า Firestore ส่ง snapshot หลายครั้งติดกัน
+      clearTimeout(_snapDebounceTimer);
+      _snapDebounceTimer = setTimeout(()=>_smartPull(), 1000);
     }
   });
   _fbListeners.push(unsubTs);
@@ -1036,8 +1042,6 @@ function startRealtimeSync(){
   console.log('✅ Real-time sync started (lightweight mode)');
 
   // ---- Polling fallback ทุก 30 วิ ----
-  // กัน edge case ที่ listener ไม่ trigger (เช่น network สะดุด, แท็บ resume)
-  // ดึงแค่ config/lastUpdate (1 read/รอบ) → ถ้า timestamp เปลี่ยนค่อย smartPull
   if(window._pollInterval) clearInterval(window._pollInterval);
   window._pollInterval = setInterval(async ()=>{
     if(!_fbReady) return;
@@ -1049,8 +1053,8 @@ function startRealtimeSync(){
         _lastServerTs = serverTs;
         _smartPull();
       }
-    }catch(e){ /* network error — รอรอบหน้า */ }
-  }, 30000); // 30 วินาที
+    }catch(e){}
+  }, 30000);
 }
 
 let _lastServerTs = null;
@@ -1072,9 +1076,11 @@ async function _smartPull(){
     const deletedBookings = new Set(db.deletedBookingIds||[]);
 
     // ---- ตัดสินใจ: pull แบบ incremental หรือ full ----
-    // incremental: ดึงเฉพาะ doc ที่ updatedAt > lastPullTs (ประหยัด reads มาก)
-    // full: ดึงทั้งหมด (ทำทุก 5 นาที หรือครั้งแรก)
-    const doFull = !_lastPushed['_initialized'] || (now - _lastFullPullTime > FULL_PULL_INTERVAL);
+    // full: ทำทุก 5 นาที และครั้งแรกเมื่อไม่มี local data
+    // incremental: ทำทุกกรณีอื่น (ประหยัด reads มาก)
+    const hasLocalData = (db.bookings||[]).length > 0 || (db.permits||[]).length > 0;
+    const doFull = (!hasLocalData && !_lastPushed['_initialized']) || 
+                   (now - _lastFullPullTime > FULL_PULL_INTERVAL);
     
     let fbBookings, fbPermits, fbFcBk, fbFc;
 
