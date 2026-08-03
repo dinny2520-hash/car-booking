@@ -1062,12 +1062,14 @@ let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
 const MIN_PULL_INTERVAL = 3000; // pull ได้ทุก 3 วินาที
-const FULL_PULL_INTERVAL = 5 * 60 * 1000; // full pull ทุก 5 นาทีเป็น safety net
+const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที (cars/staff เปลี่ยนน้อย)
 
 async function _smartPull(){
   const now = Date.now();
   if(_isPulling) return;
   if(now - _lastPullTime < MIN_PULL_INTERVAL) return;
+  // Page Visibility guard — ถ้าแท็บ hidden อยู่ ข้าม pull (ประหยัด reads)
+  // incremental ยังทำได้ แต่ full pull รอให้แท็บ active ก่อน
   _isPulling = true;
   _lastPullTime = now;
 
@@ -1076,10 +1078,12 @@ async function _smartPull(){
     const deletedBookings = new Set(db.deletedBookingIds||[]);
 
     // ---- ตัดสินใจ: pull แบบ incremental หรือ full ----
-    // full: ทำครั้งแรกเสมอ (เพื่อโหลด cars/staff) และทุก 5 นาที
+    // full: ทำครั้งแรกเสมอ (เพื่อโหลด cars/staff) และทุก 30 นาที
     // incremental: ทำทุกกรณีอื่น (ประหยัด reads มาก)
+    // visibility guard: ถ้าแท็บ hidden อยู่ ข้าม full pull รอให้ active ก่อน
     const isFirstPull = _lastFullPullTime === 0;
-    const doFull = isFirstPull || (now - _lastFullPullTime > FULL_PULL_INTERVAL);
+    const tabActive = document.visibilityState === 'visible';
+    const doFull = isFirstPull || (tabActive && (now - _lastFullPullTime > FULL_PULL_INTERVAL));
     
     let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff;
 
