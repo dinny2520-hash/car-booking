@@ -983,6 +983,8 @@ async function fbDeleteDoc(colName, id){
 async function fbSetDoc(colName, id, data){
   if(!_fbReady) return;
   const clean = JSON.parse(JSON.stringify(data));
+  // เพิ่ม updatedAt ทุก doc เพื่อให้ incremental pull ทำงานได้
+  if(!clean.updatedAt) clean.updatedAt = new Date().toISOString();
   await _fbDb.collection(colName).doc(id).set(clean);
 }
 
@@ -1054,51 +1056,84 @@ function startRealtimeSync(){
 let _lastServerTs = null;
 let _isPulling = false;
 let _lastPullTime = 0;
+let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
 const MIN_PULL_INTERVAL = 3000; // pull ได้ทุก 3 วินาที
+const FULL_PULL_INTERVAL = 5 * 60 * 1000; // full pull ทุก 5 นาทีเป็น safety net
 
 async function _smartPull(){
   const now = Date.now();
   if(_isPulling) return;
-  if(now - _lastPullTime < MIN_PULL_INTERVAL) return; // rate limit
+  if(now - _lastPullTime < MIN_PULL_INTERVAL) return;
   _isPulling = true;
   _lastPullTime = now;
+
   try {
     const deletedPermits = new Set(db.deletedPermitIds||[]);
     const deletedBookings = new Set(db.deletedBookingIds||[]);
 
-    const [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
-      _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
-      _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
-      _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data())),
-      _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))
-    ]);
+    // ---- ตัดสินใจ: pull แบบ incremental หรือ full ----
+    // incremental: ดึงเฉพาะ doc ที่ updatedAt > lastPullTs (ประหยัด reads มาก)
+    // full: ดึงทั้งหมด (ทำทุก 5 นาที หรือครั้งแรก)
+    const doFull = !_lastPushed['_initialized'] || (now - _lastFullPullTime > FULL_PULL_INTERVAL);
+    
+    let fbBookings, fbPermits, fbFcBk, fbFc;
 
-    // merge — เก็บ local ใหม่ที่ยังไม่ push
-    // echo suppression: ถ้า record เพิ่งถูก push เองไม่เกิน ECHO_SUPPRESS_MS ให้ใช้ค่า local แทนค่าจาก Firebase
-    // (กันอาการ "เด้งกลับ" ที่ค่าจาก Firebase ยังไม่ทันอัปเดตจริงมาทับ optimistic update ของตัวเอง)
+    if(doFull){
+      // Full pull — ดึงทั้ง collection
+      _lastFullPullTime = now;
+      [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
+        _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
+        _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
+        _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data())),
+        _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))
+      ]);
+    } else {
+      // Incremental pull — ดึงเฉพาะที่เปลี่ยนหลัง _lastServerTs
+      // ถ้าไม่มี updatedAt field ใน doc ก็จะไม่ถูก match → ปลอดภัย
+      const sinceTs = _lastServerTs || new Date(0).toISOString();
+      [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
+        _fbDb.collection('bookings').where('updatedAt','>',sinceTs).get()
+          .then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
+        _fbDb.collection('permits').where('updatedAt','>',sinceTs).get()
+          .then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
+        _fbDb.collection('fuelCardBookings').where('updatedAt','>',sinceTs).get()
+          .then(s=>s.docs.map(d=>d.data())),
+        _fbDb.collection('fuelCards').where('updatedAt','>',sinceTs).get()
+          .then(s=>s.docs.map(d=>d.data()))
+      ]);
+    }
+
+    // ---- Merge logic ----
+    // Full pull: แทนทั้งหมด (เหมือนเดิม)
+    // Incremental pull: merge เฉพาะ doc ที่ได้มาเข้า local (upsert by id)
+    // ทั้งสองแบบใช้ echo suppression เหมือนกัน
+
     const localBkMap = {};
     (db.bookings||[]).forEach(b=>{ localBkMap[b.id]=b; });
-    const fbBookingsFiltered = fbBookings.map(b=>(_isRecentlyPushed(b.id) && localBkMap[b.id]) ? localBkMap[b.id] : b);
-    const fbBkIds = new Set(fbBookingsFiltered.map(b=>b.id));
-    const localNewBk = (db.bookings||[]).filter(b=>!fbBkIds.has(b.id)&&!deletedBookings.has(b.id));
-    db.bookings = [...localNewBk, ...fbBookingsFiltered].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+    // upsert จาก Firebase (incremental หรือ full)
+    fbBookings.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localBkMap[b.id]=b; });
+    db.bookings = Object.values(localBkMap)
+      .filter(b=>!deletedBookings.has(b.id))
+      .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
     const localPMap = {};
     (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
-    const fbPermitsFiltered = fbPermits.map(p=>(_isRecentlyPushed(p.id) && localPMap[p.id]) ? localPMap[p.id] : p);
-    const fbPIds = new Set(fbPermitsFiltered.map(p=>p.id));
-    const localNewP = (db.permits||[]).filter(p=>!fbPIds.has(p.id)&&!deletedPermits.has(p.id));
-    db.permits = [...localNewP, ...fbPermitsFiltered].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+    fbPermits.forEach(p=>{ if(!_isRecentlyPushed(p.id)) localPMap[p.id]=p; });
+    db.permits = Object.values(localPMap)
+      .filter(p=>!deletedPermits.has(p.id))
+      .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
     if(fbFcBk.length){
       const localFcBkMap = {};
       (db.fuelCardBookings||[]).forEach(b=>{ localFcBkMap[b.id]=b; });
-      db.fuelCardBookings = fbFcBk.map(b=>(_isRecentlyPushed(b.id) && localFcBkMap[b.id]) ? localFcBkMap[b.id] : b);
+      fbFcBk.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localFcBkMap[b.id]=b; });
+      db.fuelCardBookings = Object.values(localFcBkMap);
     }
     if(fbFc.length){
       const localFcMap = {};
       (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
-      db.fuelCards = fbFc.map(f=>(_isRecentlyPushed(f.id) && localFcMap[f.id]) ? localFcMap[f.id] : f);
+      fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id)) localFcMap[f.id]=f; });
+      db.fuelCards = Object.values(localFcMap);
     }
 
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
@@ -4803,3 +4838,4 @@ function renderPrintPage(p){
 
 </body>
 </html>
+  
