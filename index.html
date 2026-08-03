@@ -3021,8 +3021,11 @@ function renderFuelCards(){
     return;
   }
   grid.innerHTML = cards.map(fc=>{
-    const pending = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.returnStep==='pending');
-    const activeBk = (db.fuelCardBookings||[]).find(b=>b.fcId===fc.id&&b.status!=='returned'&&b.status!=='cancelled');
+    const sortedBks = (db.fuelCardBookings||[])
+      .filter(b=>b.fcId===fc.id)
+      .sort((a,b)=>new Date(a.startDt)-new Date(b.startDt)); // เรียงตามเวลาจองก่อน-หลัง
+    const pending = sortedBks.find(b=>b.returnStep==='pending');
+    const activeBk = sortedBks.find(b=>b.status!=='returned'&&b.status!=='cancelled');
     const fcSt = getFcCardStatus(fc.id);
     let statusLabel='✅ ว่าง', statusStyle='', blocked=false;
     if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.85;'; blocked=true; }
