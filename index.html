@@ -1076,26 +1076,26 @@ async function _smartPull(){
     const deletedBookings = new Set(db.deletedBookingIds||[]);
 
     // ---- ตัดสินใจ: pull แบบ incremental หรือ full ----
-    // full: ทำทุก 5 นาที และครั้งแรกเมื่อไม่มี local data
+    // full: ทำครั้งแรกเสมอ (เพื่อโหลด cars/staff) และทุก 5 นาที
     // incremental: ทำทุกกรณีอื่น (ประหยัด reads มาก)
-    const hasLocalData = (db.bookings||[]).length > 0 || (db.permits||[]).length > 0;
-    const doFull = (!hasLocalData && !_lastPushed['_initialized']) || 
-                   (now - _lastFullPullTime > FULL_PULL_INTERVAL);
+    const isFirstPull = _lastFullPullTime === 0;
+    const doFull = isFirstPull || (now - _lastFullPullTime > FULL_PULL_INTERVAL);
     
-    let fbBookings, fbPermits, fbFcBk, fbFc;
+    let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff;
 
     if(doFull){
       // Full pull — ดึงทั้ง collection
       _lastFullPullTime = now;
-      [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
+      [fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff] = await Promise.all([
         _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
         _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
         _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data())),
-        _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))
+        _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data())),
+        _fbDb.collection('cars').get().then(s=>s.docs.map(d=>d.data())),
+        _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data()))
       ]);
     } else {
       // Incremental pull — ดึงเฉพาะที่เปลี่ยนหลัง _lastServerTs
-      // ถ้าไม่มี updatedAt field ใน doc ก็จะไม่ถูก match → ปลอดภัย
       const sinceTs = _lastServerTs || new Date(0).toISOString();
       [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
         _fbDb.collection('bookings').where('updatedAt','>',sinceTs).get()
@@ -1107,6 +1107,7 @@ async function _smartPull(){
         _fbDb.collection('fuelCards').where('updatedAt','>',sinceTs).get()
           .then(s=>s.docs.map(d=>d.data()))
       ]);
+      fbCars = []; fbStaff = []; // incremental ไม่ดึง cars/staff (เปลี่ยนน้อยมาก)
     }
 
     // ---- Merge logic ----
@@ -1140,6 +1141,17 @@ async function _smartPull(){
       (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
       fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id)) localFcMap[f.id]=f; });
       db.fuelCards = Object.values(localFcMap);
+    }
+
+    // cars และ staff — ดึงเฉพาะ full pull (เปลี่ยนน้อยมาก ไม่ต้อง incremental)
+    if(fbCars && fbCars.length){
+      const localCarMap = {};
+      (db.cars||[]).forEach(c=>{ localCarMap[c.id]=c; });
+      fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
+      db.cars = Object.values(localCarMap);
+    }
+    if(fbStaff && fbStaff.length){
+      db.staff = fbStaff;
     }
 
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
