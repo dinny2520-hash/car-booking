@@ -1085,10 +1085,10 @@ async function _smartPull(){
     const tabActive = document.visibilityState === 'visible';
     const doFull = isFirstPull || (tabActive && (now - _lastFullPullTime > FULL_PULL_INTERVAL));
     
-    let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff;
+    let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff, fbConfig;
 
     if(doFull){
-      // Full pull — ดึงทั้ง collection
+      // Full pull — ดึงทั้ง collection รวม config/app เพื่อ sync adminPass, fuelPrice, staffPins
       _lastFullPullTime = now;
       [fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff] = await Promise.all([
         _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
@@ -1098,6 +1098,9 @@ async function _smartPull(){
         _fbDb.collection('cars').get().then(s=>s.docs.map(d=>d.data())),
         _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data()))
       ]);
+      // ดึง config/app แยก (doc เดียว = 1 read)
+      const cfgSnap = await _fbDb.collection('config').doc('app').get();
+      fbConfig = cfgSnap.exists ? cfgSnap.data() : null;
     } else {
       // Incremental pull — ดึงเฉพาะที่เปลี่ยนหลัง _lastServerTs
       const sinceTs = _lastServerTs || new Date(0).toISOString();
@@ -1111,7 +1114,7 @@ async function _smartPull(){
         _fbDb.collection('fuelCards').where('updatedAt','>',sinceTs).get()
           .then(s=>s.docs.map(d=>d.data()))
       ]);
-      fbCars = []; fbStaff = []; // incremental ไม่ดึง cars/staff (เปลี่ยนน้อยมาก)
+      fbCars = []; fbStaff = []; fbConfig = null; // incremental ไม่ดึง cars/staff/config
     }
 
     // ---- Merge logic ----
@@ -1156,6 +1159,13 @@ async function _smartPull(){
     }
     if(fbStaff && fbStaff.length){
       db.staff = fbStaff;
+    }
+
+    // sync config จาก Firebase → ทุกเครื่องได้รหัสแอดมิน, ราคาน้ำมัน, รหัสพนักงาน เหมือนกัน
+    if(fbConfig){
+      if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
+      if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
+      if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
     }
 
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
