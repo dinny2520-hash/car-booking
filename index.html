@@ -706,13 +706,27 @@ tr:hover td{background:var(--g50)}
         <div id="admin-card-booking-list" style="max-height:300px;overflow-y:auto;display:none"></div>
 
         <div id="admtab-car-btns" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด (รถ)</button>
-          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
+          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldBookings();renderAdminBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 30 วัน)</button>
         </div>
         <div id="admtab-card-btns" style="display:none;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-danger btn-sm" onclick="adminDeleteAllCardDone()">🗑️ ลบที่ยกเลิก/คืนแล้วทั้งหมด (การ์ด)</button>
-          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldFcBookings();renderAdminCardBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 60 วัน)</button>
+          <button class="btn btn-outline btn-sm" onclick="autoCleanupOldFcBookings();renderAdminCardBookingList();alert('✅ รัน cleanup เรียบร้อย')">🧹 รันลบอัตโนมัติตอนนี้ (เกิน 30 วัน)</button>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>🗄️ ประวัติการจองที่ถูกลบ (Archive)</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการจองรถและบัตรน้ำมันที่คืน/ยกเลิกเกิน 30 วัน จะถูกย้ายมาเก็บที่นี่อัตโนมัติ</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <select id="booking-archive-type" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+            <option value="booking">🚗 จองรถ</option>
+            <option value="fc">💳 บัตรน้ำมัน</option>
+          </select>
+          <input type="month" id="booking-archive-month" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <button class="btn btn-primary btn-sm" onclick="loadBookingArchive()">🔍 ดูรายการ</button>
+          <button class="btn btn-outline btn-sm" onclick="exportBookingArchiveReport()">📊 ดึงรายงาน (Excel)</button>
+          <button class="btn btn-danger btn-sm" onclick="permanentDeleteAllBookingArchiveInMonth()">🗑️ ลบถาวรทั้งหมดในเดือนนี้</button>
+        </div>
+        <div id="booking-archive-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
 
       <div class="settings-section">
@@ -2604,21 +2618,123 @@ function adminDeleteBooking(id){
   renderCars();
 }
 
-function adminDeleteAllDone(){
-  const toDelete = db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned');
-  if(!toDelete.length){alert('ไม่มีรายการที่ลบได้');return;}
-  if(!confirm(`ลบรายการที่ยกเลิก/คืนแล้วทั้งหมด ${toDelete.length} รายการ?`))return;
-  toDelete.forEach(b=>{ markDeleted('deletedBookingIds', b.id); fbDeleteDoc('bookings', b.id); });
-  db.bookings=db.bookings.filter(b=>b.status!=='cancelled'&&b.status!=='returned');
-  const _ts=new Date().toISOString(); db._lastSync=_ts;
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
+// ---- Booking Archive: ดูประวัติที่ถูกลบ / รายงานรายเดือน / ลบถาวร ----
+let _bookingArchiveCache = [];
+
+async function loadBookingArchive(){
+  const monthVal = document.getElementById('booking-archive-month').value;
+  const type = document.getElementById('booking-archive-type').value;
+  const listEl = document.getElementById('booking-archive-list');
+  if(!monthVal){ alert('กรุณาเลือกเดือน'); return; }
+  listEl.innerHTML = '<div class="empty-state">⏳ กำลังโหลด...</div>';
+  if(!_fbReady){ listEl.innerHTML='<div class="alert alert-danger">ยังไม่ได้เชื่อมต่อ Firebase</div>'; return; }
+  try{
+    const col = type==='fc' ? 'fcBookingArchive' : 'bookingArchive';
+    const snap = await _fbDb.collection(col).get();
+    const all = snap.docs.map(d=>d.data());
+    const filtered = all.filter(b=>{
+      const dt = b.startDt || b.archivedAt;
+      return dt && String(dt).slice(0,7) === monthVal;
+    }).sort((a,b)=>new Date(b.archivedAt||0)-new Date(a.archivedAt||0));
+    _bookingArchiveCache = filtered.map(b=>({...b, _archiveCol: col}));
+    if(!filtered.length){
+      listEl.innerHTML='<div class="empty-state"><div style="font-size:30px">🗄️</div><div>ไม่พบรายการในเดือนนี้</div></div>';
+      return;
+    }
+    listEl.innerHTML = filtered.map(b=>{
+      const archivedDate = b.archivedAt ? new Date(b.archivedAt).toLocaleString('th-TH') : '-';
+      const statusLabel = b.status==='returned'?'คืนแล้ว':'ยกเลิก';
+      return `<div class="card" style="border-left:4px solid var(--danger);margin-bottom:10px">
+        <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700;font-size:15px">${b.name||'-'} <span style="font-size:12px;color:var(--g500)">(${statusLabel})</span></div>
+            <div style="font-size:13px;color:var(--g600);margin-top:4px">
+              <div>🚗 ${b.car||b.fcName||'-'} &nbsp;|&nbsp; 📅 ${fmt(b.startDt)||'-'} → ${fmt(b.endDt)||'-'}</div>
+              <div>📍 ${b.dest||b.reason||'-'}</div>
+              <div style="color:var(--danger);margin-top:2px">🗑️ ลบเมื่อ ${archivedDate}</div>
+            </div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="openPermanentDeleteBookingModal('${b.id}')">ลบถาวร</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(err){
+    listEl.innerHTML='<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
   }
+}
+
+function exportBookingArchiveReport(){
+  const monthVal = document.getElementById('booking-archive-month').value;
+  const type = document.getElementById('booking-archive-type').value;
+  if(!monthVal||!_bookingArchiveCache.length){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
+  const isFC = type==='fc';
+  const rows = isFC
+    ? [['ชื่อ','การ์ด','เหตุผล','เริ่ม','สิ้นสุด','เชื้อเพลิง (บาท)','สถานะ','วันที่ลบ']]
+    : [['ชื่อ','รถ','สถานที่','เริ่ม','สิ้นสุด','สถานะ','วันที่ลบ']];
+  _bookingArchiveCache.forEach(b=>{
+    const archivedDate = b.archivedAt ? new Date(b.archivedAt).toLocaleString('th-TH') : '-';
+    if(isFC) rows.push([b.name||'-',b.fcName||'-',b.reason||'-',fmt(b.startDt)||'-',fmt(b.endDt)||'-',Number(b.fuel)||0,b.status==='returned'?'คืนแล้ว':'ยกเลิก',archivedDate]);
+    else rows.push([b.name||'-',b.car||'-',b.dest||'-',fmt(b.startDt)||'-',fmt(b.endDt)||'-',b.status==='returned'?'คืนแล้ว':'ยกเลิก',archivedDate]);
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Archive');
+  XLSX.writeFile(wb, `รายงาน_Archive_${type==='fc'?'การ์ด':'รถ'}_${monthVal}.xlsx`);
+}
+
+var _permanentDeleteBookingId = null;
+
+function openPermanentDeleteBookingModal(id){
+  _permanentDeleteBookingId = id;
+  const b = _bookingArchiveCache.find(x=>x.id===id);
+  document.getElementById('pdb-info').innerHTML = b ? `<b>${b.name||'-'}</b> | 🚗 ${b.car||b.fcName||'-'} | 📅 ${fmt(b.startDt)||'-'}` : '';
+  document.getElementById('pdb-admin-pass').value='';
+  document.getElementById('pdb-err').style.display='none';
+  openModal('modal-permanent-delete-booking');
+}
+
+async function confirmPermanentDeleteBooking(){
+  const errEl = document.getElementById('pdb-err');
+  const adminPass = document.getElementById('pdb-admin-pass').value.trim();
+  errEl.style.display='none';
+  if(!adminPass||adminPass!==db.adminPass){ errEl.textContent='รหัสแอดมินไม่ถูกต้อง'; errEl.style.display='flex'; return; }
+  const b = _bookingArchiveCache.find(x=>x.id===_permanentDeleteBookingId);
+  if(!b) return;
+  try{
+    await fbDeleteDoc(b._archiveCol, b.id);
+    _bookingArchiveCache = _bookingArchiveCache.filter(x=>x.id!==b.id);
+    closeModal('modal-permanent-delete-booking');
+    loadBookingArchive();
+  }catch(err){ errEl.textContent='ลบไม่สำเร็จ ลองใหม่อีกครั้ง'; errEl.style.display='flex'; }
+}
+
+async function permanentDeleteAllBookingArchiveInMonth(){
+  const monthVal = document.getElementById('booking-archive-month').value;
+  if(!monthVal||!_bookingArchiveCache.length){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
+  const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยันการลบถาวรทั้งหมด ('+_bookingArchiveCache.length+' รายการ)');
+  if(adminPass===null) return;
+  if(adminPass!==db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+  if(!confirm('ยืนยันลบถาวร '+_bookingArchiveCache.length+' รายการ? ไม่สามารถกู้คืนได้')) return;
+  document.getElementById('booking-archive-list').innerHTML='<div class="empty-state">⏳ กำลังลบ...</div>';
+  try{
+    for(const b of _bookingArchiveCache) await fbDeleteDoc(b._archiveCol, b.id);
+    _bookingArchiveCache=[];
+    alert('✅ ลบถาวรเรียบร้อย');
+    loadBookingArchive();
+  }catch(err){ alert('⚠️ ลบไม่สำเร็จบางรายการ'); loadBookingArchive(); }
+}
+
+function adminDeleteAllDone(){
+  // เหลือไว้เพื่อ backward compat แต่ไม่มีปุ่มเรียกแล้ว
+  autoCleanupOldBookings();
   renderAdminBookingList();
   renderHistory();
   renderCars();
-  alert('✅ ลบสำเร็จ');
+}
+
+function adminDeleteAllCardDone(){
+  autoCleanupOldFcBookings();
+  renderAdminCardBookingList();
 }
 
 
@@ -2882,7 +2998,7 @@ function showSyncToast(success){
 }
 
 // ---- AUTO-CLEANUP: ลบ bookings เก่าที่จบงานแล้ว (cancelled/returned) เกิน 90 วัน ----
-const CLEANUP_DAYS = 60;
+const CLEANUP_DAYS = 30; // ลบอัตโนมัติเมื่อเกิน 30 วัน
 const CLEANUP_CHECK_KEY = 'cbsys_last_cleanup';
 
 function autoCleanupOldBookings(){
@@ -2913,8 +3029,11 @@ function autoCleanupOldFcBookings(){
     (b.status==='cancelled'||b.status==='returned') && b.startDt && new Date(b.startDt) < cutoff
   );
   if(!toRemove.length) return;
+  // Archive ก่อนลบ
+  const now = new Date().toISOString();
+  toRemove.forEach(b=>fbSetDoc('fcBookingArchive', b.id, {...b, archivedAt: now}));
   db.fuelCardBookings = db.fuelCardBookings.filter(b=>!toRemove.find(r=>r.id===b.id));
-  console.log(`🧹 Auto-cleanup การ์ด: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ`);
+  console.log(`🧹 Auto-cleanup การ์ด: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ (สำรองไว้ใน Archive แล้ว)`);
   syncNow();
 }
 
@@ -4640,6 +4759,24 @@ function renderPrintPage(p){
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-permanent-delete-permit')">ยกเลิก</button>
       <button class="btn btn-danger" onclick="confirmPermanentDeletePermit()">🗑️ ลบถาวร</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PERMANENT DELETE BOOKING ARCHIVE -->
+<div class="modal-overlay" id="modal-permanent-delete-booking">
+  <div class="modal">
+    <div class="modal-title">⚠️ ลบถาวรจากระบบ Firebase</div>
+    <div id="pdb-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="alert alert-danger" style="margin-bottom:14px">การลบนี้ถาวร ไม่สามารถกู้คืนได้อีก</div>
+    <div class="form-row">
+      <label>รหัสแอดมิน (ยืนยันตัวตน)</label>
+      <input type="password" id="pdb-admin-pass" placeholder="รหัสแอดมิน">
+    </div>
+    <div id="pdb-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-permanent-delete-booking')">ยกเลิก</button>
+      <button class="btn btn-danger" onclick="confirmPermanentDeleteBooking()">🗑️ ลบถาวร</button>
     </div>
   </div>
 </div>
