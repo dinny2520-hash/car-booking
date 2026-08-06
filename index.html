@@ -997,8 +997,9 @@ async function fbDeleteDoc(colName, id){
 async function fbSetDoc(colName, id, data){
   if(!_fbReady) return;
   const clean = JSON.parse(JSON.stringify(data));
-  // เพิ่ม updatedAt ทุก doc เพื่อให้ incremental pull ทำงานได้
-  if(!clean.updatedAt) clean.updatedAt = new Date().toISOString();
+  // อัปเดต updatedAt ทุกครั้งที่ write — สำคัญมากสำหรับ incremental pull
+  // ถ้าใช้ if(!clean.updatedAt) จะทำให้ค่าเก่าไม่ถูก detect โดย where('updatedAt','>',sinceTs)
+  clean.updatedAt = new Date().toISOString();
   await _fbDb.collection(colName).doc(id).set(clean);
 }
 
