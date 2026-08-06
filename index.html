@@ -2959,10 +2959,9 @@ function _pushToFirebase(){
     return; 
   }
 
-  // เขียน lastUpdate เสมอ เพื่อให้ทุกเครื่อง pull ใหม่
-  ops.push(_fbDb.collection('config').doc('lastUpdate').set({updatedAt: new Date().toISOString()}));
-
   console.log(`📤 Push ${ops.length} changes to Firebase`);
+  // เขียน ops ทั้งหมดก่อน แล้วค่อยเขียน lastUpdate หลัง resolve
+  // สำคัญ: lastUpdate ต้องเขียนหลังสุด เพื่อให้เครื่องอื่น pull ได้ข้อมูลใหม่ครบ
   Promise.all(ops).then(()=>{
     // อัปเดต snapshot หลัง push สำเร็จ
     _updateLastPushed(bookingsToSync, 'bookings');
@@ -2970,12 +2969,16 @@ function _pushToFirebase(){
     _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
     _updateLastPushed(db.fuelCards||[], 'fuelCards');
     _updateLastPushed(db.cars||[], 'cars');
-    // กัน echo — mark เฉพาะรายการที่เพิ่งเปลี่ยนจริงว่าเพิ่ง push ไป
+    // กัน echo
     _markPushed(changedBookings);
     _markPushed(changedPermits);
     _markPushed(changedFcBk);
     _markPushed(changedFc);
     _markPushed(changedCars);
+    // เขียน lastUpdate หลังสุด — notify ทุกเครื่องให้ pull ใหม่
+    // ต้องรอให้ทุก doc เขียนเสร็จก่อน ไม่งั้นเครื่องอื่นจะ pull ได้ข้อมูลเก่า
+    return _fbDb.collection('config').doc('lastUpdate').set({updatedAt: new Date().toISOString()});
+  }).then(()=>{
     updateSync(false, true);
   }).catch(err=>{
     console.error('Firebase push error:', err);
