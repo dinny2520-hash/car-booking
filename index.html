@@ -1202,9 +1202,9 @@ async function _smartPull(sinceTs){
     checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
     renderCars(); renderHistory(); renderFuelCards();
     renderUcPermitList(); renderPermitList();
-    const s2=document.getElementById('modal-step2-return')?.classList.contains('open');
-    const s1=document.getElementById('modal-step1-return')?.classList.contains('open');
-    if(!s2&&!s1) renderReturnList();
+    // renderReturnList เสมอ ไม่ว่า modal จะเปิดหรือไม่
+    // เพราะถ้าข้ามตอน modal เปิด เครื่องอื่นที่ push การเปลี่ยนแปลงมาจะไม่เห็นผล
+    renderReturnList();
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
   } catch(e){
     console.error('Smart pull error:', e);
