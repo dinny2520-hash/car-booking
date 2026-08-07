@@ -412,6 +412,7 @@ tr:hover td{background:var(--g50)}
         ผู้ยืมแจ้งคืนรถ — กรอก PIN ยืนยันตัวเอง
       </div>
       <div class="alert alert-info" style="margin-bottom:14px">ผู้ยืมกรอกรหัส PIN 4 หลักที่ตั้งไว้ตอนจอง เพื่อแจ้งคืนรถ จากนั้นส่งกุญแจให้เจ้าหน้าที่</div>
+      <div id="return-order-err" class="alert alert-danger" style="display:none;margin-bottom:12px;font-weight:600;animation:blink-red 0.5s ease 6"></div>
       <div id="step1-list"></div>
     </div>
 
@@ -1599,13 +1600,24 @@ function renderReturnList(){
     s2.innerHTML=sorted.map((b,idx)=>{
       const car=db.cars.find(c=>c.id===b.carId);
       // เช็คว่ารถคันนี้มีการจองซ้อนกันไหม
-      const sameCarPending = pendingStaff.filter(x=>x.carId===b.carId);
+      const sameCarPending = pendingStaff.filter(x=>x.carId===b.carId)
+        .sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
       const multiTrip = sameCarPending.length > 1;
-      const tripLabel = multiTrip ? `<span style="background:#f59e0b;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px">⚠️ รถคันนี้มี ${sameCarPending.length} รายการ</span>` : '';
-      return `<div class="card" style="margin-bottom:12px;border-left:4px solid ${multiTrip?'#f59e0b':'var(--success)'}">
+      const myOrder = sameCarPending.findIndex(x=>x.id===b.id) + 1;
+      const isMustFirst = myOrder === 1;
+      const mustReturnFirst = !isMustFirst ? sameCarPending[0] : null;
+      const orderBadge = multiTrip
+        ? `<span style="background:${isMustFirst?'var(--success)':'var(--danger)'};color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px">
+            ${isMustFirst ? '✅ ลำดับที่ 1 — รับคืนได้เลย' : `⛔ ลำดับที่ ${myOrder} — รับคืนไม่ได้ก่อน`}
+           </span>` : '';
+      const blockWarning = mustReturnFirst
+        ? `<div style="background:#fef2f2;border:1px solid var(--danger);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:var(--danger);font-weight:600">
+            ⛔ ต้องรับคืนจาก <b>${mustReturnFirst.name}</b> (${fmt(mustReturnFirst.startDt)}) ก่อน!
+           </div>` : '';
+      return `<div class="card" style="margin-bottom:12px;border-left:4px solid ${mustReturnFirst?'var(--danger)':multiTrip?'var(--success)':'var(--success)'}">
         <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:180px">
-            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status st-busy" style="font-size:11px">รอเจ้าหน้าที่</span>${tripLabel}</div>
+            <div style="font-weight:700;font-size:15px;margin-bottom:5px">🚗 ${car?car.plate:'?'} <span class="car-status st-busy" style="font-size:11px">รอเจ้าหน้าที่</span>${orderBadge}</div>
             <div style="font-size:13px;color:var(--g600)">
               <div>👤 <b>${b.name}</b></div>
               <div>📅 เริ่ม: <b>${fmt(b.startDt)}</b></div>
@@ -1613,9 +1625,14 @@ function renderReturnList(){
               <div>📍 ${b.dest}</div>
               ${b.mileageIn!=null?`<div style="color:var(--g500);font-size:12px">🛣️ ไมล์ขาเข้า: ${b.mileageIn.toLocaleString('th-TH')} กม.</div>`:''}
               <div style="color:var(--success);font-weight:600;margin-top:4px">✅ ผู้ยืมแจ้งคืนแล้ว รอรับกุญแจ</div>
+              ${blockWarning}
             </div>
           </div>
-          <button class="btn btn-success btn-sm" onclick="openStep2Modal('${b.id}')">🔑 ยืนยันรับกุญแจ</button>
+          <button class="btn btn-success btn-sm" 
+            ${mustReturnFirst ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''} 
+            onclick="${mustReturnFirst ? `showReturnOrderErr('${mustReturnFirst.name}','${fmt(mustReturnFirst.startDt)}')` : `openStep2Modal('${b.id}')`}">
+            🔑 ยืนยันรับกุญแจ
+          </button>
         </div>
       </div>`;
     }).join('');
@@ -1624,10 +1641,44 @@ function renderReturnList(){
 
 let returnBookingId=null;
 
+function showReturnOrderErr(name, time){
+  const errDiv = document.getElementById('return-order-err');
+  if(errDiv){
+    errDiv.innerHTML = `⛔ ต้องให้ <b>${name}</b> (${time}) คืนรถก่อน!`;
+    errDiv.style.display = 'flex';
+    errDiv.style.animation = 'none';
+    setTimeout(()=>{ errDiv.style.animation = 'blink-red 0.4s ease 6'; }, 10);
+    setTimeout(()=>{ errDiv.style.display = 'none'; }, 5000);
+  }
+}
+
 function openStep1Modal(bkId){
   returnBookingId=bkId;
   const b=db.bookings.find(x=>x.id===bkId);
   const car=db.cars.find(c=>c.id===b.carId);
+
+  // ---- เช็คลำดับการคืน — รถคันเดียวกัน ต้องคืนตามลำดับ startDt ----
+  const sameCarActive = db.bookings.filter(x=>
+    x.carId===b.carId &&
+    x.id!==bkId &&
+    x.status!=='returned' &&
+    x.status!=='cancelled' &&
+    x.returnStep!=='pending' && // ยังไม่ได้แจ้งคืน
+    new Date(x.startDt) < new Date(b.startDt) // startDt เร็วกว่า = ต้องคืนก่อน
+  );
+  if(sameCarActive.length > 0){
+    const mustFirst = sameCarActive.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt))[0];
+    const errDiv = document.getElementById('return-order-err');
+    if(errDiv){
+      errDiv.innerHTML = `⛔ ต้องให้ <b>${mustFirst.name}</b> (${fmt(mustFirst.startDt)} – ${fmt(mustFirst.endDt)}) คืนรถก่อน!`;
+      errDiv.style.display = 'flex';
+      setTimeout(()=>{ errDiv.style.display='none'; }, 5000);
+    } else {
+      alert(`⛔ ต้องให้ ${mustFirst.name}\n(${fmt(mustFirst.startDt)} – ${fmt(mustFirst.endDt)})\nคืนรถก่อน!`);
+    }
+    return;
+  }
+
   document.getElementById('s1-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br>⏰ กำหนดคืน: ${fmt(b.endDt)}`;
   document.getElementById('s1-mileage-in').value='';
   document.getElementById('s1-mileage-out-display').textContent =
