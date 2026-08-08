@@ -1573,6 +1573,17 @@ function renderReturnList(){
       const car=db.cars.find(c=>c.id===b.carId);
       const st=getBkStatus(b);
       const isOver=st==='overdue';
+      // เช็คลำดับการคืน — รถคันเดียวกัน ต้องคืนตาม startDt
+      const mustFirst = db.bookings.filter(x=>
+        x.carId===b.carId && x.id!==b.id &&
+        x.status!=='returned' && x.status!=='cancelled' &&
+        x.returnStep!=='pending' &&
+        new Date(x.startDt) < new Date(b.startDt)
+      ).sort((a,c)=>new Date(a.startDt)-new Date(c.startDt))[0];
+      const blockMsg = mustFirst
+        ? `<div id="s1-order-err-${b.id}" class="alert alert-danger" style="display:none;margin-top:8px;font-size:13px;font-weight:600;animation:blink-red 0.4s ease 6">
+            ⛔ ต้องให้ <b>${mustFirst.name}</b> (${fmt(mustFirst.startDt)} – ${fmt(mustFirst.endDt)}) คืนรถก่อน!
+           </div>` : '';
       return `<div class="card" style="margin-bottom:12px;border-left:4px solid ${isOver?'var(--danger)':'var(--primary-mid)'}">
         <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:180px">
@@ -1585,6 +1596,7 @@ function renderReturnList(){
           </div>
           <button class="btn btn-primary btn-sm" onclick="openStep1Modal('${b.id}')">📋 แจ้งคืนรถ (ผู้ยืม)</button>
         </div>
+        ${blockMsg}
       </div>`;
     }).join('');
   }
@@ -1668,13 +1680,14 @@ function openStep1Modal(bkId){
   );
   if(sameCarActive.length > 0){
     const mustFirst = sameCarActive.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt))[0];
-    const errDiv = document.getElementById('return-order-err');
-    if(errDiv){
-      errDiv.innerHTML = `⛔ ต้องให้ <b>${mustFirst.name}</b> (${fmt(mustFirst.startDt)} – ${fmt(mustFirst.endDt)}) คืนรถก่อน!`;
-      errDiv.style.display = 'flex';
-      setTimeout(()=>{ errDiv.style.display='none'; }, 5000);
-    } else {
-      alert(`⛔ ต้องให้ ${mustFirst.name}\n(${fmt(mustFirst.startDt)} – ${fmt(mustFirst.endDt)})\nคืนรถก่อน!`);
+    // แสดง error ติดกับการ์ดนั้นเลย
+    const inlineErr = document.getElementById(`s1-order-err-${bkId}`);
+    if(inlineErr){
+      inlineErr.style.display = 'flex';
+      inlineErr.style.animation = 'none';
+      setTimeout(()=>{ inlineErr.style.animation = 'blink-red 0.4s ease 6'; }, 10);
+      inlineErr.scrollIntoView({behavior:'smooth', block:'center'});
+      setTimeout(()=>{ inlineErr.style.display = 'none'; }, 6000);
     }
     return;
   }
