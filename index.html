@@ -1414,7 +1414,7 @@ function submitBooking(){
   db.bookings.unshift(bk);
   const _syncTs=new Date().toISOString(); db._lastSync=_syncTs;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
   document.getElementById('success-pin').textContent=pin;
   const _bookedCarId = selectedCarId; // บันทึกไว้ก่อน cancelBookingForm จะ reset
@@ -1525,7 +1525,7 @@ function confirmCancelUser(){
   if(!b){return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='user';
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-cancel-user');renderHistory();renderCars();
   alert('✅ ยกเลิกการจองสำเร็จ');
 }
@@ -1542,7 +1542,7 @@ function confirmCancelAdmin(){
   if(pass!==db.adminPass){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===cancelBookingId);
   if(b){b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='admin';}
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-cancel-admin');renderHistory();renderCars();
   alert('✅ แอดมินยกเลิกการจองสำเร็จ');
 }
@@ -1719,7 +1719,7 @@ function submitStep1(){
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
   b.mileageIn=Number(mileageIn);
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-step1-return');
   renderReturnList();
   alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
@@ -3436,7 +3436,7 @@ function submitFcStep1(){
     b.noFuelReason=noReason;
     // ไม่ได้เติม — ไม่มีอะไรต้องคืน เพราะยังไม่ได้หักการ์ดตอนจอง
   }
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-fc-step1');
   renderFcReturnList();
   alert('✅ แจ้งคืนการ์ดสำเร็จ กรุณาส่งการ์ดให้เจ้าหน้าที่');
@@ -3535,7 +3535,7 @@ function submitFcAdminReturn(){
     b.noFuelReason=adminNoReason;
     // ไม่ได้เติม — ไม่มีอะไรต้องคืน
   }
-  syncNow();
+  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   closeModal('modal-fc-admin-return');
   renderFcReturnList();
   renderFuelCards();
