@@ -1725,10 +1725,22 @@ function submitStep1(){
   alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
 }
 
-function openStep2Modal(bkId){
+async function openStep2Modal(bkId){
   returnBookingId=bkId;
   const b=db.bookings.find(x=>x.id===bkId);
-  const car=db.cars.find(c=>c.id===b.carId);
+  let car=db.cars.find(c=>c.id===b.carId);
+
+  // ดึงไมล์ล่าสุดจาก Firebase โดยตรง กันกรณี local cache เก่า
+  if(_fbReady && car){
+    try{
+      const snap = await _fbDb.collection('cars').doc(car.id).get();
+      if(snap.exists){
+        const fresh = snap.data();
+        if(fresh.mileage != null) car.mileage = fresh.mileage; // อัปเดต local ด้วย
+      }
+    }catch(e){ /* ถ้า fetch ไม่ได้ใช้ local แทน */ }
+  }
+
   document.getElementById('s2-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br><span style="color:var(--success);font-weight:600">✅ ผู้ยืมยืนยัน PIN แล้ว</span>`;
   document.getElementById('s2-mileage-out').value = (car&&car.mileage!=null) ? car.mileage : '';
   const mIn = document.getElementById('s2-mileage-in');
@@ -2676,12 +2688,41 @@ function adminDeleteBooking(id){
   fbDeleteDoc('bookings', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  if(db.syncEnabled){ syncNow(); }
   renderAdminBookingList();
   renderHistory();
   renderCars();
+}
+
+function adminEditMileage(id){
+  const b = db.bookings.find(x=>x.id===id);
+  if(!b) return;
+  const car = db.cars.find(c=>c.id===b.carId);
+  const currentOut = b.mileageOut!=null ? b.mileageOut : '';
+  const currentIn = b.mileageIn!=null ? b.mileageIn : '';
+  const newOut = prompt(`แก้ไขเลขไมล์ขาออก (กม.)\n[${car?car.plate:'?'}] ${b.name}\nค่าปัจจุบัน: ${currentOut||'-'}`, currentOut);
+  if(newOut===null) return;
+  if(!/^\d+$/.test(newOut.trim())){ alert('เลขไมล์ต้องเป็นตัวเลขเท่านั้น'); return; }
+  const newIn = prompt(`แก้ไขเลขไมล์ขาเข้า (กม.)\nค่าปัจจุบัน: ${currentIn||'-'}`, currentIn);
+  if(newIn===null) return;
+  if(!/^\d+$/.test(newIn.trim())){ alert('เลขไมล์ต้องเป็นตัวเลขเท่านั้น'); return; }
+  if(Number(newIn) < Number(newOut)){ alert('ไมล์ขาเข้าต้องไม่น้อยกว่าไมล์ขาออก'); return; }
+  const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยัน');
+  if(adminPass===null) return;
+  if(adminPass !== db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+
+  b.mileageOut = Number(newOut.trim());
+  b.mileageIn = Number(newIn.trim());
+  // อัปเดตไมล์ล่าสุดของรถด้วย ถ้าเป็นการคืนล่าสุดของรถนั้น
+  if(car){
+    const lastReturn = db.bookings
+      .filter(x=>x.carId===car.id && x.status==='returned' && x.mileageIn!=null)
+      .sort((a,c)=>new Date(c.returnedAt||0)-new Date(a.returnedAt||0))[0];
+    if(lastReturn && lastReturn.id===id){
+      car.mileage = b.mileageIn;
+    }
+  }
+  syncNow(()=>{ alert('✅ แก้ไขเลขไมล์สำเร็จ'); renderAdminBookingList(); renderCars(); }, ()=>alert('❌ บันทึกไม่สำเร็จ ลองใหม่'));
 }
 
 // ---- Booking Archive: ดูประวัติที่ถูกลบ / รายงานรายเดือน / ลบถาวร ----
