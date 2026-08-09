@@ -831,10 +831,13 @@ tr:hover td{background:var(--g50)}
     </div>
     <div id="s2-car-info" class="alert alert-warning" style="margin-bottom:14px"></div>
     <div class="form-row"><label>เลขไมล์ขาออก (ตอนยืม) *</label>
-      <input type="number" id="s2-mileage-out" placeholder="เช่น 125100" min="0" inputmode="numeric">
+      <input type="number" id="s2-mileage-out" placeholder="เช่น 125100" min="0" inputmode="numeric" oninput="updateMileageSummary()">
     </div>
     <div class="form-row"><label>เลขไมล์ขาเข้า (ตอนคืน) *</label>
-      <input type="number" id="s2-mileage-in" placeholder="เช่น 125430" min="0" inputmode="numeric" readonly style="background:var(--g100)">
+      <input type="number" id="s2-mileage-in" placeholder="เช่น 125430" min="0" inputmode="numeric" readonly style="background:var(--g100)" oninput="updateMileageSummary()">
+    </div>
+    <div id="s2-mileage-summary" style="display:none;background:#f0fdf4;border:1.5px solid var(--success);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--success);text-align:center">
+      🛣️ ระยะทางที่ใช้: <span id="s2-mileage-diff">0</span> กิโลเมตร
     </div>
     <div class="form-row"><label>เลือกเจ้าหน้าที่</label>
       <select id="s2-staff-select"></select>
@@ -1725,6 +1728,19 @@ function submitStep1(){
   alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
 }
 
+function updateMileageSummary(){
+  const out = Number(document.getElementById('s2-mileage-out').value)||0;
+  const inn = Number(document.getElementById('s2-mileage-in').value)||0;
+  const summaryEl = document.getElementById('s2-mileage-summary');
+  const diffEl = document.getElementById('s2-mileage-diff');
+  if(out > 0 && inn > 0 && inn >= out){
+    diffEl.textContent = (inn - out).toLocaleString('th-TH');
+    summaryEl.style.display = 'block';
+  } else {
+    summaryEl.style.display = 'none';
+  }
+}
+
 async function openStep2Modal(bkId){
   returnBookingId=bkId;
   const b=db.bookings.find(x=>x.id===bkId);
@@ -1757,6 +1773,7 @@ async function openStep2Modal(bkId){
   document.getElementById('s2-err').style.display='none';
   const staffOpts=db.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
   document.getElementById('s2-staff-select').innerHTML='<option value="">-- เลือกชื่อ --</option>'+staffOpts;
+  updateMileageSummary();
   openModal('modal-step2-return');
 }
 
