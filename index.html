@@ -1813,6 +1813,10 @@ function submitStep2(){
   if(!mileageOut||!mileageIn){errEl.textContent='กรุณากรอกเลขไมล์ขาออกและขาเข้าให้ครบ';errEl.style.display='flex';return;}
   if(!/^\d+$/.test(mileageOut)||!/^\d+$/.test(mileageIn)){errEl.textContent='เลขไมล์ต้องเป็นตัวเลขเท่านั้น';errEl.style.display='flex';return;}
   if(Number(mileageIn)<Number(mileageOut)){errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ขาออก';errEl.style.display='flex';return;}
+  const diff = Number(mileageIn) - Number(mileageOut);
+  if(diff >= 1000){
+    if(!confirm(`⚠️ ระยะทางที่ใช้งาน: ${diff.toLocaleString('th-TH')} กิโลเมตร\n\nยืนยันระยะทางที่ใช้งานตามนี้จริงหรือไม่?`)) return;
+  }
   const staff=db.staff.find(s=>s.id===staffId);
   if(!staff){errEl.textContent='กรุณาเลือกเจ้าหน้าที่';errEl.style.display='flex';return;}
   if(staff.code!==staffCode){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
