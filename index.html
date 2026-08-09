@@ -703,6 +703,32 @@ tr:hover td{background:var(--g50)}
           <button class="btn btn-outline btn-sm" id="admtab-card" onclick="switchAdminHistoryTab('card')">💳 จองการ์ด</button>
         </div>
 
+        <!-- Filter จองรถ -->
+        <div id="admtab-car-filter" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <select id="admin-filter-plate" onchange="renderAdminBookingList()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:13px">
+            <option value="">🚗 ทะเบียนทั้งหมด</option>
+          </select>
+          <select id="admin-filter-bk-status" onchange="renderAdminBookingList()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:13px">
+            <option value="">สถานะทั้งหมด</option>
+            <option value="returned">คืนแล้ว</option>
+            <option value="cancelled">ยกเลิก</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('admin-filter-plate').value='';document.getElementById('admin-filter-bk-status').value='';renderAdminBookingList()">ล้าง</button>
+        </div>
+
+        <!-- Filter จองการ์ด -->
+        <div id="admtab-card-filter" style="display:none;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <select id="admin-filter-card" onchange="renderAdminCardBookingList()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:13px">
+            <option value="">💳 การ์ดทั้งหมด</option>
+          </select>
+          <select id="admin-filter-fc-status" onchange="renderAdminCardBookingList()" style="padding:6px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:13px">
+            <option value="">สถานะทั้งหมด</option>
+            <option value="returned">คืนแล้ว</option>
+            <option value="cancelled">ยกเลิก</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('admin-filter-card').value='';document.getElementById('admin-filter-fc-status').value='';renderAdminCardBookingList()">ล้าง</button>
+        </div>
+
         <div id="admin-booking-list" style="max-height:300px;overflow-y:auto"></div>
         <div id="admin-card-booking-list" style="max-height:300px;overflow-y:auto;display:none"></div>
 
@@ -3970,15 +3996,83 @@ function switchAdminHistoryTab(mode){
   document.getElementById('admin-card-booking-list').style.display = mode==='card'?'block':'none';
   document.getElementById('admtab-car-btns').style.display = mode==='car'?'flex':'none';
   document.getElementById('admtab-card-btns').style.display = mode==='card'?'flex':'none';
-  if(mode==='card') renderAdminCardBookingList();
+  document.getElementById('admtab-car-filter').style.display = mode==='car'?'flex':'none';
+  document.getElementById('admtab-card-filter').style.display = mode==='card'?'flex':'none';
+  // populate dropdowns
+  if(mode==='car'){
+    const sel = document.getElementById('admin-filter-plate');
+    const cur = sel.value;
+    const plates = [...new Set((db.cars||[]).map(c=>c.plate).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">🚗 ทะเบียนทั้งหมด</option>' + plates.map(p=>`<option value="${p}" ${cur===p?'selected':''}>${p}</option>`).join('');
+    renderAdminBookingList();
+  } else {
+    const sel = document.getElementById('admin-filter-card');
+    const cur = sel.value;
+    const cards = (db.fuelCards||[]).filter(f=>f.active!==false);
+    sel.innerHTML = '<option value="">💳 การ์ดทั้งหมด</option>' + cards.map(f=>`<option value="${f.id}" ${cur===f.id?'selected':''}>${f.name}</option>`).join('');
+    renderAdminCardBookingList();
+  }
+}
+
+function renderAdminBookingList(){
+  const list = document.getElementById('admin-booking-list');
+  if(!list) return;
+  // populate plate dropdown ถ้ายังไม่มี option
+  const plateSel = document.getElementById('admin-filter-plate');
+  if(plateSel && plateSel.options.length <= 1){
+    const plates = [...new Set((db.cars||[]).map(c=>c.plate).filter(Boolean))].sort();
+    plateSel.innerHTML = '<option value="">🚗 ทะเบียนทั้งหมด</option>' + plates.map(p=>`<option value="${p}">${p}</option>`).join('');
+  }
+  const filterPlate = plateSel ? plateSel.value : '';
+  const filterStatus = document.getElementById('admin-filter-bk-status')?.value || '';
+  let deletable = db.bookings.filter(b=>b.status==='cancelled'||b.status==='returned');
+  if(filterPlate){
+    deletable = deletable.filter(b=>{ const car=db.cars.find(c=>c.id===b.carId); return car&&car.plate===filterPlate; });
+  }
+  if(filterStatus) deletable = deletable.filter(b=>b.status===filterStatus);
+  if(!deletable.length){
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการ</p>';
+    return;
+  }
+  list.innerHTML = deletable.map(b=>{
+    const car=db.cars.find(c=>c.id===b.carId);
+    const stLabel=b.status==='cancelled'?'ยกเลิก':'คืนแล้ว';
+    const stColor=b.status==='cancelled'?'var(--g400)':'var(--success)';
+    const mileInfo = b.mileageOut!=null ? `🛣️ ${b.mileageOut}→${b.mileageIn} กม.` : '';
+    return `<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="flex:1;font-size:13px;min-width:200px">
+        <span style="font-weight:600">${car?car.plate:'?'}</span>
+        <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
+        <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        ${mileInfo?`<div style="font-size:11px;color:var(--g500);margin-top:2px">${mileInfo}</div>`:''}
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${b.status==='returned'?`
+        <button class="btn btn-outline btn-sm" onclick="adminRevertBooking('${b.id}')">↩️ ย้อนสถานะ</button>
+        <button class="btn btn-outline btn-sm" onclick="adminEditMileage('${b.id}')">🛣️ แก้ไมล์</button>
+        `:''}
+        <button class="btn btn-danger btn-sm" onclick="adminDeleteBooking('${b.id}')">ลบ</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderAdminCardBookingList(){
   const list = document.getElementById('admin-card-booking-list');
   if(!list) return;
-  const deletable = (db.fuelCardBookings||[]).filter(b=>b.status==='returned'||b.status==='cancelled');
+  // populate card dropdown ถ้ายังไม่มี option
+  const cardSel = document.getElementById('admin-filter-card');
+  if(cardSel && cardSel.options.length <= 1){
+    const cards = (db.fuelCards||[]).filter(f=>f.active!==false);
+    cardSel.innerHTML = '<option value="">💳 การ์ดทั้งหมด</option>' + cards.map(f=>`<option value="${f.id}">${f.name}</option>`).join('');
+  }
+  const filterCard = cardSel ? cardSel.value : '';
+  const filterStatus = document.getElementById('admin-filter-fc-status')?.value || '';
+  let deletable = (db.fuelCardBookings||[]).filter(b=>b.status==='returned'||b.status==='cancelled');
+  if(filterCard) deletable = deletable.filter(b=>b.fcId===filterCard);
+  if(filterStatus) deletable = deletable.filter(b=>b.status===filterStatus);
   if(!deletable.length){
-    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่จัดการได้</p>';return;
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการ</p>';return;
   }
   const cards = db.fuelCards||[];
   list.innerHTML = deletable.map(b=>{
