@@ -3046,11 +3046,11 @@ function _isRecentlyPushed(id){
 
 function _getItemKey(item){
   // เปรียบเทียบเฉพาะ field สำคัญ ไม่ใช่ทั้ง object
-  const {id, status, returnStep, mileageIn, mileageOut, returnedBy, returnedAt,
+  const {id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy, returnedAt,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt} = item;
-  return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, returnedBy,
+  return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt});
