@@ -1744,6 +1744,12 @@ function submitStep1(){
     errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ล่าสุดของรถ ('+Number(car.mileage).toLocaleString('th-TH')+' กม.)';
     errEl.style.display='flex';return;
   }
+  if(car&&car.mileage!=null){
+    const diff = Number(mileageIn) - Number(car.mileage);
+    if(diff >= 1000){
+      if(!confirm(`⚠️ ระยะทางที่ใช้งาน: ${diff.toLocaleString('th-TH')} กิโลเมตร\n\nยืนยันระยะทางที่ใช้งานตามนี้จริงหรือไม่?`)) return;
+    }
+  }
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN ให้ครบ 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.returnStep='pending';
@@ -2317,6 +2323,12 @@ function submitAdminReturn(){
   if(car&&car.mileage!=null&&Number(mileageIn)<Number(car.mileage)){
     errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ล่าสุดของรถ ('+Number(car.mileage).toLocaleString('th-TH')+' กม.)';
     errEl.style.display='flex';return;
+  }
+  if(car&&car.mileage!=null){
+    const diff = Number(mileageIn) - Number(car.mileage);
+    if(diff >= 1000){
+      if(!confirm(`⚠️ ระยะทางที่ใช้งาน: ${diff.toLocaleString('th-TH')} กิโลเมตร\n\nยืนยันระยะทางที่ใช้งานตามนี้จริงหรือไม่?`)) return;
+    }
   }
   if(pass!==db.adminPass){
     errEl.textContent='รหัสแอดมินไม่ถูกต้อง';
