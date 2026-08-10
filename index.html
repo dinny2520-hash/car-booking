@@ -4409,13 +4409,12 @@ setTimeout(checkAppVersion, 10*1000);
 window.addEventListener('load', ()=>{
   initFirebase().then(ready=>{
     if(ready){
-      // Init _lastPushed จาก local data เพื่อกัน push ทั้งหมดตอนเปิดแอป
       _initLastPushed();
-      pullFromGSheet();
+      // ไม่ต้องเรียก pullFromGSheet() เพราะ startRealtimeSync จะ trigger _smartPull (full pull ครั้งแรก) ให้เองแล้ว
       startRealtimeSync();
     } else {
       setTimeout(()=>{
-        initFirebase().then(r=>{ if(r){ _initLastPushed(); pullFromGSheet(); startRealtimeSync(); }});
+        initFirebase().then(r=>{ if(r){ _initLastPushed(); startRealtimeSync(); }});
       }, 2000);
     }
   });
@@ -4437,14 +4436,31 @@ _lastBookingCount = (db.bookings||[]).filter(b=>b.status==='booked').length;
 _lastFcBookingCount = (db.fuelCardBookings||[]).filter(b=>b.status==='in-use'||b.status==='upcoming').length;
 _lastReturnedCount = (db.bookings||[]).filter(b=>b.status==='returned').length;
 _lastFcReturnedCount = (db.fuelCardBookings||[]).filter(b=>b.status==='returned').length;
-// sig cache — ดึงครั้งเดียวตอนเปิดแอป ไม่ต้อง interval (ลายเซ็นไม่เปลี่ยนบ่อย)
-refreshSigCacheBackground();
+// sig cache — ดึงเฉพาะเมื่อ cache ว่างเปล่า ไม่ดึงซ้ำถ้ามีอยู่แล้ว
+const _existingSigCache = getSigCache();
+if(!_existingSigCache || Object.keys(_existingSigCache).length === 0){
+  refreshSigCacheBackground();
+}
 updateSync(false,null);
-// Pull ทันทีเมื่อ user กลับมาที่ tab (แก้ปัญหา mobile browser throttle)
+// Pull เมื่อ user กลับมาที่แท็บ — ใช้ _smartPull (incremental) แทน pullFromGSheet (full)
+// debounce กัน trigger ถี่เกินไป
+let _visibilityPullTimer = null;
 document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState==='visible') pullFromGSheet();
+  if(document.visibilityState==='visible'){
+    clearTimeout(_visibilityPullTimer);
+    _visibilityPullTimer = setTimeout(()=>_smartPull(), 1500);
+  }
 });
-window.addEventListener('focus', pullFromGSheet);
+// focus debounce 30 วิ — กัน trigger ทุกครั้งที่คลิก
+let _focusPullTimer = null;
+let _lastFocusPull = 0;
+window.addEventListener('focus', ()=>{
+  const now = Date.now();
+  if(now - _lastFocusPull < 30000) return;
+  _lastFocusPull = now;
+  clearTimeout(_focusPullTimer);
+  _focusPullTimer = setTimeout(()=>_smartPull(), 1500);
+});
 setTimeout(maybeRunCleanup, 3000);
 
 // บังคับดึงข้อมูลจาก Sheet ทันทีที่เปิดแอป และ update local ถ้า Sheet ใหม่กว่า
