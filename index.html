@@ -3054,7 +3054,50 @@ function syncNow(onSuccess, onFail){
   _pushToFirebase();
 }
 
-// ---- Smart Push — ส่งเฉพาะที่เปลี่ยน ----
+// ---- Auto re-render ตามเวลา ----
+// กัน case ที่การ์ดรถไม่เปลี่ยนสถานะเมื่อถึงเวลา startDt/endDt
+// เช็คทุก 1 นาที ว่ามี booking ไหนที่สถานะควรเปลี่ยนแล้วหรือยัง
+let _lastStatusCheck = {};
+function checkAndReRenderOnTimeChange(){
+  const now = new Date();
+  let needRender = false;
+
+  // เช็ค bookings รถ
+  (db.bookings||[]).forEach(b=>{
+    if(b.status!=='booked'&&b.status!=='in-use') return;
+    const start = new Date(b.startDt);
+    const end = new Date(b.endDt);
+    const prevCheck = _lastStatusCheck[b.id] || '';
+    const nowStatus = now >= start ? (now > end ? 'overdue' : 'in-use') : 'booked';
+    if(nowStatus !== prevCheck){
+      _lastStatusCheck[b.id] = nowStatus;
+      needRender = true;
+    }
+  });
+
+  // เช็ค fuelCardBookings
+  (db.fuelCardBookings||[]).forEach(b=>{
+    if(b.status==='returned'||b.status==='cancelled') return;
+    const start = new Date(b.startDt);
+    const end = new Date(b.endDt);
+    const prevCheck = _lastStatusCheck['fc_'+b.id] || '';
+    const nowStatus = now >= start ? (now > end ? 'overdue' : 'in-use') : 'upcoming';
+    if(nowStatus !== prevCheck){
+      _lastStatusCheck['fc_'+b.id] = nowStatus;
+      needRender = true;
+    }
+  });
+
+  if(needRender){
+    renderCars();
+    renderReturnList();
+    renderHistory();
+    renderFuelCards();
+    renderFcReturnList();
+  }
+}
+setInterval(checkAndReRenderOnTimeChange, 60000); // ทุก 1 นาที
+setTimeout(checkAndReRenderOnTimeChange, 5000);   // รันครั้งแรกหลังเปิดแอป 5 วิ
 let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push ขึ้น Firebase
 
 // ---- Echo suppression — กัน pull ทับ record ที่เพิ่ง push เอง ----
