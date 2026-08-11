@@ -1072,13 +1072,13 @@ function startRealtimeSync(){
   const unsubTs = _fbDb.collection('config').doc('lastUpdate').onSnapshot(snap=>{
     if(!snap.exists) return;
     if(snap.metadata && snap.metadata.fromCache) return;
-    const serverTs = snap.data()?.updatedAt;
+    const data = snap.data();
+    const serverTs = data?.updatedAt;
     if(serverTs && serverTs !== _lastServerTs){
-      const prevTs = _lastServerTs; // เก็บ timestamp ก่อนหน้าไว้ก่อน
+      const prevTs = _lastServerTs;
       _lastServerTs = serverTs;
+      _lastChangedIds = data?.changedIds || {}; // เก็บ changedIds ให้ _smartPull ใช้
       clearTimeout(_snapDebounceTimer);
-      // ส่ง prevTs เข้าไปใน _smartPull เพื่อให้ incremental query ดึง doc ที่ updatedAt > prevTs
-      // ไม่ใช่ serverTs (timestamp ปัจจุบัน) ซึ่งอาจทำให้หา doc ไม่เจอ
       _snapDebounceTimer = setTimeout(()=>_smartPull(prevTs), 1000);
     }
   });
@@ -1093,17 +1093,20 @@ function startRealtimeSync(){
     try{
       const snap = await _fbDb.collection('config').doc('lastUpdate').get();
       if(!snap.exists) return;
-      const serverTs = snap.data()?.updatedAt;
+      const data = snap.data();
+      const serverTs = data?.updatedAt;
       if(serverTs && serverTs !== _lastServerTs){
         const prevTs = _lastServerTs;
         _lastServerTs = serverTs;
-        _smartPull(prevTs); // ส่ง prevTs เพื่อให้ incremental query ถูกต้อง
+        _lastChangedIds = {}; // polling ไม่มี changedIds → ใช้ WHERE query fallback
+        _smartPull(prevTs);
       }
     }catch(e){}
   }, 30000);
 }
 
 let _lastServerTs = null;
+let _lastChangedIds = {}; // เก็บ changedIds จาก lastUpdate ล่าสุด
 let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
@@ -1148,20 +1151,42 @@ async function _smartPull(sinceTs){
       const cfgSnap = await _fbDb.collection('config').doc('app').get();
       fbConfig = cfgSnap.exists ? cfgSnap.data() : null;
     } else {
-      // Incremental pull — ดึงเฉพาะที่เปลี่ยนหลัง sinceTs (timestamp ก่อนหน้า จาก caller)
-      // ใช้ parameter sinceTs แทน _lastServerTs เพื่อกัน race condition
-      const queryTs = sinceTs || new Date(0).toISOString();
-      [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
-        _fbDb.collection('bookings').where('updatedAt','>',queryTs).get()
-          .then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
-        _fbDb.collection('permits').where('updatedAt','>',queryTs).get()
-          .then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
-        _fbDb.collection('fuelCardBookings').where('updatedAt','>',queryTs).get()
-          .then(s=>s.docs.map(d=>d.data())),
-        _fbDb.collection('fuelCards').where('updatedAt','>',queryTs).get()
-          .then(s=>s.docs.map(d=>d.data()))
-      ]);
-      fbCars = []; fbStaff = []; fbConfig = null;
+      // Incremental pull — ใช้ changedIds ถ้ามี (ประหยัด reads มาก)
+      // ถ้าไม่มี changedIds → fallback เป็น WHERE query แบบเดิม
+      const cids = _lastChangedIds || {};
+      const hasChangedIds = Object.keys(cids).length > 0;
+
+      if(hasChangedIds){
+        // ดึงแค่ doc ที่เปลี่ยนโดยตรง — reads = จำนวน doc ที่เปลี่ยนจริงๆ
+        const fetchDocs = async (col, ids, filterFn) => {
+          if(!ids || !ids.length) return [];
+          const snaps = await Promise.all(ids.map(id=>_fbDb.collection(col).doc(id).get()));
+          return snaps.filter(s=>s.exists).map(s=>s.data()).filter(filterFn||(() => true));
+        };
+        [fbBookings, fbPermits, fbFcBk, fbFc, fbCars] = await Promise.all([
+          fetchDocs('bookings', cids.bookings, b=>!deletedBookings.has(b.id)),
+          fetchDocs('permits', cids.permits, p=>!deletedPermits.has(p.id)),
+          fetchDocs('fuelCardBookings', cids.fuelCardBookings),
+          fetchDocs('fuelCards', cids.fuelCards),
+          fetchDocs('cars', cids.cars)
+        ]);
+        fbStaff = []; fbConfig = null;
+        console.log(`📥 changedIds pull: ${JSON.stringify(Object.fromEntries(Object.entries(cids).map(([k,v])=>[k,v.length])))}`);
+      } else {
+        // Fallback: WHERE query (กรณีไม่มี changedIds เช่น polling หรือ doc เก่า)
+        const queryTs = sinceTs || new Date(0).toISOString();
+        [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
+          _fbDb.collection('bookings').where('updatedAt','>',queryTs).get()
+            .then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
+          _fbDb.collection('permits').where('updatedAt','>',queryTs).get()
+            .then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
+          _fbDb.collection('fuelCardBookings').where('updatedAt','>',queryTs).get()
+            .then(s=>s.docs.map(d=>d.data())),
+          _fbDb.collection('fuelCards').where('updatedAt','>',queryTs).get()
+            .then(s=>s.docs.map(d=>d.data()))
+        ]);
+        fbCars = []; fbStaff = []; fbConfig = null;
+      }
     }
 
     // ---- Merge logic ----
@@ -3125,24 +3150,28 @@ function _pushToFirebase(){
   }
 
   console.log(`📤 Push ${ops.length} changes to Firebase`);
-  // เขียน ops ทั้งหมดก่อน แล้วค่อยเขียน lastUpdate หลัง resolve
-  // สำคัญ: lastUpdate ต้องเขียนหลังสุด เพื่อให้เครื่องอื่น pull ได้ข้อมูลใหม่ครบ
   Promise.all(ops).then(()=>{
-    // อัปเดต snapshot หลัง push สำเร็จ
     _updateLastPushed(bookingsToSync, 'bookings');
     _updateLastPushed(permitsToSync, 'permits');
     _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
     _updateLastPushed(db.fuelCards||[], 'fuelCards');
     _updateLastPushed(db.cars||[], 'cars');
-    // กัน echo
     _markPushed(changedBookings);
     _markPushed(changedPermits);
     _markPushed(changedFcBk);
     _markPushed(changedFc);
     _markPushed(changedCars);
-    // เขียน lastUpdate หลังสุด — notify ทุกเครื่องให้ pull ใหม่
-    // ต้องรอให้ทุก doc เขียนเสร็จก่อน ไม่งั้นเครื่องอื่นจะ pull ได้ข้อมูลเก่า
-    return _fbDb.collection('config').doc('lastUpdate').set({updatedAt: new Date().toISOString()});
+    // เขียน lastUpdate พร้อม changedIds — เครื่องอื่นจะดึงแค่ doc ที่เปลี่ยน
+    const changedIds = {};
+    if(changedBookings.length) changedIds.bookings = changedBookings.map(x=>x.id);
+    if(changedPermits.length) changedIds.permits = changedPermits.map(x=>x.id);
+    if(changedFcBk.length) changedIds.fuelCardBookings = changedFcBk.map(x=>x.id);
+    if(changedFc.length) changedIds.fuelCards = changedFc.map(x=>x.id);
+    if(changedCars.length) changedIds.cars = changedCars.map(x=>x.id);
+    return _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt: new Date().toISOString(),
+      changedIds
+    });
   }).then(()=>{
     updateSync(false, true);
   }).catch(err=>{
