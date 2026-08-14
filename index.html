@@ -1293,7 +1293,7 @@ function loadDB(){
   if(DEFAULT_GS_URL) db.gsUrl=DEFAULT_GS_URL;
   if(typeof applyDeletedFilters==='function') applyDeletedFilters();
 }
-function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} if(db.syncEnabled)syncToGSheet();}
+function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
 loadDB();
 
 let selectedCarId=null, adminLoggedIn=false, cancelBookingId=null, hFilter='all';
@@ -1930,9 +1930,7 @@ function editCarMileage(id){
   }
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();
   renderCars();
 }
@@ -1947,9 +1945,7 @@ function addCar(){
   if(document.getElementById('new-car-testdrive')) document.getElementById('new-car-testdrive').checked=false;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();renderCars();
 }
 function removeCar(id){
@@ -1958,9 +1954,7 @@ function removeCar(id){
   markDeleted('deletedCarIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();renderCars();
 }
 function addStaff(){
@@ -1972,9 +1966,7 @@ function addStaff(){
   document.getElementById('new-staff-code').value='';
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();
 }
 function removeStaff(id){
@@ -1983,9 +1975,7 @@ function removeStaff(id){
   markDeleted('deletedStaffIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();
 }
 function changeAdminPass(){
@@ -1998,46 +1988,9 @@ function changeAdminPass(){
   document.getElementById('new-admin-pass').value='';
   document.getElementById('confirm-admin-pass').value='';
 }
-function saveGSheetURL(){
-  const url=document.getElementById('gs-url').value.trim();
-  if(!url)return alert('กรุณาใส่ URL ก่อน');
-  db.gsUrl=url;
-  db.syncEnabled=false; // ปิด auto-push ไว้ก่อน
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  updateSync(false,null);
-  // ping ก่อนเพื่อทดสอบ แล้วค่อย pull ข้อมูล
-  fetch(url+'?action=ping')
-    .then(r=>r.json())
-    .then(res=>{
-      if(res.status==='ok'){
-        db.gsUrl=url;
-        db.syncEnabled=true;
-        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-        updateSync(false,true);
-        alert('✅ บันทึก URL สำเร็จ! กำลังดึงข้อมูลจาก Sheet...');
-        pullFromGSheet();
-      } else {
-        updateSync(false,false);
-        alert('❌ เชื่อมต่อไม่ได้ กรุณาตรวจสอบ URL อีกครั้ง');
-      }
-    })
-    .catch(()=>{ updateSync(false,false); alert('❌ เชื่อมต่อไม่ได้'); });
-}
-
-function enableSync(){
-  db.syncEnabled=true;
-  saveDB(); // push ขึ้น Sheet
-  document.getElementById('btn-enable-sync').style.display='none';
-  alert('✅ Push ข้อมูลขึ้น Sheet สำเร็จ! ระบบจะซิงค์อัตโนมัติทุก 15 วินาทีตั้งแต่นี้');
-}
-function testGSheet(){
-  if(!db.gsUrl)return alert('กรุณาใส่ URL ก่อน');
-  updateSync(true);
-  fetch(db.gsUrl+'?action=ping')
-    .then(r=>r.json())
-    .then(res=>{ if(res.status==='ok'){updateSync(false,true);alert('✅ เชื่อมต่อสำเร็จ!');}else{updateSync(false,false);alert('❌ เชื่อมต่อไม่ได้');} })
-    .catch(()=>{ updateSync(false,false); alert('❌ เชื่อมต่อไม่ได้'); });
-}
+function saveGSheetURL(){ alert('ระบบใช้ Firebase แล้ว ไม่จำเป็นต้องตั้งค่า Google Sheets'); }
+function enableSync(){ /* deprecated */ }
+function testGSheet(){ alert('ระบบใช้ Firebase แล้ว ไม่จำเป็นต้องทดสอบ Google Sheets'); }
 
 // ---- SYNC ----
 var _lastSyncTime='';
@@ -2069,7 +2022,7 @@ function showSyncToast(){
   const ttime=document.getElementById('toast-time');
   const color=dot?dot.style.background:'#4caf50';
   tdot.style.background=color;
-  if(color.includes('4caf50'))msg.textContent='ซิงค์ Google Sheet สำเร็จ';
+  if(color.includes('4caf50'))msg.textContent='ซิงค์ Firebase สำเร็จ';
   else if(color.includes('e539'))msg.textContent='ซิงค์ไม่สำเร็จ (ใช้ข้อมูล local)';
   else msg.textContent='กำลังซิงค์...';
   ttime.textContent=_lastSyncTime?'อัปเดต '+_lastSyncTime:'';
@@ -2078,26 +2031,21 @@ function showSyncToast(){
   _toastTimer=setTimeout(()=>toast.classList.remove('show'),3000);
 }
 
-function syncToGSheet(){
-  if(!db.gsUrl){updateSync(false,null);return;}
-  // mode no-cors = ส่งได้แต่ไม่ได้รับ response จริง — ถือว่าสำเร็จเสมอ
-  fetch(db.gsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'sync',data:JSON.stringify({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits||[],ts:new Date().toISOString()})}),mode:'no-cors'})
-    .then(()=>updateSync(false,true)).catch(()=>updateSync(false,false));
-}
+function syncToGSheet(){ /* deprecated — ใช้ Firebase แทน */ }
 
 let _pullFromGSheetTimer = null;
 let _lastPullFromGSheetTime = 0;
-const MIN_PULL_GSHEET_INTERVAL = 30000; // pull ได้ทุก 30 วินาทีเท่านั้น
+const MIN_PULL_GSHEET_INTERVAL = 30000;
 
 function pullFromGSheet(){
   if(!_fbReady) return;
-  // debounce — กัน trigger ถี่เกินไป (เช่น สลับแท็บบ่อยๆ หรือ focus หลายครั้ง)
   const now = Date.now();
   if(now - _lastPullFromGSheetTime < MIN_PULL_GSHEET_INTERVAL) return;
   _lastPullFromGSheetTime = now;
-  // ใช้ _smartPull แทน — มี incremental + full pull logic อยู่แล้ว
   _smartPull();
 }
+
+function jsonpFetch(url, callback){ callback('deprecated', null); }
 
 
 // ---- CAR SCHEDULE ----
@@ -2772,7 +2720,7 @@ function adminDeleteBooking(id){
   fbDeleteDoc('bookings', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){ syncNow(); }
+  syncNow();
   renderAdminBookingList();
   renderHistory();
   renderCars();
@@ -2993,9 +2941,7 @@ function confirmDeletePermit(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   // Archive permit ใน Firebase
   if(_permitToArchive) fbSetDoc('permitArchive', _permitToArchive.id, {..._permitToArchive, archivedAt: new Date().toISOString()});
-    if(db.syncEnabled){
     syncNow();
-  }
   closeModal('modal-delete-permit');
   renderPermitList();
   renderUcPermitList();
@@ -3355,9 +3301,7 @@ function toggleCarService(id){
   car.inService = !car.inService;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  if(db.syncEnabled){
-    syncNow();
-  }
+  syncNow();
   renderSettings();renderCars();
 }
 
