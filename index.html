@@ -1189,55 +1189,59 @@ async function _smartPull(sinceTs){
       }
     }
 
-    // ---- Merge logic ----
-    // Full pull: แทนทั้งหมด (เหมือนเดิม)
-    // Incremental pull: merge เฉพาะ doc ที่ได้มาเข้า local (upsert by id)
-    // ทั้งสองแบบใช้ echo suppression เหมือนกัน
+    if(doFull){
+      // Full pull — Firebase คือ source of truth ไม่ merge กับ local (กัน cache เก่าจาก GSheet)
+      db.bookings = fbBookings.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      db.permits = fbPermits.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
+      if(fbFc.length) db.fuelCards = fbFc;
+      if(fbCars && fbCars.length) db.cars = fbCars;
+      if(fbStaff && fbStaff.length) db.staff = fbStaff;
+      if(fbConfig){
+        if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
+        if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
+        if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
+      }
+    } else {
+      // Incremental pull — merge local + Firebase
+      const localBkMap = {};
+      (db.bookings||[]).forEach(b=>{ localBkMap[b.id]=b; });
+      fbBookings.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localBkMap[b.id]=b; });
+      db.bookings = Object.values(localBkMap)
+        .filter(b=>!deletedBookings.has(b.id))
+        .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
-    const localBkMap = {};
-    (db.bookings||[]).forEach(b=>{ localBkMap[b.id]=b; });
-    // upsert จาก Firebase (incremental หรือ full)
-    fbBookings.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localBkMap[b.id]=b; });
-    db.bookings = Object.values(localBkMap)
-      .filter(b=>!deletedBookings.has(b.id))
-      .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      const localPMap = {};
+      (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
+      fbPermits.forEach(p=>{ if(!_isRecentlyPushed(p.id)) localPMap[p.id]=p; });
+      db.permits = Object.values(localPMap)
+        .filter(p=>!deletedPermits.has(p.id))
+        .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
-    const localPMap = {};
-    (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
-    fbPermits.forEach(p=>{ if(!_isRecentlyPushed(p.id)) localPMap[p.id]=p; });
-    db.permits = Object.values(localPMap)
-      .filter(p=>!deletedPermits.has(p.id))
-      .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-
-    if(fbFcBk.length){
-      const localFcBkMap = {};
-      (db.fuelCardBookings||[]).forEach(b=>{ localFcBkMap[b.id]=b; });
-      fbFcBk.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localFcBkMap[b.id]=b; });
-      db.fuelCardBookings = Object.values(localFcBkMap);
-    }
-    if(fbFc.length){
-      const localFcMap = {};
-      (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
-      fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id)) localFcMap[f.id]=f; });
-      db.fuelCards = Object.values(localFcMap);
-    }
-
-    // cars และ staff — ดึงเฉพาะ full pull (เปลี่ยนน้อยมาก ไม่ต้อง incremental)
-    if(fbCars && fbCars.length){
-      const localCarMap = {};
-      (db.cars||[]).forEach(c=>{ localCarMap[c.id]=c; });
-      fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
-      db.cars = Object.values(localCarMap);
-    }
-    if(fbStaff && fbStaff.length){
-      db.staff = fbStaff;
-    }
-
-    // sync config จาก Firebase → ทุกเครื่องได้รหัสแอดมิน, ราคาน้ำมัน, รหัสพนักงาน เหมือนกัน
-    if(fbConfig){
-      if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
-      if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
-      if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
+      if(fbFcBk.length){
+        const localFcBkMap = {};
+        (db.fuelCardBookings||[]).forEach(b=>{ localFcBkMap[b.id]=b; });
+        fbFcBk.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localFcBkMap[b.id]=b; });
+        db.fuelCardBookings = Object.values(localFcBkMap);
+      }
+      if(fbFc.length){
+        const localFcMap = {};
+        (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
+        fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id)) localFcMap[f.id]=f; });
+        db.fuelCards = Object.values(localFcMap);
+      }
+      if(fbCars && fbCars.length){
+        const localCarMap = {};
+        (db.cars||[]).forEach(c=>{ localCarMap[c.id]=c; });
+        fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
+        db.cars = Object.values(localCarMap);
+      }
+      if(fbStaff && fbStaff.length) db.staff = fbStaff;
+      if(fbConfig){
+        if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
+        if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
+        if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
+      }
     }
 
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
