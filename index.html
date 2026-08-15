@@ -5208,9 +5208,11 @@ function renderPrintPage(p){
     '<div style="border-top:2px dashed #aaa;margin:4mm 20mm"></div>' +
     form('สำหรับพนักงาน');
 
-  // เพิ่มปุ่มใบเบิกน้ำมันส่งมอบรถ
+  // เพิ่มปุ่มใบเบิกน้ำมันส่งมอบรถ — ลบเก่าแล้วสร้างใหม่ทุกครั้ง กันปัญหา p ค้างจากใบเดิม
   const printActions = document.getElementById('print-actions');
-  if(printActions && !document.getElementById('btn-fuel-memo')){
+  if(printActions){
+    const oldBtn = document.getElementById('btn-fuel-memo');
+    if(oldBtn) oldBtn.remove();
     const btn = document.createElement('button');
     btn.id = 'btn-fuel-memo';
     btn.className = 'btn btn-outline btn-sm';
