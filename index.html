@@ -3064,15 +3064,14 @@ function _isRecentlyPushed(id){
 }
 
 function _getItemKey(item){
-  // เปรียบเทียบเฉพาะ field สำคัญ ไม่ใช่ทั้ง object
   const {id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy, returnedAt,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
-    fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt} = item;
+    fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
-    fcId, fuelAmount, active, plate, value, pin, createdAt});
+    fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData});
 }
 
 function _getChanged(newItems, colName, idField='id'){
@@ -5013,6 +5012,8 @@ function printFuelMemo(){
   // บันทึก memo data ไว้ใน db.permits เพื่อใช้ generate GM link
   p._memoData = { customer, model, color, deliveryDate, place, downpayment, manager, managerTitle };
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // Force push permit นี้ขึ้น Firebase ทันที (กัน _getChanged ไม่ detect _memoData)
+  if(_fbReady) fbSetDoc('permits', p.id, p);
   syncNow();
 
   // ดึง managerSig จาก permit แล้วดึง gmSig จาก Firebase
