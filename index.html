@@ -2595,7 +2595,7 @@ function renderUcPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบเบิกน้ำมัน</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบ Memo ขอเบิกน้ำมัน</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
@@ -4496,7 +4496,7 @@ window.addEventListener('load', function(){
   const approveId = params.get('approve');
   const approveMemoId = params.get('approveMemo');
 
-  // ---- GM อนุมัติใบเบิกน้ำมัน ----
+  // ---- GM อนุมัติใบ Memo ขอเบิกน้ำมัน ----
   if(approveMemoId){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById('page-approve').classList.add('active');
@@ -4671,7 +4671,7 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบเบิกน้ำมัน</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบ Memo ขอเบิกน้ำมัน</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
@@ -4681,7 +4681,7 @@ function renderPermitList(){
 
 async function reprintFuelMemo(permitId){
   const p = db.permits.find(x=>x.id===permitId);
-  if(!p||!p._memoData){ alert('ไม่พบข้อมูลใบเบิกน้ำมัน'); return; }
+  if(!p||!p._memoData){ alert('ไม่พบข้อมูลใบ Memo ขอเบิกน้ำมัน'); return; }
   const d = p._memoData;
   const mgrSig = p.managerSig || null;
 
@@ -4974,7 +4974,7 @@ function showPrintPage(permitId){
   renderPrintPage(p);
 }
 
-// ---- ใบเบิกน้ำมันส่งมอบรถใหม่ ----
+// ---- ใบ Memo ขอเบิกน้ำมัน ----
 var _fuelMemoPermit = null;
 
 function openFuelMemoModal(p){
@@ -5095,7 +5095,7 @@ function _renderFuelMemoPage(p, d){
   const win = window.open('', '_blank', 'width=900,height=750');
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="utf-8">
-    <title>ใบเบิกน้ำมันส่งมอบรถ</title>
+    <title>ใบ Memo ขอเบิกน้ำมัน</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
     <style>
       body{margin:0;padding:20px;background:#f5f5f5;font-family:Sarabun,sans-serif}
@@ -5136,7 +5136,7 @@ function loadApproveGmMemo(permitId){
 
   const d = p?._memoData || {};
   det.innerHTML = `<div style="padding:12px">
-    <div style="font-size:15px;font-weight:700;margin-bottom:8px">📄 ใบเบิกน้ำมันส่งมอบรถ</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:8px">📄 ใบ Memo ขอเบิกน้ำมัน</div>
     <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👤 SC: ${p?.name||'-'}</div>
     <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👥 ลูกค้า: ${d.customer||'-'}</div>
     <div style="font-size:13px;color:var(--g600);margin-bottom:4px">🚗 รุ่น: ${d.model||'-'}${d.color?' สี'+d.color:''}</div>
@@ -5168,7 +5168,7 @@ function submitApproveGmMemo(){
   if(_fbReady) _fbDb.collection('signatures').doc(gmKey).set({sig, signedAt: new Date().toISOString()});
   const c = getSigCache(); c[gmKey]=sig; setSigCache(c);
   document.getElementById('approve-detail').innerHTML =
-    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ใบเบิกน้ำมันพร้อมลายเซ็นได้แล้ว</div></div>';
+    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ใบ Memo ขอเบิกน้ำมันพร้อมลายเซ็นได้แล้ว</div></div>';
   document.querySelector('#page-approve .btn-success').style.display='none';
 }
 
@@ -5211,7 +5211,7 @@ function renderPrintPage(p){
     '<div style="border-top:2px dashed #aaa;margin:4mm 20mm"></div>' +
     form('สำหรับพนักงาน');
 
-  // เพิ่มปุ่มใบเบิกน้ำมันส่งมอบรถ — ลบเก่าแล้วสร้างใหม่ทุกครั้ง กันปัญหา p ค้างจากใบเดิม
+  // เพิ่มปุ่มใบ Memo ขอเบิกน้ำมัน — ลบเก่าแล้วสร้างใหม่ทุกครั้ง กันปัญหา p ค้างจากใบเดิม
   const printActions = document.getElementById('print-actions');
   if(printActions){
     const oldBtn = document.getElementById('btn-fuel-memo');
@@ -5219,7 +5219,7 @@ function renderPrintPage(p){
     const btn = document.createElement('button');
     btn.id = 'btn-fuel-memo';
     btn.className = 'btn btn-outline btn-sm';
-    btn.innerHTML = '📄 ใบเบิกน้ำมันส่งมอบรถ';
+    btn.innerHTML = '📄 ใบ Memo ขอเบิกน้ำมัน';
     btn.onclick = ()=>openFuelMemoModal(p);
     printActions.appendChild(btn);
   }
@@ -5227,11 +5227,11 @@ function renderPrintPage(p){
 
 </script>
 
-<!-- MODAL: FUEL MEMO (ใบเบิกน้ำมันส่งมอบรถใหม่) -->
+<!-- MODAL: FUEL MEMO (ใบ Memo ขอเบิกน้ำมัน) -->
 <div class="modal-overlay" id="modal-fuel-memo">
   <div class="modal">
-    <div class="modal-title">📄 ใบเบิกน้ำมันส่งมอบรถใหม่</div>
-    <div style="font-size:13px;color:var(--g600);margin-bottom:12px">กรอกข้อมูลเพิ่มเติมสำหรับใบเบิกน้ำมันส่งมอบรถ</div>
+    <div class="modal-title">📄 ใบ Memo ขอเบิกน้ำมัน</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:12px">กรอกข้อมูลเพิ่มเติมสำหรับใบ Memo ขอเบิกน้ำมัน</div>
     <div class="form-row"><label>ชื่อ-นามสกุล ลูกค้า *</label>
       <input type="text" id="fm-customer" placeholder="เช่น คุณพงศกร ดีพร้อม">
     </div>
@@ -5261,7 +5261,7 @@ function renderPrintPage(p){
     <div id="fm-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-fuel-memo')">ยกเลิก</button>
-      <button class="btn btn-primary" onclick="printFuelMemo()">🖨️ พิมพ์ใบเบิกน้ำมัน</button>
+      <button class="btn btn-primary" onclick="printFuelMemo()">🖨️ พิมพ์ใบ Memo ขอเบิกน้ำมัน</button>
     </div>
   </div>
 </div>
