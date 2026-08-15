@@ -5030,6 +5030,7 @@ function _renderFuelMemoPage(p, d){
   const dpFormatted = Number(d.downpayment).toLocaleString('th-TH');
   const modelFull = d.color ? `${d.model} สี${d.color}` : d.model;
   const scName = p.name || '';
+  const scSigDisplay = p.empSig || p.name || ''; // ใช้ empSig (ชื่อที่ SC พิมพ์ตอนกรอกใบ) แสดงในช่องลายเซ็น
 
   const mgrSigHtml = d.mgrSig
     ? (d.mgrSig.startsWith('data:')
@@ -5062,7 +5063,7 @@ function _renderFuelMemoPage(p, d){
   <!-- ลายเซ็น SC — ชิดขวา -->
   <div style="text-align:right;margin-bottom:10mm">
     <div style="display:inline-block;text-align:center;min-width:60mm">
-      <div style="margin-bottom:12mm">&nbsp;</div>
+      <div style="font-size:11pt;font-family:serif;color:#111;margin-bottom:2px">${scSigDisplay}</div>
       <div>………………………………………………</div>
       <div style="margin-top:2px">${scName}</div>
       <div>ที่ปรึกษาการขาย</div>
