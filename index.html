@@ -5276,13 +5276,13 @@ function _renderFuelMemoPage(p, d){
 <div id="fuel-memo-print" style="background:#fff;width:210mm;padding:16mm 20mm;font-family:Sarabun,sans-serif;font-size:13pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto;line-height:1.8">
   <div style="text-align:right;margin-bottom:4mm">วันที่ ${permitDate}</div>
   <div style="margin-bottom:1mm">เรียน ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
-  <div style="margin-bottom:6mm">เรื่อง <u>ขอเบิกน้ำมัน</u></div>
+  <div style="margin-bottom:6mm">เรื่อง <u>ขอเบิกน้ำมัน/ส่งมอบนอกสถานที่</u></div>
   <div style="text-indent:15mm;margin-bottom:4mm">
     เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}${engineChassis ? ` ${engineChassis}` : ''}
     มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่บ้านของลูกค้า ในวันที่ ${fmtDelivery} ที่ ${d.place}
     เพราะไม่สะดวกเดินทางมารับที่ศูนย์ ลูกค้าได้ทำการชำระเงินดาวน์เรียบร้อยเป็นจำนวน ${dpFormatted} บาท
   </div>
-  <div style="text-indent:15mm;margin-bottom:4mm">ดังนั้น จึงขอทำการเบิกค่าน้ำมันรถใหม่ในการเดินทางไปส่งมอบ</div>
+  ${Number(p.fuel) > 0 ? `<div style="text-indent:15mm;margin-bottom:4mm">ดังนั้น จึงขอทำการเบิกค่าน้ำมันรถใหม่ในการเดินทางไปส่งมอบ</div>` : ''}
   <div style="text-indent:15mm;margin-bottom:12mm">จึงเรียนมาเพื่อทราบและโปรดพิจารณาอนุมัติ</div>
 
   <!-- ลายเซ็น SC — ชิดขวา -->
