@@ -5150,6 +5150,9 @@ function loadApproveGmMemo(permitId){
   document.querySelector('#page-approve .btn-success').textContent='✅ อนุมัติ (GM)';
   document.querySelector('#page-approve .btn-danger').style.display='none';
   document.getElementById('approve-err').style.display='none';
+  // init canvas ทันทีเพื่อให้วาดลายเซ็นได้เลยโดยไม่ต้องกดปุ่มก่อน
+  setSigTab('draw');
+  setTimeout(()=>initCanvas('canvas-manager'), 200);
 }
 
 function submitApproveGmMemo(){
