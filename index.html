@@ -4983,6 +4983,8 @@ function openFuelMemoModal(p){
   document.getElementById('fm-customer').value = '';
   document.getElementById('fm-model').value = '';
   document.getElementById('fm-color').value = '';
+  document.getElementById('fm-engine').value = '';
+  document.getElementById('fm-chassis').value = '';
   document.getElementById('fm-delivery-place').value = p.location || '';
   document.getElementById('fm-downpayment').value = '';
   document.getElementById('fm-manager').value = '';
@@ -4997,6 +4999,8 @@ function printFuelMemo(){
   const customer = document.getElementById('fm-customer').value.trim();
   const model = document.getElementById('fm-model').value.trim();
   const color = document.getElementById('fm-color').value.trim();
+  const engine = document.getElementById('fm-engine').value.trim();
+  const chassis = document.getElementById('fm-chassis').value.trim();
   const deliveryDate = document.getElementById('fm-delivery-date').value;
   const place = document.getElementById('fm-delivery-place').value.trim();
   const downpayment = document.getElementById('fm-downpayment').value.trim();
@@ -5010,19 +5014,17 @@ function printFuelMemo(){
   closeModal('modal-fuel-memo');
 
   // บันทึก memo data ไว้ใน db.permits เพื่อใช้ generate GM link
-  p._memoData = { customer, model, color, deliveryDate, place, downpayment, manager, managerTitle };
+  p._memoData = { customer, model, color, engine, chassis, deliveryDate, place, downpayment, manager, managerTitle };
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  // Force push permit นี้ขึ้น Firebase ทันที (กัน _getChanged ไม่ detect _memoData)
   if(_fbReady) fbSetDoc('permits', p.id, p);
   syncNow();
 
-  // ดึง managerSig จาก permit แล้วดึง gmSig จาก Firebase
   const mgrSig = p.managerSig || null;
   const gmKey = p.id + '_gm';
   const cache = getSigCache();
   const gmSig = cache[gmKey] || null;
 
-  _renderFuelMemoPage(p, { customer, model, color, deliveryDate, place, downpayment, manager, managerTitle, mgrSig, gmSig });
+  _renderFuelMemoPage(p, { customer, model, color, engine, chassis, deliveryDate, place, downpayment, manager, managerTitle, mgrSig, gmSig });
 }
 
 function _renderFuelMemoPage(p, d){
@@ -5030,6 +5032,7 @@ function _renderFuelMemoPage(p, d){
   const permitDate = fmtThaiDate(p.date);
   const dpFormatted = Number(d.downpayment).toLocaleString('th-TH');
   const modelFull = d.color ? `${d.model} สี${d.color}` : d.model;
+  const engineChassis = [d.engine?`เลขเครื่อง ${d.engine}`:'', d.chassis?`แชสซีส์ ${d.chassis}`:''].filter(Boolean).join(' ');
   const scName = p.name || '';
   const scSigDisplay = p.empSig || p.name || ''; // ใช้ empSig (ชื่อที่ SC พิมพ์ตอนกรอกใบ) แสดงในช่องลายเซ็น
 
@@ -5054,7 +5057,7 @@ function _renderFuelMemoPage(p, d){
   <div style="margin-bottom:1mm">เรียน ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
   <div style="margin-bottom:6mm">เรื่อง <u>ขอเบิกน้ำมัน</u></div>
   <div style="text-indent:15mm;margin-bottom:4mm">
-    เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}
+    เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}${engineChassis ? ` ${engineChassis}` : ''}
     มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่บ้านของลูกค้า ในวันที่ ${fmtDelivery} ที่ ${d.place}
     เพราะไม่สะดวกเดินทางมารับที่ศูนย์ ลูกค้าได้ทำการชำระเงินดาวน์เรียบร้อยเป็นจำนวน ${dpFormatted} บาท
   </div>
@@ -5241,6 +5244,14 @@ function renderPrintPage(p){
       </div>
       <div class="form-row"><label>สีรถ</label>
         <input type="text" id="fm-color" placeholder="เช่น ขาว">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>เลขเครื่อง</label>
+        <input type="text" id="fm-engine" placeholder="เช่น FLS142">
+      </div>
+      <div class="form-row"><label>เลขแชสซีส์</label>
+        <input type="text" id="fm-chassis" placeholder="เช่น TG012364">
       </div>
     </div>
     <div class="form-row"><label>ส่งมอบในวันที่ *</label>
