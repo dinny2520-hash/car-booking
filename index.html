@@ -2595,6 +2595,7 @@ function renderUcPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบเบิกน้ำมัน</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
@@ -4490,10 +4491,36 @@ setTimeout(maybeRunCleanup, 3000);
 })();
 renderCars();
 
-// Check ?approve= on page load
+// Check ?approve= and ?approveMemo= on page load
 window.addEventListener('load', function(){
   const params = new URLSearchParams(location.search);
   const approveId = params.get('approve');
+  const approveMemoId = params.get('approveMemo');
+
+  // ---- GM อนุมัติใบเบิกน้ำมัน ----
+  if(approveMemoId){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-approve').classList.add('active');
+    document.getElementById('approve-detail').innerHTML=
+      '<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังโหลดข้อมูล...</div></div>';
+    document.getElementById('approve-err').style.display='none';
+    // override ปุ่มอนุมัติให้เรียก GM approve
+    const btnApprove = document.querySelector('#page-approve .btn-success');
+    btnApprove.onclick = submitApproveGmMemo;
+    if(!_fbReady){ setTimeout(()=>loadApproveGmMemo(approveMemoId), 1500); return; }
+    _fbDb.collection('permits').doc(approveMemoId).get()
+      .then(doc=>{
+        if(doc.exists){
+          const p = doc.data();
+          const idx = (db.permits||[]).findIndex(x=>x.id===approveMemoId);
+          if(idx>=0) db.permits[idx]=p; else { db.permits=db.permits||[]; db.permits.unshift(p); }
+          try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        }
+        loadApproveGmMemo(approveMemoId);
+      }).catch(()=>loadApproveGmMemo(approveMemoId));
+    return;
+  }
+
   if(!approveId) return;
 
   // แสดงหน้า approve + loading
@@ -4645,11 +4672,36 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบเบิกน้ำมัน</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
     </div>`;
   }).join('');
+}
+
+async function reprintFuelMemo(permitId){
+  const p = db.permits.find(x=>x.id===permitId);
+  if(!p||!p._memoData){ alert('ไม่พบข้อมูลใบเบิกน้ำมัน'); return; }
+  const d = p._memoData;
+  const mgrSig = p.managerSig || null;
+
+  // ดึง GM sig จาก cache ก่อน ถ้าไม่มีดึงจาก Firebase
+  const gmKey = permitId + '_gm';
+  const cache = getSigCache();
+  let gmSig = cache[gmKey] || null;
+
+  if(!gmSig && _fbReady){
+    try{
+      const snap = await _fbDb.collection('signatures').doc(gmKey).get();
+      if(snap.exists && snap.data()?.sig){
+        gmSig = snap.data().sig;
+        cache[gmKey] = gmSig; setSigCache(cache);
+      }
+    }catch(e){}
+  }
+
+  _renderFuelMemoPage(p, {...d, mgrSig, gmSig});
 }
 
 function copyLink(link){
@@ -4928,7 +4980,6 @@ var _fuelMemoPermit = null;
 
 function openFuelMemoModal(p){
   _fuelMemoPermit = p;
-  // pre-fill delivery date จาก permit date
   document.getElementById('fm-delivery-date').value = p.date || '';
   document.getElementById('fm-customer').value = '';
   document.getElementById('fm-model').value = '';
@@ -4959,13 +5010,41 @@ function printFuelMemo(){
   errEl.style.display='none';
   closeModal('modal-fuel-memo');
 
-  const fmtDelivery = fmtThaiDate(deliveryDate);
-  const scName = p.name || '';
-  const permitDate = fmtThaiDate(p.date);
-  const dpFormatted = Number(downpayment).toLocaleString('th-TH');
-  const modelFull = color ? `${model} สี${color}` : model;
+  // บันทึก memo data ไว้ใน db.permits เพื่อใช้ generate GM link
+  p._memoData = { customer, model, color, deliveryDate, place, downpayment, manager, managerTitle };
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
 
-  const logoSrc = document.querySelector('#print-content img')?.src || '';
+  // ดึง managerSig จาก permit แล้วดึง gmSig จาก Firebase
+  const mgrSig = p.managerSig || null;
+  const gmKey = p.id + '_gm';
+  const cache = getSigCache();
+  const gmSig = cache[gmKey] || null;
+
+  _renderFuelMemoPage(p, { customer, model, color, deliveryDate, place, downpayment, manager, managerTitle, mgrSig, gmSig });
+}
+
+function _renderFuelMemoPage(p, d){
+  const fmtDelivery = fmtThaiDate(d.deliveryDate);
+  const permitDate = fmtThaiDate(p.date);
+  const dpFormatted = Number(d.downpayment).toLocaleString('th-TH');
+  const modelFull = d.color ? `${d.model} สี${d.color}` : d.model;
+  const scName = p.name || '';
+
+  const mgrSigHtml = d.mgrSig
+    ? (d.mgrSig.startsWith('data:')
+        ? `<img src="${d.mgrSig}" style="max-height:15mm;max-width:90%;display:block;margin:0 auto 2px;mix-blend-mode:multiply">`
+        : `<div style="font-size:11pt;font-family:serif;color:#111">${d.mgrSig}</div>`)
+    : '<div style="height:15mm"></div>';
+
+  const gmSigHtml = d.gmSig
+    ? (d.gmSig.startsWith('data:')
+        ? `<img src="${d.gmSig}" style="max-height:15mm;max-width:90%;display:block;margin:0 auto 2px;mix-blend-mode:multiply">`
+        : `<div style="font-size:11pt;font-family:serif;color:#111">${d.gmSig}</div>`)
+    : '<div style="height:15mm"></div>';
+
+  // GM approval link
+  const gmApproveUrl = location.origin + location.pathname + '?approveMemo=' + p.id;
 
   const memoHtml = `
 <div id="fuel-memo-print" style="background:#fff;width:210mm;padding:16mm 20mm;font-family:Sarabun,sans-serif;font-size:13pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto;line-height:1.8">
@@ -4973,52 +5052,119 @@ function printFuelMemo(){
   <div style="margin-bottom:1mm">เรียน ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
   <div style="margin-bottom:6mm">เรื่อง <u>ขอเบิกน้ำมัน</u></div>
   <div style="text-indent:15mm;margin-bottom:4mm">
-    เนื่องจากลูกค้า ${customer} ได้ซื้อรถรุ่น ${modelFull}
-    มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่บ้านของลูกค้า ในวันที่ ${fmtDelivery} ที่ ${place}
+    เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}
+    มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่บ้านของลูกค้า ในวันที่ ${fmtDelivery} ที่ ${d.place}
     เพราะไม่สะดวกเดินทางมารับที่ศูนย์ ลูกค้าได้ทำการชำระเงินดาวน์เรียบร้อยเป็นจำนวน ${dpFormatted} บาท
   </div>
-  <div style="text-indent:15mm;margin-bottom:8mm">ดังนั้น จึงขอทำการเบิกค่าน้ำมันรถใหม่ในการเดินทางไปส่งมอบ</div>
-  <div style="text-indent:15mm;margin-bottom:16mm">จึงเรียนมาเพื่อทราบและโปรดพิจารณาอนุมัติ</div>
+  <div style="text-indent:15mm;margin-bottom:4mm">ดังนั้น จึงขอทำการเบิกค่าน้ำมันรถใหม่ในการเดินทางไปส่งมอบ</div>
+  <div style="text-indent:15mm;margin-bottom:12mm">จึงเรียนมาเพื่อทราบและโปรดพิจารณาอนุมัติ</div>
 
-  <table style="width:100%;font-size:12pt">
-    <tr>
-      <td style="width:33%;text-align:center;padding-top:20mm">
-        <div style="border-top:1px solid #333;padding-top:4px">……………………………………………</div>
-        <div>${scName}</div>
-        <div>ที่ปรึกษาการขาย</div>
-      </td>
-      <td style="width:33%;text-align:center;padding-top:20mm">
-        <div style="border-top:1px solid #333;padding-top:4px">……………………………………………</div>
-        <div>${manager}</div>
-        <div>${managerTitle}</div>
-      </td>
-      <td style="width:33%;text-align:center;padding-top:20mm">
-        <div style="border-top:1px solid #333;padding-top:4px">……………………………………………</div>
-        <div>คุณ ประจวบ ลิมปนาวรวงศ์</div>
-        <div>ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
-      </td>
-    </tr>
-  </table>
+  <!-- ลายเซ็น SC — ชิดขวา -->
+  <div style="text-align:right;margin-bottom:10mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      <div style="margin-bottom:12mm">&nbsp;</div>
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">${scName}</div>
+      <div>ที่ปรึกษาการขาย</div>
+    </div>
+  </div>
+
+  <!-- ลายเซ็น ผจก. — ชิดซ้าย (ดึงจากใบ PM อัตโนมัติ) -->
+  <div style="text-align:left;margin-bottom:10mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      ${mgrSigHtml}
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">${d.manager}</div>
+      <div>${d.managerTitle}</div>
+    </div>
+  </div>
+
+  <!-- ลายเซ็น GM — กึ่งกลาง -->
+  <div style="text-align:center;margin-bottom:4mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      ${gmSigHtml}
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">คุณ ประจวบ ลิมปนาวรวงศ์</div>
+      <div>ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
+    </div>
+  </div>
 </div>`;
 
-  // เปิดหน้าต่างใหม่พิมพ์
-  const win = window.open('', '_blank', 'width=900,height=700');
+  const win = window.open('', '_blank', 'width=900,height=750');
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="utf-8">
     <title>ใบเบิกน้ำมันส่งมอบรถ</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
     <style>
-      body{margin:0;padding:20px;background:#f5f5f5}
+      body{margin:0;padding:20px;background:#f5f5f5;font-family:Sarabun,sans-serif}
       @media print{body{background:#fff;padding:0} .no-print{display:none}}
     </style>
   </head><body>
-    <div class="no-print" style="margin-bottom:16px">
+    <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button onclick="window.print()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ พิมพ์ / บันทึก PDF</button>
-      <button onclick="window.close()" style="padding:8px 20px;background:#eee;border:none;border-radius:6px;font-size:14px;cursor:pointer;margin-left:8px">✕ ปิด</button>
+      ${!d.gmSig ? `<button onclick="navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))" style="padding:8px 20px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🔗 คัดลอก Link ให้ GM เซ็น</button>
+      <span style="font-size:12px;color:#666">ยังไม่มีลายเซ็น GM</span>` : '<span style="color:#388e3c;font-size:13px">✅ GM เซ็นแล้ว</span>'}
+      <button onclick="window.close()" style="padding:8px 20px;background:#eee;border:none;border-radius:6px;font-size:14px;cursor:pointer">✕ ปิด</button>
     </div>
     ${memoHtml}
   </body></html>`);
   win.document.close();
+}
+
+// ---- หน้า GM อนุมัติ memo ----
+function loadApproveGmMemo(permitId){
+  const p = db.permits.find(x=>x.id===permitId);
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-approve').classList.add('active');
+
+  const det = document.getElementById('approve-detail');
+  const gmKey = permitId + '_gm';
+  const cache = getSigCache();
+  const gmSig = cache[gmKey];
+
+  if(gmSig){
+    det.innerHTML = `<div style="text-align:center;padding:20px">
+      <div style="font-size:48px;margin-bottom:12px">✅</div>
+      <div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติแล้ว</div>
+    </div>`;
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    return;
+  }
+
+  const d = p?._memoData || {};
+  det.innerHTML = `<div style="padding:12px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:8px">📄 ใบเบิกน้ำมันส่งมอบรถ</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👤 SC: ${p?.name||'-'}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👥 ลูกค้า: ${d.customer||'-'}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">🚗 รุ่น: ${d.model||'-'}${d.color?' สี'+d.color:''}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">📅 ส่งมอบ: ${fmtThaiDate(d.deliveryDate)||'-'} ที่ ${d.place||'-'}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:12px">💰 เงินดาวน์: ${Number(d.downpayment||0).toLocaleString('th-TH')} บาท</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">ลงลายเซ็น GM อนุมัติ</div>
+  </div>`;
+
+  window._approveMemoId = permitId;
+  document.querySelector('#page-approve .btn-success').style.display='';
+  document.querySelector('#page-approve .btn-success').textContent='✅ อนุมัติ (GM)';
+  document.querySelector('#page-approve .btn-danger').style.display='none';
+  document.getElementById('approve-err').style.display='none';
+}
+
+function submitApproveGmMemo(){
+  const permitId = window._approveMemoId;
+  if(!permitId) return;
+  const sig = getManagerSig();
+  if(!sig){
+    document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อน';
+    document.getElementById('approve-err').style.display='flex'; return;
+  }
+  // บันทึก GM sig ใน Firebase
+  const gmKey = permitId + '_gm';
+  if(_fbReady) _fbDb.collection('signatures').doc(gmKey).set({sig, signedAt: new Date().toISOString()});
+  const c = getSigCache(); c[gmKey]=sig; setSigCache(c);
+  document.getElementById('approve-detail').innerHTML =
+    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ใบเบิกน้ำมันพร้อมลายเซ็นได้แล้ว</div></div>';
+  document.querySelector('#page-approve .btn-success').style.display='none';
 }
 
 function renderPrintPage(p){
