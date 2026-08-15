@@ -2595,7 +2595,8 @@ function renderUcPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบ Memo ขอเบิกน้ำมัน</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
+          ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
@@ -4496,6 +4497,30 @@ window.addEventListener('load', function(){
   const approveId = params.get('approve');
   const approveMemoId = params.get('approveMemo');
 
+  // ---- GM อนุมัติ Memo เคลื่อนย้ายรถ ----
+  const approveMemo2Id = params.get('approveMemo2');
+  if(approveMemo2Id){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-approve').classList.add('active');
+    document.getElementById('approve-detail').innerHTML=
+      '<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังโหลดข้อมูล...</div></div>';
+    document.getElementById('approve-err').style.display='none';
+    const btnApprove2 = document.querySelector('#page-approve .btn-success');
+    btnApprove2.onclick = submitApproveGmMemo2;
+    if(!_fbReady){ setTimeout(()=>loadApproveGmMemo2(approveMemo2Id), 1500); return; }
+    _fbDb.collection('permits').doc(approveMemo2Id).get()
+      .then(doc=>{
+        if(doc.exists){
+          const p = doc.data();
+          const idx = (db.permits||[]).findIndex(x=>x.id===approveMemo2Id);
+          if(idx>=0) db.permits[idx]=p; else { db.permits=db.permits||[]; db.permits.unshift(p); }
+          try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        }
+        loadApproveGmMemo2(approveMemo2Id);
+      }).catch(()=>loadApproveGmMemo2(approveMemo2Id));
+    return;
+  }
+
   // ---- GM อนุมัติใบ Memo ขอเบิกน้ำมัน ----
   if(approveMemoId){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -4671,7 +4696,8 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 ใบ Memo ขอเบิกน้ำมัน</button>`:''}
+          ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
+          ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
@@ -4977,6 +5003,201 @@ function showPrintPage(permitId){
 // ---- ใบ Memo ขอเบิกน้ำมัน ----
 var _fuelMemoPermit = null;
 
+// ---- ใบ Memo เคลื่อนย้ายรถกรณียังไม่จ่ายเงินดาวน์ ----
+var _moveMemoPermit = null;
+
+function openMoveMemoModal(p){
+  _moveMemoPermit = p;
+  document.getElementById('mm-delivery-date').value = p.date || '';
+  document.getElementById('mm-customer').value = '';
+  document.getElementById('mm-model').value = '';
+  document.getElementById('mm-color').value = '';
+  document.getElementById('mm-engine').value = '';
+  document.getElementById('mm-chassis').value = '';
+  document.getElementById('mm-branch').value = p.location || '';
+  document.getElementById('mm-manager').value = '';
+  document.getElementById('mm-manager-title').value = '';
+  document.getElementById('mm-err').style.display = 'none';
+  openModal('modal-move-memo');
+}
+
+function printMoveMemo(){
+  const p = _moveMemoPermit;
+  if(!p) return;
+  const customer = document.getElementById('mm-customer').value.trim();
+  const model = document.getElementById('mm-model').value.trim();
+  const color = document.getElementById('mm-color').value.trim();
+  const engine = document.getElementById('mm-engine').value.trim();
+  const chassis = document.getElementById('mm-chassis').value.trim();
+  const deliveryDate = document.getElementById('mm-delivery-date').value;
+  const branch = document.getElementById('mm-branch').value.trim();
+  const manager = document.getElementById('mm-manager').value.trim();
+  const managerTitle = document.getElementById('mm-manager-title').value.trim();
+  const errEl = document.getElementById('mm-err');
+  if(!customer||!model||!deliveryDate||!branch||!manager){
+    errEl.textContent='กรุณากรอกข้อมูลให้ครบ';errEl.style.display='flex';return;
+  }
+  errEl.style.display='none';
+  closeModal('modal-move-memo');
+
+  p._moveMemoData = { customer, model, color, engine, chassis, deliveryDate, branch, manager, managerTitle };
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(_fbReady) fbSetDoc('permits', p.id, p);
+  syncNow();
+
+  const mgrSig = p.managerSig || null;
+  const gmKey = p.id + '_gm2';
+  const cache = getSigCache();
+  const gmSig = cache[gmKey] || null;
+
+  _renderMoveMemoPage(p, { customer, model, color, engine, chassis, deliveryDate, branch, manager, managerTitle, mgrSig, gmSig });
+}
+
+function _renderMoveMemoPage(p, d){
+  const fmtDelivery = fmtThaiDate(d.deliveryDate);
+  const permitDate = fmtThaiDate(p.date);
+  const modelFull = d.color ? `${d.model} สี${d.color}` : d.model;
+  const engineChassis = [d.engine?`เลขเครื่อง ${d.engine}`:'', d.chassis?`แชสซีส์ ${d.chassis}`:''].filter(Boolean).join(' ');
+  const scName = p.name || '';
+  const scSigDisplay = p.empSig || p.name || '';
+
+  const mgrSigHtml = d.mgrSig
+    ? (d.mgrSig.startsWith('data:')
+        ? `<img src="${d.mgrSig}" style="max-height:15mm;max-width:90%;display:block;margin:0 auto 2px;mix-blend-mode:multiply">`
+        : `<div style="font-size:11pt;font-family:serif;color:#111">${d.mgrSig}</div>`)
+    : '<div style="height:15mm"></div>';
+
+  const gmSigHtml = d.gmSig
+    ? (d.gmSig.startsWith('data:')
+        ? `<img src="${d.gmSig}" style="max-height:15mm;max-width:90%;display:block;margin:0 auto 2px;mix-blend-mode:multiply">`
+        : `<div style="font-size:11pt;font-family:serif;color:#111">${d.gmSig}</div>`)
+    : '<div style="height:15mm"></div>';
+
+  const gmApproveUrl = location.origin + location.pathname + '?approveMemo2=' + p.id;
+
+  const memoHtml = `
+<div style="background:#fff;width:210mm;padding:16mm 20mm;font-family:Sarabun,sans-serif;font-size:13pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto;line-height:1.8">
+  <div style="text-align:right;margin-bottom:4mm">วันที่ ${permitDate}</div>
+  <div style="margin-bottom:1mm">เรียน ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
+  <div style="margin-bottom:6mm">เรื่อง <u>เคลื่อนย้ายรถไปส่งมอบ ${d.branch} (กรณียังไม่ชำระเงินดาวน์)</u></div>
+  <div style="text-indent:15mm;margin-bottom:4mm">
+    เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}${engineChassis ? ` ${engineChassis}` : ''}
+    มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่ ${d.branch} ในวันที่ ${fmtDelivery}
+    และลูกค้าสะดวกชำระเงินดาวน์ในวันรับรถโดยขอดูตัวรถก่อน ในวันส่งมอบ
+  </div>
+  <div style="text-indent:15mm;margin-bottom:12mm">จึงเรียนมาเพื่อทราบและโปรดพิจารณาอนุมัติ</div>
+
+  <!-- ลายเซ็น SC — ชิดขวา -->
+  <div style="text-align:right;margin-bottom:10mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      <div style="font-size:11pt;font-family:serif;color:#111;margin-bottom:2px">${scSigDisplay}</div>
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">${scName}</div>
+      <div>ที่ปรึกษาการขาย</div>
+    </div>
+  </div>
+
+  <!-- ลายเซ็น ผจก. — ชิดซ้าย -->
+  <div style="text-align:left;margin-bottom:10mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      ${mgrSigHtml}
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">${d.manager}</div>
+      <div>${d.managerTitle}</div>
+    </div>
+  </div>
+
+  <!-- ลายเซ็น GM — กึ่งกลาง -->
+  <div style="text-align:center;margin-bottom:4mm">
+    <div style="display:inline-block;text-align:center;min-width:60mm">
+      ${gmSigHtml}
+      <div>………………………………………………</div>
+      <div style="margin-top:2px">คุณ ประจวบ ลิมปนาวรวงศ์</div>
+      <div>ผู้จัดการทั่วไปฝ่ายขายประเภทรถเล็ก</div>
+    </div>
+  </div>
+</div>`;
+
+  const win = window.open('', '_blank', 'width=900,height=750');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="utf-8">
+    <title>Memo เคลื่อนย้ายรถ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+    <style>body{margin:0;padding:20px;background:#f5f5f5;font-family:Sarabun,sans-serif}@media print{body{background:#fff;padding:0}.no-print{display:none}}</style>
+  </head><body>
+    <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button onclick="window.print()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ พิมพ์ / บันทึก PDF</button>
+      ${!d.gmSig ? `<button onclick="navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))" style="padding:8px 20px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🔗 คัดลอก Link ให้ GM เซ็น</button>
+      <span style="font-size:12px;color:#666">ยังไม่มีลายเซ็น GM</span>` : '<span style="color:#388e3c;font-size:13px">✅ GM เซ็นแล้ว</span>'}
+      <button onclick="window.close()" style="padding:8px 20px;background:#eee;border:none;border-radius:6px;font-size:14px;cursor:pointer">✕ ปิด</button>
+    </div>
+    ${memoHtml}
+  </body></html>`);
+  win.document.close();
+}
+
+async function reprintMoveMemo(permitId){
+  const p = db.permits.find(x=>x.id===permitId);
+  if(!p||!p._moveMemoData){ alert('ไม่พบข้อมูลใบ Memo เคลื่อนย้ายรถ'); return; }
+  const d = p._moveMemoData;
+  const mgrSig = p.managerSig || null;
+  const gmKey = permitId + '_gm2';
+  const cache = getSigCache();
+  let gmSig = cache[gmKey] || null;
+  if(!gmSig && _fbReady){
+    try{
+      const snap = await _fbDb.collection('signatures').doc(gmKey).get();
+      if(snap.exists && snap.data()?.sig){ gmSig = snap.data().sig; cache[gmKey]=gmSig; setSigCache(cache); }
+    }catch(e){}
+  }
+  _renderMoveMemoPage(p, {...d, mgrSig, gmSig});
+}
+
+function loadApproveGmMemo2(permitId){
+  const p = db.permits.find(x=>x.id===permitId);
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-approve').classList.add('active');
+  const det = document.getElementById('approve-detail');
+  const gmKey = permitId + '_gm2';
+  const cache = getSigCache();
+  const gmSig = cache[gmKey];
+  if(gmSig){
+    det.innerHTML = `<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติแล้ว</div></div>`;
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    return;
+  }
+  const d = p?._moveMemoData || {};
+  det.innerHTML = `<div style="padding:12px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:8px">🚗 Memo เคลื่อนย้ายรถ</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👤 SC: ${p?.name||'-'}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">👥 ลูกค้า: ${d.customer||'-'}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">🚗 รุ่น: ${d.model||'-'}${d.color?' สี'+d.color:''}</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:4px">📅 ส่งมอบ: ${fmtThaiDate(d.deliveryDate)||'-'} ที่ ${d.branch||'-'}</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;margin-top:12px">ลงลายเซ็น GM อนุมัติ</div>
+  </div>`;
+  window._approveMemo2Id = permitId;
+  document.querySelector('#page-approve .btn-success').style.display='';
+  document.querySelector('#page-approve .btn-success').textContent='✅ อนุมัติ (GM)';
+  document.querySelector('#page-approve .btn-danger').style.display='none';
+  document.getElementById('approve-err').style.display='none';
+  setSigTab('draw');
+  setTimeout(()=>initCanvas('canvas-manager'), 200);
+}
+
+function submitApproveGmMemo2(){
+  const permitId = window._approveMemo2Id;
+  if(!permitId) return;
+  const sig = getManagerSig();
+  if(!sig){ document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อน'; document.getElementById('approve-err').style.display='flex'; return; }
+  const gmKey = permitId + '_gm2';
+  if(_fbReady) _fbDb.collection('signatures').doc(gmKey).set({sig, signedAt: new Date().toISOString()});
+  const c = getSigCache(); c[gmKey]=sig; setSigCache(c);
+  document.getElementById('approve-detail').innerHTML =
+    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ Memo พร้อมลายเซ็นได้แล้ว</div></div>';
+  document.querySelector('#page-approve .btn-success').style.display='none';
+}
+
 function openFuelMemoModal(p){
   _fuelMemoPermit = p;
   document.getElementById('fm-delivery-date').value = p.date || '';
@@ -5225,6 +5446,15 @@ function renderPrintPage(p){
     btn.innerHTML = '📄 ใบ Memo ขอเบิกน้ำมัน';
     btn.onclick = ()=>openFuelMemoModal(p);
     printActions.appendChild(btn);
+    // ปุ่ม Memo เคลื่อนย้ายรถ
+    const oldBtn2 = document.getElementById('btn-move-memo');
+    if(oldBtn2) oldBtn2.remove();
+    const btn2 = document.createElement('button');
+    btn2.id = 'btn-move-memo';
+    btn2.className = 'btn btn-outline btn-sm';
+    btn2.innerHTML = '🚗 Memo เคลื่อนย้ายรถ';
+    btn2.onclick = ()=>openMoveMemoModal(p);
+    printActions.appendChild(btn2);
   }
 }
 
@@ -5277,7 +5507,49 @@ function renderPrintPage(p){
   </div>
 </div>
 
-<!-- MODAL: ADMIN RETURN -->
+<!-- MODAL: MOVE MEMO (ใบ Memo เคลื่อนย้ายรถ) -->
+<div class="modal-overlay" id="modal-move-memo">
+  <div class="modal">
+    <div class="modal-title">🚗 Memo เคลื่อนย้ายรถกรณียังไม่จ่ายเงินดาวน์</div>
+    <div style="font-size:13px;color:var(--g600);margin-bottom:12px">กรอกข้อมูลเพิ่มเติมสำหรับใบ Memo เคลื่อนย้ายรถ</div>
+    <div class="form-row"><label>ชื่อ-นามสกุล ลูกค้า *</label>
+      <input type="text" id="mm-customer" placeholder="เช่น คุณนนทกร รังคะราช">
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>รุ่นรถ *</label>
+        <input type="text" id="mm-model" placeholder="เช่น URD20 / BOS">
+      </div>
+      <div class="form-row"><label>สีรถ</label>
+        <input type="text" id="mm-color" placeholder="เช่น ขาว">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>เลขเครื่อง</label>
+        <input type="text" id="mm-engine" placeholder="เช่น FSE515">
+      </div>
+      <div class="form-row"><label>เลขแชสซีส์</label>
+        <input type="text" id="mm-chassis" placeholder="เช่น TG028288">
+      </div>
+    </div>
+    <div class="form-row"><label>ส่งมอบในวันที่ *</label>
+      <input type="date" id="mm-delivery-date">
+    </div>
+    <div class="form-row"><label>สาขา/สถานที่ที่ส่งมอบ *</label>
+      <input type="text" id="mm-branch" placeholder="เช่น โชว์รูมอีซูซุสะพานสี่">
+    </div>
+    <div class="form-row"><label>ชื่อผู้จัดการ (อนุมัติ) *</label>
+      <input type="text" id="mm-manager" placeholder="เช่น คุณอัมพา ทรงสง่า">
+    </div>
+    <div class="form-row"><label>ตำแหน่งผู้จัดการ</label>
+      <input type="text" id="mm-manager-title" placeholder="เช่น ผู้จัดการทีมพิเศษมาบตาพุด">
+    </div>
+    <div id="mm-err" class="alert alert-danger" style="display:none;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-move-memo')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="printMoveMemo()">🖨️ พิมพ์ใบ Memo เคลื่อนย้ายรถ</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modal-admin-return">
   <div class="modal">
     <div class="modal-title">🔒 แอดมินยืนยันคืนรถแทน</div>
