@@ -1698,11 +1698,14 @@ function renderReturnList(){
               ${blockWarning}
             </div>
           </div>
-          <button class="btn btn-success btn-sm" 
-            ${mustReturnFirst ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''} 
-            onclick="${mustReturnFirst ? `showReturnOrderErr('${mustReturnFirst.name}','${fmt(mustReturnFirst.startDt)}')` : `openStep2Modal('${b.id}')`}">
-            🔑 ยืนยันรับกุญแจ
-          </button>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn btn-success btn-sm" 
+              ${mustReturnFirst ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''} 
+              onclick="${mustReturnFirst ? `showReturnOrderErr('${mustReturnFirst.name}','${fmt(mustReturnFirst.startDt)}')` : `openStep2Modal('${b.id}')`}">
+              🔑 ยืนยันรับกุญแจ
+            </button>
+            <button class="btn btn-outline btn-sm" style="font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="cancelReturnStep('${b.id}')">↩️ ยกเลิกแจ้งคืน</button>
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -1710,6 +1713,18 @@ function renderReturnList(){
 }
 
 let returnBookingId=null;
+
+function cancelReturnStep(bkId){
+  const b = db.bookings.find(x=>x.id===bkId);
+  if(!b) return;
+  const car = db.cars.find(c=>c.id===b.carId);
+  if(!confirm(`ยกเลิกการแจ้งคืน ${car?car.plate:''} ของ ${b.name}?\nรถจะกลับไปเป็นสถานะ "กำลังใช้งาน"`)) return;
+  b.returnStep = null;
+  b.mileageIn = null;
+  syncNow(()=>showSyncToast(true), ()=>showSyncToast(false));
+  renderReturnList();
+  renderCars();
+}
 
 function showReturnOrderErr(name, time){
   const errDiv = document.getElementById('return-order-err');
@@ -5118,22 +5133,18 @@ function _renderMoveMemoPage(p, d){
   </div>
 </div>`;
 
-  const win = window.open('', '_blank', 'width=900,height=750');
-  win.document.write(`<!DOCTYPE html><html><head>
-    <meta charset="utf-8">
-    <title>Memo เคลื่อนย้ายรถ</title>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
-    <style>body{margin:0;padding:20px;background:#f5f5f5;font-family:Sarabun,sans-serif}@media print{body{background:#fff;padding:0}.no-print{display:none}}</style>
-  </head><body>
-    <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button onclick="window.print()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ พิมพ์ / บันทึก PDF</button>
-      ${!d.gmSig ? `<button onclick="navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))" style="padding:8px 20px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🔗 คัดลอก Link ให้ GM เซ็น</button>
-      <span style="font-size:12px;color:#666">ยังไม่มีลายเซ็น GM</span>` : '<span style="color:#388e3c;font-size:13px">✅ GM เซ็นแล้ว</span>'}
-      <button onclick="window.close()" style="padding:8px 20px;background:#eee;border:none;border-radius:6px;font-size:14px;cursor:pointer">✕ ปิด</button>
-    </div>
-    ${memoHtml}
-  </body></html>`);
-  win.document.close();
+  // render ในหน้าแอปแทน window.open (กัน mobile block popup)
+  const gmBtnHtml2 = !d.gmSig
+    ? `<button class="btn btn-outline btn-sm" onclick="navigator.clipboard&&navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))">🔗 คัดลอก Link ให้ GM เซ็น</button><span style="font-size:12px;color:var(--g500)">ยังไม่มีลายเซ็น GM</span>`
+    : `<span style="color:var(--success);font-size:13px;font-weight:600">✅ GM เซ็นแล้ว</span>`;
+
+  document.getElementById('print-actions').innerHTML = `
+    <button class="btn btn-primary" onclick="window.print()">🖨️ พิมพ์ / บันทึก PDF</button>
+    ${gmBtnHtml2}
+    <button class="btn btn-gray" onclick="showPage('permit',document.getElementById('nav-permit'))">← กลับ</button>`;
+  document.getElementById('print-content').innerHTML = memoHtml;
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
 }
 
 async function reprintMoveMemo(permitId){
@@ -5316,25 +5327,18 @@ function _renderFuelMemoPage(p, d){
   </div>
 </div>`;
 
-  const win = window.open('', '_blank', 'width=900,height=750');
-  win.document.write(`<!DOCTYPE html><html><head>
-    <meta charset="utf-8">
-    <title>ใบ Memo ขอเบิกน้ำมัน</title>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-      body{margin:0;padding:20px;background:#f5f5f5;font-family:Sarabun,sans-serif}
-      @media print{body{background:#fff;padding:0} .no-print{display:none}}
-    </style>
-  </head><body>
-    <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button onclick="window.print()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ พิมพ์ / บันทึก PDF</button>
-      ${!d.gmSig ? `<button onclick="navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))" style="padding:8px 20px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🔗 คัดลอก Link ให้ GM เซ็น</button>
-      <span style="font-size:12px;color:#666">ยังไม่มีลายเซ็น GM</span>` : '<span style="color:#388e3c;font-size:13px">✅ GM เซ็นแล้ว</span>'}
-      <button onclick="window.close()" style="padding:8px 20px;background:#eee;border:none;border-radius:6px;font-size:14px;cursor:pointer">✕ ปิด</button>
-    </div>
-    ${memoHtml}
-  </body></html>`);
-  win.document.close();
+  // render ในหน้าแอปแทน window.open (กัน mobile block popup)
+  const gmBtnHtml = !d.gmSig
+    ? `<button class="btn btn-outline btn-sm" onclick="navigator.clipboard&&navigator.clipboard.writeText('${gmApproveUrl}').then(()=>alert('✅ คัดลอก link สำหรับ GM แล้ว'))">🔗 คัดลอก Link ให้ GM เซ็น</button><span style="font-size:12px;color:var(--g500)">ยังไม่มีลายเซ็น GM</span>`
+    : `<span style="color:var(--success);font-size:13px;font-weight:600">✅ GM เซ็นแล้ว</span>`;
+
+  document.getElementById('print-actions').innerHTML = `
+    <button class="btn btn-primary" onclick="window.print()">🖨️ พิมพ์ / บันทึก PDF</button>
+    ${gmBtnHtml}
+    <button class="btn btn-gray" onclick="showPage('permit',document.getElementById('nav-permit'))">← กลับ</button>`;
+  document.getElementById('print-content').innerHTML = memoHtml;
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
 }
 
 // ---- หน้า GM อนุมัติ memo ----
