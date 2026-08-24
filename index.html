@@ -741,6 +741,13 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>↩️ ยกเลิกการแจ้งคืนรถ</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการที่ผู้ยืมแจ้งคืนแล้ว แต่ยังไม่ได้รับกุญแจจริง — กรณีคืนผิดคัน กดยกเลิกเพื่อให้รถกลับเป็น "กำลังใช้งาน"</div>
+        <div id="admin-pending-return-list" style="max-height:300px;overflow-y:auto"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="renderAdminPendingReturnList()">🔄 รีเฟรช</button>
+      </div>
+
+      <div class="settings-section">
         <h3>🗄️ ประวัติการจองที่ถูกลบ (Archive)</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการจองรถและบัตรน้ำมันที่คืน/ยกเลิกเกิน 30 วัน จะถูกย้ายมาเก็บที่นี่อัตโนมัติ</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
@@ -1704,7 +1711,6 @@ function renderReturnList(){
               onclick="${mustReturnFirst ? `showReturnOrderErr('${mustReturnFirst.name}','${fmt(mustReturnFirst.startDt)}')` : `openStep2Modal('${b.id}')`}">
               🔑 ยืนยันรับกุญแจ
             </button>
-            <button class="btn btn-outline btn-sm" style="font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="cancelReturnStep('${b.id}')">↩️ ยกเลิกแจ้งคืน</button>
           </div>
         </div>
       </div>`;
@@ -1724,6 +1730,28 @@ function cancelReturnStep(bkId){
   syncNow(()=>showSyncToast(true), ()=>showSyncToast(false));
   renderReturnList();
   renderCars();
+  renderAdminPendingReturnList();
+}
+
+function renderAdminPendingReturnList(){
+  const list = document.getElementById('admin-pending-return-list');
+  if(!list) return;
+  const pending = (db.bookings||[]).filter(b=>b.returnStep==='pending');
+  if(!pending.length){
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่รอแจ้งคืน</p>';
+    return;
+  }
+  list.innerHTML = pending.map(b=>{
+    const car = db.cars.find(c=>c.id===b.carId);
+    return `<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="flex:1;font-size:13px;min-width:200px">
+        <span style="font-weight:600">🚗 ${car?car.plate:'?'}</span>
+        <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
+        <div style="font-size:12px;color:var(--warning);margin-top:2px">⏳ ผู้ยืมแจ้งคืนแล้ว รอรับกุญแจ</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="cancelReturnStep('${b.id}')">↩️ ยกเลิกแจ้งคืน</button>
+    </div>`;
+  }).join('');
 }
 
 function showReturnOrderErr(name, time){
@@ -1917,6 +1945,7 @@ function renderSettings(){
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAdminBookingList();
   renderFcSettings();
+  renderAdminPendingReturnList();
   // เฉพาะครั้งแรกที่เปิดหน้าตั้งค่า ให้เริ่มที่แท็บรถ
   const cardTabVisible = document.getElementById('admin-card-booking-list')?.style.display === 'block';
   if(!cardTabVisible) switchAdminHistoryTab('car');
