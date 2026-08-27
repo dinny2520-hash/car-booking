@@ -4868,10 +4868,10 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p.billReceived===false&&p.status==='approved'?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
+          ${p.billReceived===false&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
+          ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
         </div>
       </div>
     </div>`;
