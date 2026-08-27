@@ -2275,7 +2275,8 @@ function initPermitPage(){
   }
   const di=document.getElementById('pf-date');
   if(di&&!di.value) di.value=new Date().toISOString().slice(0,10);
-  refreshPermitList();
+  renderPermitList(); // ใช้ renderPermitList โดยตรงแทน refreshPermitList เพื่อให้ adminLoggedIn มีผล
+  renderUcPermitList();
 }
 
 let _permitPollTimer = null;
