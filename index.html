@@ -4265,6 +4265,9 @@ function renderAdminBookingList(){
         <button class="btn btn-outline btn-sm" onclick="adminRevertBooking('${b.id}')">↩️ ย้อนสถานะ</button>
         <button class="btn btn-outline btn-sm" onclick="adminEditMileage('${b.id}')">🛣️ แก้ไมล์</button>
         `:''}
+        ${b.status==='cancelled'?`
+        <button class="btn btn-outline btn-sm" onclick="adminRevertBooking('${b.id}')">↩️ กู้คืนการจอง</button>
+        `:''}
         <button class="btn btn-danger btn-sm" onclick="adminDeleteBooking('${b.id}')">ลบ</button>
       </div>
     </div>`;
@@ -4405,7 +4408,11 @@ function checkPullChanges(data){
 function adminRevertBooking(id){
   const b=db.bookings.find(x=>x.id===id);
   if(!b)return;
-  if(!confirm(`ย้อนสถานะ "${b.name}" กลับเป็น "รอใช้งาน"?\nเลขไมล์และข้อมูลการคืนจะถูกล้าง`))return;
+  const isCancelled = b.status==='cancelled';
+  const msg = isCancelled
+    ? `กู้คืนการจองของ "${b.name}"?\nการจองจะกลับเป็น "รอใช้งาน" อีกครั้ง`
+    : `ย้อนสถานะ "${b.name}" กลับเป็น "รอใช้งาน"?\nเลขไมล์และข้อมูลการคืนจะถูกล้าง`;
+  if(!confirm(msg))return;
   b.status='booked';
   b.returnStep=null;
   b.returnedBy=null;
@@ -4413,13 +4420,15 @@ function adminRevertBooking(id){
   b.mileageIn=null;
   b.mileageOut=null;
   b._adminReturn=null;
-  b._forceRevert=true; // บอก Apps Script ให้ยอมให้ทับ
+  b.cancelledAt=null;
+  b.cancelledBy=null;
+  b._forceRevert=true;
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
   renderAdminBookingList();
   renderHistory();
   renderCars();
   renderReturnList();
-  alert('✅ ย้อนสถานะสำเร็จ รายการกลับเป็น "รอใช้งาน" แล้ว');
+  alert('✅ '+(isCancelled?'กู้คืนการจองสำเร็จ':'ย้อนสถานะสำเร็จ')+' รายการกลับเป็น "รอใช้งาน" แล้ว');
 }
 
 function adminEditMileage(id){
