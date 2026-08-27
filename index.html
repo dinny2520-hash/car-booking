@@ -2708,19 +2708,49 @@ function assignPermitNumbers(){
 }
 
 // ---- บิลน้ำมัน ----
-function toggleBillReceived(permitId){
+var _billPermitId = null;
+
+function openBillModal(permitId){
+  _billPermitId = permitId;
   const p = db.permits.find(x=>x.id===permitId);
   if(!p) return;
-  p.billReceived = true;
-  p.billReceivedAt = new Date().toISOString();
+  document.getElementById('bill-modal-info').innerHTML =
+    `ใบที่ <b>${p.permitNo||'-'}</b> | ${p.name} | 📅 ${p.date}<br>⛽ ขอเบิก <b>${Number(p.fuel).toLocaleString('th-TH')} บาท</b>`;
+  document.getElementById('bill-actual-amount').value = p.fuel || '';
+  document.getElementById('bill-modal-err').style.display = 'none';
+  openModal('modal-bill-received');
+}
+
+function confirmBillReceived(fueled){
+  const p = db.permits.find(x=>x.id===_billPermitId);
+  if(!p) return;
+  if(fueled){
+    const amt = document.getElementById('bill-actual-amount').value.trim();
+    if(!amt || isNaN(amt) || Number(amt) < 0){
+      document.getElementById('bill-modal-err').textContent = 'กรุณากรอกยอดที่เติมจริง';
+      document.getElementById('bill-modal-err').style.display = 'flex';
+      return;
+    }
+    p.billReceived = true;
+    p.billActualAmount = Number(amt);
+    p.billReceivedAt = new Date().toISOString();
+    p.billNoFuel = false;
+  } else {
+    p.billReceived = true;
+    p.billNoFuel = true;
+    p.billActualAmount = 0;
+    p.billReceivedAt = new Date().toISOString();
+  }
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  // Force push permit นี้ขึ้น Firebase ทันที กัน _getChanged ไม่ detect billReceived
   if(_fbReady) fbSetDoc('permits', p.id, p);
   syncNow(()=>showSyncToast(true));
+  closeModal('modal-bill-received');
   renderPermitList();
   renderUcPermitList();
   renderAdminBillPendingList();
 }
+
+function toggleBillReceived(permitId){ openBillModal(permitId); }
 
 function renderAdminBillPendingList(){
   const list = document.getElementById('admin-bill-pending-list');
@@ -2757,8 +2787,13 @@ function renderUcPermitList(){
     const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
     const link=location.origin+location.pathname+'?approve='+p.id;
     const permitNoLabel = p.permitNo ? `<span style="font-size:11px;background:var(--g200);color:var(--g600);padding:1px 7px;border-radius:10px;margin-right:6px">ใบที่ ${p.permitNo}</span>` : '';
-    const billBadge = p.billReceived===false&&p.status==='approved' ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอส่งบิล</span>` :
-                      p.billReceived===true ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ ส่งบิลแล้ว</span>` : '';
+    const billBadge = p.billReceived===false&&p.status==='approved'
+      ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
+      : p.billReceived===true && p.billNoFuel
+        ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
+        : p.billReceived===true
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          : '';
     return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div style="flex:1">
@@ -4877,8 +4912,13 @@ function renderPermitList(){
     const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
     const link=location.origin+location.pathname+'?approve='+p.id;
     const permitNoLabel = p.permitNo ? `<span style="font-size:11px;background:var(--g200);color:var(--g600);padding:1px 7px;border-radius:10px;margin-right:6px">ใบที่ ${p.permitNo}</span>` : '';
-    const billBadge = p.billReceived===false&&p.status==='approved' ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>` :
-                      p.billReceived===true ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิลแล้ว</span>` : '';
+    const billBadge = p.billReceived===false&&p.status==='approved'
+      ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
+      : p.billReceived===true && p.billNoFuel
+        ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
+        : p.billReceived===true
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          : '';
     return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:200px">
@@ -5819,6 +5859,24 @@ function renderPrintPage(p){
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeModal('modal-permanent-delete-booking')">ยกเลิก</button>
       <button class="btn btn-danger" onclick="confirmPermanentDeleteBooking()">🗑️ ลบถาวร</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BILL RECEIVED -->
+<div class="modal-overlay" id="modal-bill-received">
+  <div class="modal">
+    <div class="modal-title">🧾 บันทึกการรับบิลน้ำมัน</div>
+    <div id="bill-modal-info" class="alert alert-info" style="margin-bottom:14px;font-size:13px"></div>
+    <div class="form-row">
+      <label>ยอดที่เติมจริง (บาท)</label>
+      <input type="number" id="bill-actual-amount" placeholder="กรอกยอดจริงที่เติม" inputmode="numeric" min="0">
+    </div>
+    <div id="bill-modal-err" class="alert alert-danger" style="display:none;margin-bottom:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal('modal-bill-received')">ยกเลิก</button>
+      <button class="btn btn-outline" style="color:var(--g600)" onclick="confirmBillReceived(false)">❌ ไม่ได้เติม</button>
+      <button class="btn btn-success" onclick="confirmBillReceived(true)">✅ รับบิลแล้ว</button>
     </div>
   </div>
 </div>
