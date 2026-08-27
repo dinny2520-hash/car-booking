@@ -1427,12 +1427,21 @@ function renderCars(){
     div.className='car-card clickable '+(st==='available'?'available':st==='overdue'?'overdue':st==='in-use'?'in-use':st==='in-service'?'busy':'busy');
     if(selectedCarId===car.id)div.classList.add('selected');
     if(car.inService===true) div.classList.add('in-service');
-    // แสดง booking info — ถ้ารถซ่อมอยู่แต่มี booking ข้างหน้า ให้แสดงด้วย
-    const bkInfo = inUseBk
-      ? `<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`
-      : (nextBk && car.inService)
-        ? `<div class="bk-detail" style="color:var(--warning)">⚠️ มีการจองรอในวันที่ ${fmt(nextBk.startDt)}<br>👤 ${nextBk.name}</div>`
-        : '';
+    // แสดง booking info
+    // ถ้ารถซ่อมอยู่ → แสดงเฉพาะ booking ที่รอไว้ (ไม่แสดง in-use) เพื่อแจ้งแอดมินว่ามีคนรอ
+    let bkInfo = '';
+    if(car.inService){
+      const pendingBks = activeBks.filter(b=>new Date(b.startDt)>new Date()||new Date(b.startDt)<=new Date()).slice(0,2);
+      if(pendingBks.length){
+        bkInfo = `<div class="bk-detail" style="color:var(--danger);font-size:12px">⚠️ มีการจองที่ยังไม่คืน:<br>${pendingBks.map(b=>`👤 ${b.name} (${fmt(b.startDt)})`).join('<br>')}</div>`;
+      }
+    } else {
+      bkInfo = inUseBk
+        ? `<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`
+        : nextBk
+          ? `<div class="bk-detail" style="color:var(--warning)">⚠️ มีการจองรอในวันที่ ${fmt(nextBk.startDt)}<br>👤 ${nextBk.name}</div>`
+          : '';
+    }
     const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
     const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
