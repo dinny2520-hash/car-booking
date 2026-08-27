@@ -3244,12 +3244,12 @@ function _getItemKey(item){
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo} = item;
+    billReceived, billReceivedAt, permitNo, inService} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo});
+    billReceived, billReceivedAt, permitNo, inService});
 }
 
 function _getChanged(newItems, colName, idField='id'){
