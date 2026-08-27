@@ -1219,6 +1219,7 @@ async function _smartPull(sinceTs){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
         if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
+        if(fbConfig.lastPermitNo !== undefined) db.lastPermitNo = Math.max(db.lastPermitNo||0, fbConfig.lastPermitNo||0);
       }
     } else {
       // Incremental pull — merge local + Firebase
@@ -1259,6 +1260,7 @@ async function _smartPull(sinceTs){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
         if(fbConfig.staffPins) db.staffPins = fbConfig.staffPins;
+        if(fbConfig.lastPermitNo !== undefined) db.lastPermitNo = Math.max(db.lastPermitNo||0, fbConfig.lastPermitNo||0);
       }
     }
 
@@ -2604,14 +2606,14 @@ function submitUseCar(){
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('uc-fuel').value===''||!date||!empSig){
     errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;
   }
-  // คำนวณเลขที่ใบ permit (รันต่อจากใบที่มีอยู่)
-  const allPermits = (db.permits||[]).slice().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
-  const maxNo = allPermits.reduce((max,p)=>Math.max(max, p.permitNo||0), 0);
+  // ใช้ lastPermitNo ที่ sync จาก Firebase เป็น counter — ไม่นับจาก local
+  const newPermitNo = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+  db.lastPermitNo = newPermitNo;
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
     car,cartype,fuel,date,empSig,
-    permitNo: maxNo + 1,
-    billReceived: Number(fuel)>0 ? false : null, // null = ไม่ต้องเช็คบิล
+    permitNo: newPermitNo,
+    billReceived: Number(fuel)>0 ? false : null,
     status:'pending',createdAt:new Date().toISOString(),
     managerSig:null,approvedAt:null
   };
@@ -2646,23 +2648,26 @@ function submitUseCar(){
 
 // ---- เลขที่ใบ permit ----
 function assignPermitNumbers(){
-  // assign เลขที่ให้ใบเก่าที่ยังไม่มีเลข เรียงตาม createdAt
   const sorted = (db.permits||[]).slice().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   let changed = false;
-  let maxNo = sorted.reduce((max,p)=>Math.max(max, p.permitNo||0), 0);
+  let maxNo = Math.max(db.lastPermitNo||0, sorted.reduce((max,p)=>Math.max(max, p.permitNo||0), 0));
   sorted.forEach(p=>{
     if(!p.permitNo){
       maxNo++;
       p.permitNo = maxNo;
       changed = true;
+      // push permit นี้ขึ้น Firebase ทันที
+      if(_fbReady) fbSetDoc('permits', p.id, p);
     }
   });
-  if(changed){
+  if(changed || maxNo > (db.lastPermitNo||0)){
+    db.lastPermitNo = maxNo;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    syncNow();
+    // push lastPermitNo ขึ้น Firebase ผ่าน config/app
+    if(_fbReady) fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:maxNo, updatedAt:new Date().toISOString()});
     renderPermitList();
     renderUcPermitList();
-    alert('✅ กำหนดเลขที่ใบ PM เรียบร้อย '+(maxNo)+' ใบ');
+    alert('✅ กำหนดเลขที่ใบ PM เรียบร้อย ทั้งหมด '+maxNo+' ใบ');
   } else {
     alert('ทุกใบมีเลขที่แล้ว ไม่ต้องทำอะไรเพิ่ม');
   }
@@ -3254,7 +3259,7 @@ function _pushToFirebase(){
   // config เฉพาะถ้า adminPass หรือ fuelPrice เปลี่ยน
   const configStr = JSON.stringify({fuelPrice:db.fuelPrice||0, adminPass:db.adminPass});
   if(configStr !== _lastPushed['config']){
-    ops.push(fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, updatedAt:new Date().toISOString()}));
+    ops.push(fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:db.lastPermitNo||0, updatedAt:new Date().toISOString()}));
     _lastPushed['config'] = configStr;
   }
 
@@ -3860,7 +3865,7 @@ function saveFuelPrice(){
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   // sync fuelPrice ขึ้น Firebase
-  fbSetDoc('config','app',{fuelPrice:db.fuelPrice, adminPass:db.adminPass, updatedAt:_ts});
+  fbSetDoc('config','app',{fuelPrice:db.fuelPrice, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:db.lastPermitNo||0, updatedAt:_ts});
   updateFuelPriceDisplay();
   alert('✅ บันทึกราคาน้ำมัน ฿'+Number(val).toFixed(2)+'/ลิตร แล้ว');
 }
@@ -4774,12 +4779,12 @@ function submitPermitForm(){
   errEl.style.display='none';
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('pf-fuel').value===''||!date||!empSigName)
     {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
-  const allPermits2 = (db.permits||[]).slice().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
-  const maxNo2 = allPermits2.reduce((max,p)=>Math.max(max, p.permitNo||0), 0);
+  const newPermitNo2 = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+  db.lastPermitNo = newPermitNo2;
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
     car,cartype,fuel,date,empSig:empSigName,
-    permitNo: maxNo2 + 1,
+    permitNo: newPermitNo2,
     billReceived: Number(fuel)>0 ? false : null,
     status:'pending',createdAt:new Date().toISOString(),
     managerSig:null,approvedAt:null
