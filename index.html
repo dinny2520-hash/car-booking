@@ -2761,7 +2761,6 @@ function renderUcPermitList(){
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          <button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>
         </div>
       </div>
     </div>`;
