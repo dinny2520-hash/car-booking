@@ -5535,7 +5535,7 @@ function renderPrintPage(p){
     : '';
   const form = (footer) =>
     '<div id="print-card" style="background:#fff;width:210mm;padding:14mm 18mm;font-family:Sarabun,sans-serif;font-size:12pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto">'
-    +'<div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;margin-bottom:2mm"><span>1452</span><span>HR-F001</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;margin-bottom:2mm"><span>เลขที่ใบ: <b style="color:#333">'+(p.permitNo||'-')+'</b></span><span>HR-F001</span></div>'
     +'<div style="display:flex;align-items:center;margin-bottom:3mm;gap:10px">'
     +'<img src="'+logoSrc+'" style="height:50px;flex-shrink:0">'
     +'<div style="flex:1;text-align:center;font-size:14pt;font-weight:700;line-height:1.3">แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>'
