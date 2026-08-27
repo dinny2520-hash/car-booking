@@ -1264,6 +1264,9 @@ async function _smartPull(sinceTs){
       }
     }
 
+    // init billReceived สำหรับใบเก่าที่ยังไม่มี field นี้
+    initBillReceived();
+
     // init _lastPushed จากข้อมูล Firebase ที่เพิ่งดึงมา
     // ทำครั้งเดียวหลัง pull แรก เพื่อกัน push ทั้งหมดตอนเปิดแอป
     if(!_lastPushed['_initialized']){
@@ -2606,9 +2609,12 @@ function submitUseCar(){
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('uc-fuel').value===''||!date||!empSig){
     errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;
   }
-  // ใช้ lastPermitNo ที่ sync จาก Firebase เป็น counter — ไม่นับจาก local
-  const newPermitNo = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+  // ใช้ค่า max ระหว่าง lastPermitNo และเลขสูงสุดที่มีใน permits จริง (กัน desync)
+  const _maxExisting = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
+  const newPermitNo = Math.max(db.lastPermitNo||0, _maxExisting) + 1;
   db.lastPermitNo = newPermitNo;
+  // force save lastPermitNo ขึ้น Firebase ทันที
+  if(_fbReady) fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:newPermitNo, updatedAt:new Date().toISOString()});
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
     car,cartype,fuel,date,empSig,
@@ -2647,6 +2653,26 @@ function submitUseCar(){
 }
 
 // ---- เลขที่ใบ permit ----
+// ---- init billReceived สำหรับใบเก่าที่ยังไม่มี field นี้ ----
+function initBillReceived(){
+  let changed = false;
+  (db.permits||[]).forEach(p=>{
+    if(p.billReceived === undefined || p.billReceived === null){
+      if(Number(p.fuel) > 0){
+        // ถ้าอนุมัติแล้ว → ถือว่ารอบิล (ไม่รู้ว่าได้รับหรือยัง)
+        // ถ้ายังไม่อนุมัติ → ยังไม่ต้องเช็ค
+        p.billReceived = p.status === 'approved' ? false : null;
+      } else {
+        p.billReceived = null; // ไม่มีค่าน้ำมัน ไม่ต้องเช็คบิล
+      }
+      changed = true;
+    }
+  });
+  if(changed){
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  }
+}
+
 function assignPermitNumbers(){
   const sorted = (db.permits||[]).slice().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   let changed = false;
@@ -4779,8 +4805,10 @@ function submitPermitForm(){
   errEl.style.display='none';
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('pf-fuel').value===''||!date||!empSigName)
     {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
-  const newPermitNo2 = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+  const _maxExisting2 = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
+  const newPermitNo2 = Math.max(db.lastPermitNo||0, _maxExisting2) + 1;
   db.lastPermitNo = newPermitNo2;
+  if(_fbReady) fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:newPermitNo2, updatedAt:new Date().toISOString()});
   const permit={
     id:'p'+Date.now(),name,dept,location:loc,reason,detail,
     car,cartype,fuel,date,empSig:empSigName,
