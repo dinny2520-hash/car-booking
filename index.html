@@ -78,6 +78,7 @@ body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-h
 .st-available{background:var(--success-light);color:var(--success)}
 .st-busy{background:#fef3e2;color:var(--warning)}
 .st-in-use{background:var(--danger-light);color:var(--danger)}
+.st-service{background:#fff8e1;color:#d97706;font-weight:700}
 .st-overdue{background:var(--danger);color:#fff}
 .st-returned{background:var(--success-light);color:var(--success)}
 .st-cancelled{background:var(--g100);color:var(--g600)}
@@ -1330,6 +1331,9 @@ function getModalPin(prefix){return ['1','2','3','4'].map(n=>document.getElement
 
 // ---- STATUS ----
 function getCarStatus(carId){
+  const car = db.cars.find(c=>c.id===carId);
+  // inService มี priority สูงสุด — ซ่อมอยู่ไม่ว่าจะมี booking หรือไม่
+  if(car && car.inService) return 'in-service';
   const n=new Date();
   const active=db.bookings.filter(b=>b.carId===carId&&b.status!=='returned'&&b.status!=='cancelled');
   if(!active.length)return 'available';
@@ -1348,8 +1352,8 @@ function getBkStatus(b){
   if(new Date(b.startDt)<=n&&new Date(b.endDt)>=n)return 'in-use';
   return 'upcoming';
 }
-function stClass(s){return{available:'st-available',busy:'st-busy','in-use':'st-in-use',overdue:'st-overdue',returned:'st-returned',cancelled:'st-cancelled',upcoming:'st-busy','pending-return':'st-busy'}[s]||'';}
-function stLabel(s){return{available:'ว่าง',busy:'ติดจอง','in-use':'กำลังใช้งาน',overdue:'เกินกำหนด!',returned:'คืนแล้ว',cancelled:'ยกเลิก',upcoming:'รอใช้งาน','pending-return':'รอรับกุญแจ'}[s]||s;}
+function stClass(s){return{available:'st-available',busy:'st-busy','in-use':'st-in-use',overdue:'st-overdue',returned:'st-returned',cancelled:'st-cancelled',upcoming:'st-busy','pending-return':'st-busy','in-service':'st-service'}[s]||'';}
+function stLabel(s){return{available:'ว่าง',busy:'ติดจอง','in-use':'กำลังใช้งาน',overdue:'เกินกำหนด!',returned:'คืนแล้ว',cancelled:'ยกเลิก',upcoming:'รอใช้งาน','pending-return':'รอรับกุญแจ','in-service':'🔧 ส่งซ่อม/เช็ค'}[s]||s;}
 
 function isCarFreeFor(carId,startDt,endDt,excludeId){
   const s=new Date(startDt),e=new Date(endDt);
@@ -1403,13 +1407,19 @@ function renderCars(){
     if(st==='overdue')hasOverdue=true;
     const activeBks=db.bookings.filter(b=>b.carId===car.id&&b.status!=='returned'&&b.status!=='cancelled');
     const inUseBk=activeBks.find(b=>{const n=new Date();return new Date(b.startDt)<=n&&new Date(b.endDt)>=n;});
+    const nextBk=!inUseBk&&activeBks.length?activeBks.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt))[0]:null;
     const div=document.createElement('div');
-    div.className='car-card clickable '+(st==='available'?'available':st==='overdue'?'overdue':st==='in-use'?'in-use':'busy');
+    div.className='car-card clickable '+(st==='available'?'available':st==='overdue'?'overdue':st==='in-use'?'in-use':st==='in-service'?'busy':'busy');
     if(selectedCarId===car.id)div.classList.add('selected');
-    const bkInfo=inUseBk?`<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`:'';
+    if(car.inService===true) div.classList.add('in-service');
+    // แสดง booking info — ถ้ารถซ่อมอยู่แต่มี booking ข้างหน้า ให้แสดงด้วย
+    const bkInfo = inUseBk
+      ? `<div class="bk-detail"><div>👤 ${inUseBk.name}</div><div>📍 ${inUseBk.dest}</div><div>⏰ คืน: ${fmt(inUseBk.endDt)}</div></div>`
+      : (nextBk && car.inService)
+        ? `<div class="bk-detail" style="color:var(--warning)">⚠️ มีการจองรอในวันที่ ${fmt(nextBk.startDt)}<br>👤 ${nextBk.name}</div>`
+        : '';
     const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
     const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
-    if(car.inService===true) div.classList.add('in-service');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=(car.inService!==true)?()=>selectCar(car.id):null;
     // แยกใส่ grid ตาม flag testDrive
