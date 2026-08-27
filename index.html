@@ -1944,7 +1944,7 @@ function showAdminLogin(){
 }
 function doAdminLogin(){
   const pass=document.getElementById('admin-pass-input').value;
-  if(pass===db.adminPass){closeModal('modal-admin-login');adminLoggedIn=true;showPageDirect('settings');}
+  if(pass===db.adminPass){closeModal('modal-admin-login');adminLoggedIn=true;showPageDirect('settings');renderPermitList();}
   else{document.getElementById('admin-login-err').style.display='flex';}
 }
 function adminLogout(){adminLoggedIn=false;showPage('booking',document.getElementById('nav-booking'));}
@@ -2657,16 +2657,14 @@ function submitUseCar(){
 function initBillReceived(){
   let changed = false;
   (db.permits||[]).forEach(p=>{
-    if(p.billReceived === undefined || p.billReceived === null){
-      if(Number(p.fuel) > 0){
-        // ถ้าอนุมัติแล้ว → ถือว่ารอบิล (ไม่รู้ว่าได้รับหรือยัง)
-        // ถ้ายังไม่อนุมัติ → ยังไม่ต้องเช็ค
-        p.billReceived = p.status === 'approved' ? false : null;
-      } else {
-        p.billReceived = null; // ไม่มีค่าน้ำมัน ไม่ต้องเช็คบิล
-      }
-      changed = true;
+    // ไม่ overwrite ถ้ามีค่าอยู่แล้ว (true หรือ false) — แก้เฉพาะที่เป็น undefined เท่านั้น
+    if(p.billReceived !== undefined) return;
+    if(Number(p.fuel) > 0){
+      p.billReceived = p.status === 'approved' ? false : null;
+    } else {
+      p.billReceived = null;
     }
+    changed = true;
   });
   if(changed){
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -2706,6 +2704,8 @@ function toggleBillReceived(permitId){
   p.billReceived = true;
   p.billReceivedAt = new Date().toISOString();
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // Force push permit นี้ขึ้น Firebase ทันที กัน _getChanged ไม่ detect billReceived
+  if(_fbReady) fbSetDoc('permits', p.id, p);
   syncNow(()=>showSyncToast(true));
   renderPermitList();
   renderUcPermitList();
@@ -3231,11 +3231,13 @@ function _getItemKey(item){
   const {id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy, returnedAt,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
-    fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData} = item;
+    fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
+    billReceived, billReceivedAt, permitNo} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
-    fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData});
+    fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
+    billReceived, billReceivedAt, permitNo});
 }
 
 function _getChanged(newItems, colName, idField='id'){
