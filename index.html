@@ -1097,7 +1097,7 @@ function startRealtimeSync(){
       _lastServerTs = serverTs;
       _lastChangedIds = data?.changedIds || {}; // เก็บ changedIds ให้ _smartPull ใช้
       clearTimeout(_snapDebounceTimer);
-      _snapDebounceTimer = setTimeout(()=>_smartPull(prevTs), 1000);
+      _snapDebounceTimer = setTimeout(()=>_smartPull(prevTs), 300);
     }
   });
   _fbListeners.push(unsubTs);
@@ -1128,7 +1128,7 @@ let _lastChangedIds = {}; // เก็บ changedIds จาก lastUpdate ล่
 let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
-const MIN_PULL_INTERVAL = 3000; // pull ได้ทุก 3 วินาที
+const MIN_PULL_INTERVAL = 1000; // pull ได้ทุก 1 วินาที
 const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที (cars/staff เปลี่ยนน้อย)
 
 async function _smartPull(sinceTs){
