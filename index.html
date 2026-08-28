@@ -4947,6 +4947,14 @@ async function reprintFuelMemo(permitId){
   const d = p._memoData;
   const mgrSig = p.managerSig || null;
 
+  // แสดงหน้า print ก่อนพร้อม loading
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
+  document.getElementById('print-actions').innerHTML =
+    `<button class="btn btn-gray" onclick="showPage('permit',document.getElementById('nav-permit'))">← กลับ</button>`;
+  document.getElementById('print-content').innerHTML =
+    '<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังโหลดลายเซ็น...</div></div>';
+
   // ดึง GM sig จาก cache ก่อน ถ้าไม่มีดึงจาก Firebase
   const gmKey = permitId + '_gm';
   const cache = getSigCache();
@@ -5373,6 +5381,15 @@ async function reprintMoveMemo(permitId){
   if(!p||!p._moveMemoData){ alert('ไม่พบข้อมูลใบ Memo เคลื่อนย้ายรถ'); return; }
   const d = p._moveMemoData;
   const mgrSig = p.managerSig || null;
+
+  // แสดงหน้า print ก่อนพร้อม loading
+  document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
+  document.getElementById('page-print').classList.add('active');
+  document.getElementById('print-actions').innerHTML =
+    `<button class="btn btn-gray" onclick="showPage('permit',document.getElementById('nav-permit'))">← กลับ</button>`;
+  document.getElementById('print-content').innerHTML =
+    '<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังโหลดลายเซ็น...</div></div>';
+
   const gmKey = permitId + '_gm2';
   const cache = getSigCache();
   let gmSig = cache[gmKey] || null;
