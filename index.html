@@ -2677,21 +2677,24 @@ function submitUseCar(){
 // ---- เลขที่ใบ permit ----
 // ---- init billReceived สำหรับใบเก่าที่ยังไม่มี field นี้ ----
 function initBillReceived(){
-  let changed = [];
-  (db.permits||[]).forEach(p=>{
-    if(p.billReceived !== undefined) return;
-    if(Number(p.fuel) > 0){
-      p.billReceived = p.status === 'approved' ? false : null;
-    } else {
-      p.billReceived = null;
-    }
-    changed.push(p);
+  // เช็คก่อนว่ามีใบที่ยังไม่มี billReceived จริงๆ ไหม
+  // ถ้าไม่มีเลยไม่ต้องทำอะไร กัน push ซ้ำทุก full pull
+  const needFix = (db.permits||[]).filter(p=>
+    p.billReceived === undefined && Number(p.fuel) > 0 && p.status === 'approved'
+  );
+  if(!needFix.length) return; // ไม่มีอะไรต้องแก้
+
+  needFix.forEach(p=>{
+    p.billReceived = false;
   });
-  if(changed.length){
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    // push ขึ้น Firebase ด้วย กัน full pull ดึงกลับมาทับ
-    if(_fbReady) changed.forEach(p=>fbSetDoc('permits', p.id, p));
-  }
+  // ใบที่ fuel=0 หรือยังไม่อนุมัติ set เป็น null ไว้ใน local เท่านั้น ไม่ push Firebase
+  (db.permits||[]).forEach(p=>{
+    if(p.billReceived === undefined) p.billReceived = null;
+  });
+
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // push เฉพาะใบที่ต้องรับบิลจริงๆ ขึ้น Firebase
+  if(_fbReady) needFix.forEach(p=>fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()}));
 }
 
 function assignPermitNumbers(){
