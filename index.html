@@ -1208,9 +1208,21 @@ async function _smartPull(sinceTs){
     }
 
     if(doFull){
-      // Full pull — Firebase คือ source of truth ไม่ merge กับ local (กัน cache เก่าจาก GSheet)
+      // Full pull — Firebase คือ source of truth แต่ preserve fields ที่ local set ไว้แล้วถ้า Firebase ยังไม่มี
+      const localPermitMap = {};
+      (db.permits||[]).forEach(p=>{ localPermitMap[p.id]=p; });
       db.bookings = fbBookings.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-      db.permits = fbPermits.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      db.permits = fbPermits.map(p=>{
+        const local = localPermitMap[p.id];
+        // ถ้า Firebase ยังไม่มี billReceived แต่ local มีแล้ว → ใช้ค่า local
+        if(p.billReceived === undefined && local && local.billReceived !== undefined){
+          p.billReceived = local.billReceived;
+          p.billReceivedAt = local.billReceivedAt;
+          p.billActualAmount = local.billActualAmount;
+          p.billNoFuel = local.billNoFuel;
+        }
+        return p;
+      }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
       if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
       if(fbFc.length) db.fuelCards = fbFc;
       if(fbCars && fbCars.length) db.cars = fbCars;
