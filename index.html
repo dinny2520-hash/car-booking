@@ -2665,19 +2665,20 @@ function submitUseCar(){
 // ---- เลขที่ใบ permit ----
 // ---- init billReceived สำหรับใบเก่าที่ยังไม่มี field นี้ ----
 function initBillReceived(){
-  let changed = false;
+  let changed = [];
   (db.permits||[]).forEach(p=>{
-    // ไม่ overwrite ถ้ามีค่าอยู่แล้ว (true หรือ false) — แก้เฉพาะที่เป็น undefined เท่านั้น
     if(p.billReceived !== undefined) return;
     if(Number(p.fuel) > 0){
       p.billReceived = p.status === 'approved' ? false : null;
     } else {
       p.billReceived = null;
     }
-    changed = true;
+    changed.push(p);
   });
-  if(changed){
+  if(changed.length){
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    // push ขึ้น Firebase ด้วย กัน full pull ดึงกลับมาทับ
+    if(_fbReady) changed.forEach(p=>fbSetDoc('permits', p.id, p));
   }
 }
 
@@ -2755,7 +2756,7 @@ function toggleBillReceived(permitId){ openBillModal(permitId); }
 function renderAdminBillPendingList(){
   const list = document.getElementById('admin-bill-pending-list');
   if(!list) return;
-  const pending = (db.permits||[]).filter(p=>p.billReceived===false&&p.status==='approved');
+  const pending = (db.permits||[]).filter(p=>(p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved');
   if(!pending.length){
     list.innerHTML='<p style="color:var(--g400);font-size:13px">✅ ไม่มีบิลค้าง</p>';return;
   }
@@ -2787,7 +2788,7 @@ function renderUcPermitList(){
     const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
     const link=location.origin+location.pathname+'?approve='+p.id;
     const permitNoLabel = p.permitNo ? `<span style="font-size:11px;background:var(--g200);color:var(--g600);padding:1px 7px;border-radius:10px;margin-right:6px">ใบที่ ${p.permitNo}</span>` : '';
-    const billBadge = p.billReceived===false&&p.status==='approved'
+    const billBadge = (p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved'
       ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
       : p.billReceived===true && p.billNoFuel
         ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
@@ -2804,7 +2805,7 @@ function renderUcPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p.billReceived===false&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
+          ${(p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
           ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
@@ -4912,7 +4913,7 @@ function renderPermitList(){
     const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
     const link=location.origin+location.pathname+'?approve='+p.id;
     const permitNoLabel = p.permitNo ? `<span style="font-size:11px;background:var(--g200);color:var(--g600);padding:1px 7px;border-radius:10px;margin-right:6px">ใบที่ ${p.permitNo}</span>` : '';
-    const billBadge = p.billReceived===false&&p.status==='approved'
+    const billBadge = (p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved'
       ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
       : p.billReceived===true && p.billNoFuel
         ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
@@ -4931,7 +4932,7 @@ function renderPermitList(){
         <div style="display:flex;flex-direction:column;gap:6px">
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
-          ${p.billReceived===false&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
+          ${(p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
           ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
