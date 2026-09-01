@@ -1191,18 +1191,9 @@ async function _smartPull(sinceTs){
         fbStaff = []; fbConfig = null;
         console.log(`📥 changedIds pull: ${JSON.stringify(Object.fromEntries(Object.entries(cids).map(([k,v])=>[k,v.length])))}`);
       } else {
-        // Fallback: WHERE query (กรณีไม่มี changedIds เช่น polling หรือ doc เก่า)
-        const queryTs = sinceTs || new Date(0).toISOString();
-        [fbBookings, fbPermits, fbFcBk, fbFc] = await Promise.all([
-          _fbDb.collection('bookings').where('updatedAt','>',queryTs).get()
-            .then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
-          _fbDb.collection('permits').where('updatedAt','>',queryTs).get()
-            .then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
-          _fbDb.collection('fuelCardBookings').where('updatedAt','>',queryTs).get()
-            .then(s=>s.docs.map(d=>d.data())),
-          _fbDb.collection('fuelCards').where('updatedAt','>',queryTs).get()
-            .then(s=>s.docs.map(d=>d.data()))
-        ]);
+        // Fallback: ไม่มี changedIds (เช่น polling) — ข้าม WHERE query เพราะกิน reads มาก
+        // รอ full pull รอบถัดไป (30 นาที) จะ sync ทุกอย่างให้ครบ
+        fbBookings = []; fbPermits = []; fbFcBk = []; fbFc = [];
         fbCars = []; fbStaff = []; fbConfig = null;
       }
     }
