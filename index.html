@@ -3454,11 +3454,14 @@ function autoCleanupOldFcBookings(){
     (b.status==='cancelled'||b.status==='returned') && b.startDt && new Date(b.startDt) < cutoff
   );
   if(!toRemove.length) return;
-  // Archive ก่อนลบ
   const now = new Date().toISOString();
-  toRemove.forEach(b=>fbSetDoc('fcBookingArchive', b.id, {...b, archivedAt: now}));
+  // Archive ก่อน แล้วลบจาก Firebase ด้วย
+  toRemove.forEach(b=>{
+    fbSetDoc('fcBookingArchive', b.id, {...b, archivedAt: now});
+    fbDeleteDoc('fuelCardBookings', b.id);
+  });
   db.fuelCardBookings = db.fuelCardBookings.filter(b=>!toRemove.find(r=>r.id===b.id));
-  console.log(`🧹 Auto-cleanup การ์ด: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ (สำรองไว้ใน Archive แล้ว)`);
+  console.log(`🧹 Auto-cleanup การ์ด: ลบรายการเก่าเกิน ${CLEANUP_DAYS} วัน จำนวน ${toRemove.length} รายการ`);
   syncNow();
 }
 
