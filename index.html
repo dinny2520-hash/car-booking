@@ -3335,9 +3335,23 @@ function _pushToFirebase(){
   const changedFc = _getChanged(db.fuelCards||[], 'fuelCards');
   const changedCars = _getChanged(db.cars||[], 'cars');
 
-  // ลบ deleted items ออกจาก Firebase
-  deletedPermits.forEach(id=>{ fbDeleteDoc('permits', id); if(_lastPushed['permits']) delete _lastPushed['permits'][id]; });
-  deletedBookings.forEach(id=>{ fbDeleteDoc('bookings', id); if(_lastPushed['bookings']) delete _lastPushed['bookings'][id]; });
+  // ลบ deleted items ออกจาก Firebase — เฉพาะที่ยังไม่เคยลบ (กัน delete ซ้ำทุกรอบ)
+  if(!_lastPushed['_deletedPermits']) _lastPushed['_deletedPermits'] = new Set();
+  if(!_lastPushed['_deletedBookings']) _lastPushed['_deletedBookings'] = new Set();
+  deletedPermits.forEach(id=>{
+    if(!_lastPushed['_deletedPermits'].has(id)){
+      fbDeleteDoc('permits', id);
+      _lastPushed['_deletedPermits'].add(id);
+      if(_lastPushed['permits']) delete _lastPushed['permits'][id];
+    }
+  });
+  deletedBookings.forEach(id=>{
+    if(!_lastPushed['_deletedBookings'].has(id)){
+      fbDeleteDoc('bookings', id);
+      _lastPushed['_deletedBookings'].add(id);
+      if(_lastPushed['bookings']) delete _lastPushed['bookings'][id];
+    }
+  });
 
   const ops = [];
   changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
