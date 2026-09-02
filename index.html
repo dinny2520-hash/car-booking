@@ -1861,12 +1861,50 @@ function submitStep1(){
   }
   if(pin.length!==4){errEl.textContent='กรุณากรอก PIN ให้ครบ 4 หลัก';errEl.style.display='flex';return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
+
   b.returnStep='pending';
   b.mileageIn=Number(mileageIn);
-  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  closeModal('modal-step1-return');
-  renderReturnList();
-  alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
+
+  // บันทึก local ทันที
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+
+  // แสดง loading กัน user ปิดแอปก่อน push เสร็จ
+  const btn = document.querySelector('#modal-step1-return .btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ กำลังบันทึก...'; }
+
+  // Force push ตรงๆ ขึ้น Firebase ทันที ไม่รอ _getChanged
+  if(_fbReady){
+    fbSetDoc('bookings', b.id, {...b, updatedAt: new Date().toISOString()})
+      .then(()=>{
+        // push lastUpdate แจ้งทุกเครื่อง
+        const cids = {bookings:[b.id]};
+        _fbDb.collection('config').doc('lastUpdate').set({
+          updatedAt: new Date().toISOString(), changedIds: cids
+        });
+        closeModal('modal-step1-return');
+        renderReturnList();
+        alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
+      })
+      .catch(()=>{
+        // push ไม่สำเร็จ — retry และแจ้ง user
+        if(btn){ btn.disabled=false; btn.textContent='📋 ยืนยัน'; }
+        alert('⚠️ เครือข่ายมีปัญหา กรุณากดยืนยันอีกครั้ง หรือตรวจสอบสัญญาณ');
+        b.returnStep=null; b.mileageIn=null;
+        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      });
+  } else {
+    // Firebase ไม่พร้อม — บันทึก local และ queue
+    syncNow(()=>{
+      closeModal('modal-step1-return');
+      renderReturnList();
+      alert('✅ แจ้งคืนรถสำเร็จ! กรุณาส่งกุญแจให้เจ้าหน้าที่เพื่อยืนยันขั้นตอนที่ 2');
+    }, ()=>{
+      if(btn){ btn.disabled=false; btn.textContent='📋 ยืนยัน'; }
+      alert('⚠️ เครือข่ายมีปัญหา กรุณากดยืนยันอีกครั้ง');
+      b.returnStep=null; b.mileageIn=null;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    });
+  }
 }
 
 function updateMileageSummary(){
