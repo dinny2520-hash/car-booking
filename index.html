@@ -1546,10 +1546,11 @@ function submitBooking(){
               pin: latestBk.pin,
               dest: latestBk.dest,
               bookingReason: latestBk.reason,
-              carId: latestBk.carId
+              carId: latestBk.carId,
+              bookingId: latestBk.id  // link กับการ์ดน้ำมัน
             };
             window._pendingFcAutoFill = afData;
-            window._pendingFcAutoFillCar = afData; // ใช้ใน submitFcBooking เพื่อ auto-fill permit
+            window._pendingFcAutoFillCar = afData;
           }
         }, 300);
       } else {
@@ -1627,8 +1628,10 @@ function confirmCancelUser(){
   if(!b){return;}
   if(pin!==b.pin){errEl.textContent='รหัส PIN ไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='user';
+  // ยกเลิกการ์ดน้ำมันที่ผูกอยู่ด้วย
+  _cancelLinkedFcBookings(b.id);
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  closeModal('modal-cancel-user');renderHistory();renderCars();
+  closeModal('modal-cancel-user');renderHistory();renderCars();renderFuelCards();
   alert('✅ ยกเลิกการจองสำเร็จ');
 }
 
@@ -1643,10 +1646,28 @@ function confirmCancelAdmin(){
   const errEl=document.getElementById('cancel-admin-err');
   if(pass!==db.adminPass){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===cancelBookingId);
-  if(b){b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='admin';}
+  if(b){
+    b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='admin';
+    // ยกเลิกการ์ดน้ำมันที่ผูกอยู่ด้วย
+    _cancelLinkedFcBookings(b.id);
+  }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  closeModal('modal-cancel-admin');renderHistory();renderCars();
+  closeModal('modal-cancel-admin');renderHistory();renderCars();renderFuelCards();
   alert('✅ แอดมินยกเลิกการจองสำเร็จ');
+}
+
+function _cancelLinkedFcBookings(bookingId){
+  // ยกเลิก fuelCardBookings ทั้งหมดที่ผูกกับ booking นี้
+  const linked = (db.fuelCardBookings||[]).filter(fc=>
+    fc.linkedBookingId === bookingId && fc.status !== 'returned' && fc.status !== 'cancelled'
+  );
+  if(!linked.length) return;
+  linked.forEach(fc=>{
+    fc.status = 'cancelled';
+    fc.cancelledAt = nowISO();
+    fc.cancelledBy = 'auto-cancel';
+  });
+  console.log(`🚫 ยกเลิกการ์ดน้ำมัน ${linked.length} รายการที่ผูกกับ booking นี้`);
 }
 
 // ---- RETURN (2 ขั้นตอน) ----
@@ -3720,6 +3741,8 @@ function submitFcBooking(){
   const fcName=fc.name;
   // ดึงข้อมูลจาก _pendingFcAutoFill ถ้ามาจากรถทดลองขับ
   const _af = window._pendingFcAutoFillCar||null;
+  // เก็บ linkedBookingId ถ้าจองการ์ดพ่วงกับรถทดลองขับ
+  if(_af && _af.bookingId) bk.linkedBookingId = _af.bookingId;
   closeModal('modal-fc-book');
   selectedFcId=null;
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
