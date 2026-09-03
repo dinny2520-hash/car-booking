@@ -1129,7 +1129,7 @@ let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
 const MIN_PULL_INTERVAL = 1000; // pull ได้ทุก 1 วินาที
-const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที (cars/staff เปลี่ยนน้อย)
+const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที
 
 async function _smartPull(sinceTs){
   const now = Date.now();
@@ -3529,11 +3529,37 @@ function maybeRunCleanup(){
   try{
     const last = localStorage.getItem(CLEANUP_CHECK_KEY);
     const today = new Date().toISOString().slice(0,10);
-    if(last === today) return; // รันไปแล้ววันนี้
+    if(last === today) return;
     localStorage.setItem(CLEANUP_CHECK_KEY, today);
   }catch(e){}
   autoCleanupOldBookings();
   autoCleanupOldFcBookings();
+  autoArchiveOldPermits();
+}
+
+function autoArchiveOldPermits(){
+  // Archive ใบ permit ที่อนุมัติ/ปฏิเสธแล้ว และเก่ากว่า 60 วัน ออกจาก collection หลัก
+  // กัน: ใบที่ยังรอบิลอยู่ (billReceived===false) ไม่ archive
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 60);
+  const toArchive = (db.permits||[]).filter(p=>
+    (p.status==='approved'||p.status==='rejected') &&
+    p.createdAt && new Date(p.createdAt) < cutoff &&
+    p.billReceived !== false
+  );
+  if(!toArchive.length) return;
+  const now = new Date().toISOString();
+  toArchive.forEach(p=>{
+    if(_fbReady){
+      fbSetDoc('permitArchive', p.id, {...p, archivedAt: now});
+      fbDeleteDoc('permits', p.id);
+    }
+  });
+  db.permits = (db.permits||[]).filter(p=>!toArchive.find(a=>a.id===p.id));
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  console.log(`🧹 Auto-archive permits: ${toArchive.length} ใบที่เก่าเกิน 60 วัน`);
+  renderPermitList();
+  renderUcPermitList();
 }
 
 
@@ -5106,10 +5132,17 @@ async function loadPermitArchive(){
 
     listEl.innerHTML = filtered.map(p=>{
       const archivedDate = p.archivedAt ? new Date(p.archivedAt).toLocaleString('th-TH') : '-';
+      const billBadge = p.billReceived===true && p.billNoFuel
+        ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
+        : p.billReceived===true
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          : p.billReceived===false && Number(p.fuel)>0
+            ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
+            : '';
       return `<div class="card" style="border-left:4px solid var(--danger);margin-bottom:10px">
         <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:200px">
-            <div style="font-weight:700;font-size:15px">${p.name||'-'}</div>
+            <div style="font-weight:700;font-size:15px">${p.name||'-'} ${billBadge}</div>
             <div style="font-size:13px;color:var(--g600);margin-top:4px">
               <div>📅 ${p.date||'-'} &nbsp;|&nbsp; 🚗 ${p.car||'-'} &nbsp;|&nbsp; ⛽ ${p.fuel||0} บาท</div>
               <div>📍 ${p.location||'-'} &nbsp;|&nbsp; 📝 ${p.detail||'-'}</div>
