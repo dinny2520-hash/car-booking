@@ -3882,13 +3882,21 @@ function submitFcStep1(){
   b.fueled=_fcFueled;
   if(_fcFueled){
     b.invTrace=inv;
-    // บันทึกยอดจริงที่ใช้ (จะหักการ์ดตอน step2)
     if(actualAmount!==null) b.actualAmount=actualAmount;
   } else {
     b.noFuelReason=noReason;
-    // ไม่ได้เติม — ไม่มีอะไรต้องคืน เพราะยังไม่ได้หักการ์ดตอนจอง
   }
-  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  // Force push ตรงๆ ขึ้น Firebase ทันที
+  const _now3 = new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt: _now3}).then(()=>{
+      _fbDb.collection('config').doc('lastUpdate').set({
+        updatedAt: _now3, changedIds: {fuelCardBookings:[b.id]}
+      });
+    });
+  } else {
+    syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  }
   closeModal('modal-fc-step1');
   renderFcReturnList();
   alert('✅ แจ้งคืนการ์ดสำเร็จ กรุณาส่งการ์ดให้เจ้าหน้าที่');
@@ -3929,7 +3937,21 @@ function submitFcStep2(){
     b.valueAfterDeduct = fc.value;
     fc.lastUsed = nowISO();
   }
-  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  // Force push ตรงๆ ขึ้น Firebase ทันที
+  const _now = new Date().toISOString();
+  if(_fbReady){
+    Promise.all([
+      fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt: _now}),
+      fc ? fbSetDoc('fuelCards', fc.id, {...fc, updatedAt: _now}) : Promise.resolve()
+    ]).then(()=>{
+      _fbDb.collection('config').doc('lastUpdate').set({
+        updatedAt: _now,
+        changedIds: {fuelCardBookings:[b.id], fuelCards: fc?[fc.id]:[]}
+      });
+    });
+  } else {
+    syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  }
   closeModal('modal-fc-step2');
   renderFcReturnList();
   renderFuelCards();
@@ -3985,9 +4007,18 @@ function submitFcAdminReturn(){
     if(adminActual!==null) b.actualAmount=adminActual;
   } else {
     b.noFuelReason=adminNoReason;
-    // ไม่ได้เติม — ไม่มีอะไรต้องคืน
   }
-  syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  // Force push ตรงๆ ขึ้น Firebase ทันที
+  const _now2 = new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt: _now2}).then(()=>{
+      _fbDb.collection('config').doc('lastUpdate').set({
+        updatedAt: _now2, changedIds: {fuelCardBookings:[b.id]}
+      });
+    });
+  } else {
+    syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
+  }
   closeModal('modal-fc-admin-return');
   renderFcReturnList();
   renderFuelCards();
