@@ -1116,7 +1116,8 @@ function startRealtimeSync(){
       if(serverTs && serverTs !== _lastServerTs){
         const prevTs = _lastServerTs;
         _lastServerTs = serverTs;
-        _lastChangedIds = {}; // polling ไม่มี changedIds → ใช้ WHERE query fallback
+        // ใช้ changedIds จาก lastUpdate ถ้ามี กัน pull ทั้ง collection
+        _lastChangedIds = data?.changedIds || {};
         _smartPull(prevTs);
       }
     }catch(e){}
