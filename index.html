@@ -1127,7 +1127,15 @@ let _lastServerTs = null;
 let _lastChangedIds = {}; // เก็บ changedIds จาก lastUpdate ล่าสุด
 let _isPulling = false;
 let _lastPullTime = 0;
-let _lastFullPullTime = 0; // เวลาที่ pull ทั้ง collection ครั้งล่าสุด
+let _lastFullPullTime = 0;
+// ถ้า reload จาก checkAppVersion ให้ใช้ timestamp เดิม กัน full pull ทันที
+try{
+  const saved = localStorage.getItem('_lastFullPull');
+  if(saved && (Date.now()-Number(saved)) < 5*60*1000){
+    _lastFullPullTime = Number(saved);
+    localStorage.removeItem('_lastFullPull');
+  }
+}catch(e){}
 const MIN_PULL_INTERVAL = 1000; // pull ได้ทุก 1 วินาที
 const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที
 
@@ -4746,6 +4754,8 @@ function checkAppVersion(){
       const match = html.match(/APP_VERSION = '([^']+)'/);
       if(match && match[1] !== APP_VERSION){
         console.log('🔄 พบเวอร์ชันใหม่ '+match[1]+' — กำลัง reload...');
+        // set timestamp ก่อน reload กัน full pull ทันทีหลัง reload
+        try{ localStorage.setItem('_lastFullPull', Date.now().toString()); }catch(e){}
         location.reload(true);
       }
     }).catch(()=>{});
@@ -4801,7 +4811,8 @@ let _visibilityPullTimer = null;
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     clearTimeout(_visibilityPullTimer);
-    _visibilityPullTimer = setTimeout(()=>_smartPull(), 1500);
+    // ส่ง _lastServerTs เพื่อให้เป็น incremental pull เสมอ ไม่ตก full pull
+    _visibilityPullTimer = setTimeout(()=>_smartPull(_lastServerTs), 1500);
   }
 });
 // focus debounce 30 วิ — กัน trigger ทุกครั้งที่คลิก
@@ -4812,7 +4823,7 @@ window.addEventListener('focus', ()=>{
   if(now - _lastFocusPull < 30000) return;
   _lastFocusPull = now;
   clearTimeout(_focusPullTimer);
-  _focusPullTimer = setTimeout(()=>_smartPull(), 1500);
+  _focusPullTimer = setTimeout(()=>_smartPull(_lastServerTs), 1500);
 });
 setTimeout(maybeRunCleanup, 3000);
 
