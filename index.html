@@ -1294,9 +1294,8 @@ async function _smartPull(sinceTs){
     updateSync(false, true);
     checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
     renderCars(); renderHistory(); renderFuelCards();
+    renderFcReturnList(); renderFcHistory();
     renderUcPermitList(); renderPermitList();
-    // renderReturnList เสมอ ไม่ว่า modal จะเปิดหรือไม่
-    // เพราะถ้าข้ามตอน modal เปิด เครื่องอื่นที่ push การเปลี่ยนแปลงมาจะไม่เห็นผล
     renderReturnList();
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
   } catch(e){
