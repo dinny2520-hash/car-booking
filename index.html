@@ -5303,6 +5303,7 @@ function submitApproval(){
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
   document.querySelector('#page-approve .btn-success').disabled=true;
   document.querySelector('#page-approve .btn-danger').disabled=true;
+
   function showSuccess(){
     errEl.style.display='none';
     history.replaceState({},'',location.pathname);
@@ -5315,14 +5316,28 @@ function submitApproval(){
     document.querySelector('#page-approve .btn-success').style.display='none';
     document.querySelector('#page-approve .btn-danger').style.display='none';
   }
-  // sync ข้อมูลหลักก่อน
-  syncViaGet({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()},
-    function(){
+
+  // Force push permit ขึ้น Firebase ทันที (ไม่รอ _getChanged กัน miss)
+  if(_fbReady){
+    Promise.all([
+      fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()}),
+      fbSetDoc('signatures', id+'_mgr', {id: id+'_mgr', sig})
+    ]).then(()=>{
+      // notify ทุกเครื่องผ่าน lastUpdate
+      _fbDb.collection('config').doc('lastUpdate').set({
+        updatedAt: new Date().toISOString(),
+        changedIds: {permits: [p.id]}
+      });
       showSuccess();
-      // แล้วค่อย sync ลายเซ็นแยกต่างหาก
+    }).catch(()=>{
+      // retry ผ่าน syncNow
       saveSigToSheet(id, sig);
-    },
-    showSuccess);
+      syncViaGet({}, showSuccess, showSuccess);
+    });
+  } else {
+    saveSigToSheet(id, sig);
+    syncViaGet({}, showSuccess, showSuccess);
+  }
 }
 
 function submitReject(){
@@ -5331,8 +5346,17 @@ function submitReject(){
   if(!confirm('ยืนยันการไม่อนุมัติ?'))return;
   const p=db.permits.find(x=>x.id===id);
   if(p){p.status='rejected';p.approvedAt=new Date().toISOString();}
-  syncViaGet({cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()},
-    null, null);
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // Force push ขึ้น Firebase ทันที
+  if(_fbReady && p){
+    fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()});
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt: new Date().toISOString(),
+      changedIds: {permits: [p.id]}
+    });
+  } else {
+    syncNow();
+  }
   history.replaceState({},'',location.pathname);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-permit').classList.add('active');
