@@ -5443,6 +5443,7 @@ function openMoveMemoModal(p){
   document.getElementById('mm-engine').value = '';
   document.getElementById('mm-chassis').value = '';
   document.getElementById('mm-branch').value = p.location || '';
+  document.getElementById('mm-downpayment').value = '';
   document.getElementById('mm-manager').value = '';
   document.getElementById('mm-manager-title').value = '';
   document.getElementById('mm-err').style.display = 'none';
@@ -5459,6 +5460,7 @@ function printMoveMemo(){
   const chassis = document.getElementById('mm-chassis').value.trim();
   const deliveryDate = document.getElementById('mm-delivery-date').value;
   const branch = document.getElementById('mm-branch').value.trim();
+  const downpayment = document.getElementById('mm-downpayment').value.trim();
   const manager = document.getElementById('mm-manager').value.trim();
   const managerTitle = document.getElementById('mm-manager-title').value.trim();
   const errEl = document.getElementById('mm-err');
@@ -5468,7 +5470,7 @@ function printMoveMemo(){
   errEl.style.display='none';
   closeModal('modal-move-memo');
 
-  p._moveMemoData = { customer, model, color, engine, chassis, deliveryDate, branch, manager, managerTitle };
+  p._moveMemoData = { customer, model, color, engine, chassis, deliveryDate, branch, downpayment, manager, managerTitle };
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   if(_fbReady) fbSetDoc('permits', p.id, p);
   syncNow();
@@ -5478,7 +5480,7 @@ function printMoveMemo(){
   const cache = getSigCache();
   const gmSig = cache[gmKey] || null;
 
-  _renderMoveMemoPage(p, { customer, model, color, engine, chassis, deliveryDate, branch, manager, managerTitle, mgrSig, gmSig });
+  _renderMoveMemoPage(p, { customer, model, color, engine, chassis, deliveryDate, branch, downpayment, manager, managerTitle, mgrSig, gmSig });
 }
 
 function _renderMoveMemoPage(p, d){
@@ -5503,6 +5505,10 @@ function _renderMoveMemoPage(p, d){
 
   const gmApproveUrl = location.origin + location.pathname + '?approveMemo2=' + p.id;
 
+  const dpText = d.downpayment && Number(d.downpayment) > 0
+    ? `จำนวน ${Number(d.downpayment).toLocaleString('th-TH')} บาท`
+    : '....';
+
   const memoHtml = `
 <div style="background:#fff;width:210mm;padding:16mm 20mm;font-family:Sarabun,sans-serif;font-size:13pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto;line-height:1.8">
   <div style="text-align:right;margin-bottom:4mm">วันที่ ${permitDate}</div>
@@ -5511,7 +5517,7 @@ function _renderMoveMemoPage(p, d){
   <div style="text-indent:15mm;margin-bottom:4mm">
     เนื่องจากลูกค้า ${d.customer} ได้ซื้อรถรุ่น ${modelFull}${engineChassis ? ` ${engineChassis}` : ''}
     มีความประสงค์ให้ทาง SC นำรถไปส่งมอบที่ ${d.branch} ในวันที่ ${fmtDelivery}
-    และลูกค้าสะดวกชำระเงินดาวน์ในวันรับรถโดยขอดูตัวรถก่อน ในวันส่งมอบ
+    และลูกค้าสะดวกชำระเงินดาวน์${dpText}ในวันรับรถ โดยขอดูตัวรถก่อน ในวันส่งมอบ
   </div>
   <div style="text-indent:15mm;margin-bottom:12mm">จึงเรียนมาเพื่อทราบและโปรดพิจารณาอนุมัติ</div>
 
@@ -5962,6 +5968,9 @@ function renderPrintPage(p){
     </div>
     <div class="form-row"><label>สาขา/สถานที่ที่ส่งมอบ *</label>
       <input type="text" id="mm-branch" placeholder="เช่น โชว์รูมอีซูซุสะพานสี่">
+    </div>
+    <div class="form-row"><label>จำนวนเงินดาวน์ (บาท)</label>
+      <input type="number" id="mm-downpayment" placeholder="เช่น 50000" inputmode="numeric" min="0">
     </div>
     <div class="form-row"><label>ชื่อผู้จัดการ (อนุมัติ) *</label>
       <input type="text" id="mm-manager" placeholder="เช่น คุณอัมพา ทรงสง่า">
