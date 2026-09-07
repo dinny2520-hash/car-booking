@@ -2658,7 +2658,7 @@ function exportFuelReport(){
       p.car||'-', Number(p.fuel)||0,
       m.mileageOut, m.mileageIn, m.distance,
       p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-      p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?`รับบิล ฿${Number(p.billActualAmount).toLocaleString('th-TH')}`:''
+      p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
     ]);
   });
   const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
@@ -2675,7 +2675,7 @@ function exportFuelReport(){
       rows.push([p.date, p.name||'-', p.dept||'-', p.location||'-', p.reason||'-', p.detail||'-', p.car||'-',
         Number(p.fuel)||0, m.mileageOut, m.mileageIn, m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?`รับบิล ฿${Number(p.billActualAmount).toLocaleString('th-TH')}`:''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
       ]);
       deptTotal += Number(p.fuel)||0;
       deptDist += typeof m.distance==='number' ? m.distance : 0;
@@ -2699,7 +2699,7 @@ function exportFuelReport(){
       const m=getMileage(p);
       cRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?`รับบิล ฿${Number(p.billActualAmount).toLocaleString('th-TH')}`:''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
       ]);
     });
     const cWs=XLSX.utils.aoa_to_sheet(cRows);
@@ -2713,7 +2713,7 @@ function exportFuelReport(){
     cardPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
       dRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?`รับบิล ฿${Number(p.billActualAmount).toLocaleString('th-TH')}`:''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
       ]);
     });
     const dWs=XLSX.utils.aoa_to_sheet(dRows);
