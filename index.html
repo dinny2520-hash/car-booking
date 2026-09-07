@@ -5877,7 +5877,7 @@ function renderPrintPage(p){
     +'<tr><td style="width:42mm;padding:2mm 0"><b>ชื่อพนักงาน:</b></td><td style="padding:2mm 3mm">'+p.name+'</td><td style="width:22mm;padding:2mm 0"><b>แผนก:</b></td><td style="padding:2mm 3mm">'+p.dept+'</td></tr>'
     +'<tr><td style="padding:2mm 0"><b>สถานที่ปฏิบัติงาน:</b></td><td style="padding:2mm 3mm">'+p.location+'</td><td style="padding:2mm 0"><b>เหตุผล:</b></td><td style="padding:2mm 3mm">'+p.reason+'</td></tr>'
     +'<tr><td style="padding:2mm 0"><b>รายละเอียด:</b></td><td colspan="3" style="padding:2mm 3mm">'+p.detail+'</td></tr>'
-    +'<tr><td style="padding:2mm 0"><b>ทะเบียนรถ:</b></td><td style="padding:2mm 3mm">'+p.car+'&nbsp;&nbsp;ประเภทรถ:'+(p.cartype||'0')+'</td><td style="padding:2mm 0"><b>จำนวนเงิน:</b></td><td style="padding:2mm 3mm">'+p.fuel+'&nbsp;&nbsp;บาท'+(Number(p.fuel)>0?'<div style="font-size:8pt;color:#c0392b;margin-top:1mm">*กรณีเติมน้ำมัน กรุณานำบิลไปคืนภายในไม่เกิน 3 วัน*</div>':'')+'</td></tr>'
+    +'<tr><td style="padding:2mm 0"><b>ทะเบียนรถ:</b></td><td style="padding:2mm 3mm">'+p.car+'&nbsp;&nbsp;ประเภทรถ:'+(p.cartype||'0')+'</td><td style="padding:2mm 0"><b>จำนวนเงิน:</b></td><td style="padding:2mm 3mm">'+p.fuel+'&nbsp;&nbsp;บาท'+(Number(p.fuel)>0?'<div style="font-size:8pt;color:#c0392b;margin-top:1mm">*กรณีเติมน้ำมัน กรุณานำบิลส่งคืน HR ภายในไม่เกิน 3 วัน*</div>':'')+'</td></tr>'
     +'</table>'
     +'<table style="width:100%;border-collapse:collapse;border:1.5px solid #333;font-size:10pt;table-layout:fixed">'
     +'<colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>'
