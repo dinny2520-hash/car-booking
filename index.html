@@ -4088,6 +4088,7 @@ function removeFuelCard(id){
   db.fuelCards=(db.fuelCards||[]).filter(f=>f.id!==id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(_fbReady) fbDeleteDoc('fuelCards', id);
   syncNow();
   renderFcSettings();renderFuelCards();
 }
