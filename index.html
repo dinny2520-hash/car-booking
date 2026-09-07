@@ -1861,8 +1861,19 @@ function openStep1Modal(bkId){
 
   document.getElementById('s1-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br>⏰ กำหนดคืน: ${fmt(b.endDt)}`;
   document.getElementById('s1-mileage-in').value='';
-  document.getElementById('s1-mileage-out-display').textContent =
-    (car&&car.mileage!=null) ? ('เลขไมล์ล่าสุดของรถ: '+Number(car.mileage).toLocaleString('th-TH')+' กม.') : '';
+  // เช็คว่ามี booking อื่นของรถคันนี้ที่รอรับคืนอยู่ไหม
+  const pendingReturnS1 = db.bookings.find(x=>
+    x.carId===b.carId && x.id!==bkId &&
+    x.returnStep==='pending' && x.mileageIn!=null
+  );
+  const refMileage = pendingReturnS1 ? pendingReturnS1.mileageIn : (car&&car.mileage!=null ? car.mileage : null);
+  const refLabel = pendingReturnS1
+    ? `เลขไมล์จากการคืนของ ${pendingReturnS1.name}: ${Number(refMileage).toLocaleString('th-TH')} กม.`
+    : (refMileage!=null ? `เลขไมล์ล่าสุดของรถ: ${Number(refMileage).toLocaleString('th-TH')} กม.` : '');
+
+  document.getElementById('s1-mileage-out-display').textContent = refLabel;
+  // เก็บ refMileage ไว้ใช้ตอน validate
+  document.getElementById('modal-step1-return').dataset.refMileage = refMileage!=null ? refMileage : '';
   clearPins('s1pin');
   document.getElementById('s1-err').style.display='none';
   openModal('modal-step1-return');
@@ -1878,12 +1889,14 @@ function submitStep1(){
   if(!mileageIn){errEl.textContent='กรุณากรอกเลขไมล์ขาเข้า (ปัจจุบัน)';errEl.style.display='flex';return;}
   if(!/^\d+$/.test(mileageIn)){errEl.textContent='เลขไมล์ต้องเป็นตัวเลขเท่านั้น';errEl.style.display='flex';return;}
   const car=db.cars.find(c=>c.id===b.carId);
-  if(car&&car.mileage!=null&&Number(mileageIn)<Number(car.mileage)){
-    errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่าเลขไมล์ล่าสุดของรถ ('+Number(car.mileage).toLocaleString('th-TH')+' กม.)';
+  const _refMileage = document.getElementById('modal-step1-return').dataset.refMileage;
+  const refMileageVal = _refMileage!=='' ? Number(_refMileage) : (car&&car.mileage!=null ? car.mileage : null);
+  if(refMileageVal!=null&&Number(mileageIn)<refMileageVal){
+    errEl.textContent='เลขไมล์ขาเข้าต้องไม่น้อยกว่า '+Number(refMileageVal).toLocaleString('th-TH')+' กม.';
     errEl.style.display='flex';return;
   }
-  if(car&&car.mileage!=null){
-    const diff = Number(mileageIn) - Number(car.mileage);
+  if(refMileageVal!=null){
+    const diff = Number(mileageIn) - refMileageVal;
     if(diff >= 1000){
       if(!confirm(`⚠️ ระยะทางที่ใช้งาน: ${diff.toLocaleString('th-TH')} กิโลเมตร\n\nยืนยันระยะทางที่ใช้งานตามนี้จริงหรือไม่?`)) return;
     }
@@ -1966,7 +1979,23 @@ async function openStep2Modal(bkId){
   }
 
   document.getElementById('s2-car-info').innerHTML=`รถ <b>${car?car.plate:'?'}</b><br>👤 ${b.name} &nbsp;|&nbsp; 📍 ${b.dest}<br><span style="color:var(--success);font-weight:600">✅ ผู้ยืมยืนยัน PIN แล้ว</span>`;
-  document.getElementById('s2-mileage-out').value = (car&&car.mileage!=null) ? car.mileage : '';
+
+  // เช็คว่ามี booking อื่นของรถคันนี้ที่รอรับคืน (returnStep==='pending') อยู่ไหม
+  // ถ้ามี ให้ใช้ mileageIn ของ booking นั้นเป็นไมล์ขาออกแทน car.mileage
+  const pendingReturn = db.bookings.find(x=>
+    x.carId===b.carId && x.id!==b.id &&
+    x.returnStep==='pending' && x.mileageIn!=null
+  );
+  const mileageOutValue = pendingReturn
+    ? pendingReturn.mileageIn
+    : (car&&car.mileage!=null ? car.mileage : '');
+
+  if(pendingReturn){
+    document.getElementById('s2-car-info').innerHTML +=
+      `<div style="margin-top:4px;font-size:12px;color:var(--warning)">⚠️ ดึงไมล์จากการคืนของ ${pendingReturn.name} ที่รอรับอยู่</div>`;
+  }
+
+  document.getElementById('s2-mileage-out').value = mileageOutValue;
   const mIn = document.getElementById('s2-mileage-in');
   if(b.mileageIn!=null){
     mIn.value = b.mileageIn;
