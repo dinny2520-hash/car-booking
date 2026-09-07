@@ -2967,6 +2967,10 @@ function renderUcPermitList(){
         </div>
       </div>
     </div>`;
+  }).join('');
+}
+
+function goToPermitFromBooking(){
   closeModal('modal-success');
   // ดึงข้อมูลจากการจองล่าสุด
   const bk = db.bookings[0];
