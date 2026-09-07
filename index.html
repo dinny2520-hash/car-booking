@@ -5867,7 +5867,7 @@ function renderPrintPage(p){
     : '';
   const form = (footer) =>
     '<div id="print-card" style="background:#fff;width:210mm;padding:14mm 18mm;font-family:Sarabun,sans-serif;font-size:12pt;box-sizing:border-box;border:1px solid #ddd;margin:0 auto">'
-    +'<div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;margin-bottom:2mm"><span>เลขที่ใบ: <b style="color:#333">'+(p.permitNo||'-')+'</b></span><span>HR-F001</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;margin-bottom:2mm"><span>HR-F001</span><span>เลขที่ใบ: <b style="color:#333">'+(p.permitNo||'-')+'</b></span></div>'
     +'<div style="display:flex;align-items:center;margin-bottom:3mm;gap:10px">'
     +'<img src="'+logoSrc+'" style="height:50px;flex-shrink:0">'
     +'<div style="flex:1;text-align:center;font-size:14pt;font-weight:700;line-height:1.3">แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>'
@@ -5877,7 +5877,7 @@ function renderPrintPage(p){
     +'<tr><td style="width:42mm;padding:2mm 0"><b>ชื่อพนักงาน:</b></td><td style="padding:2mm 3mm">'+p.name+'</td><td style="width:22mm;padding:2mm 0"><b>แผนก:</b></td><td style="padding:2mm 3mm">'+p.dept+'</td></tr>'
     +'<tr><td style="padding:2mm 0"><b>สถานที่ปฏิบัติงาน:</b></td><td style="padding:2mm 3mm">'+p.location+'</td><td style="padding:2mm 0"><b>เหตุผล:</b></td><td style="padding:2mm 3mm">'+p.reason+'</td></tr>'
     +'<tr><td style="padding:2mm 0"><b>รายละเอียด:</b></td><td colspan="3" style="padding:2mm 3mm">'+p.detail+'</td></tr>'
-    +'<tr><td style="padding:2mm 0"><b>ทะเบียนรถ:</b></td><td style="padding:2mm 3mm">'+p.car+'&nbsp;&nbsp;ประเภทรถ:'+(p.cartype||'0')+'</td><td style="padding:2mm 0"><b>จำนวนเงิน:</b></td><td style="padding:2mm 3mm">'+p.fuel+'&nbsp;&nbsp;บาท</td></tr>'
+    +'<tr><td style="padding:2mm 0"><b>ทะเบียนรถ:</b></td><td style="padding:2mm 3mm">'+p.car+'&nbsp;&nbsp;ประเภทรถ:'+(p.cartype||'0')+'</td><td style="padding:2mm 0"><b>จำนวนเงิน:</b></td><td style="padding:2mm 3mm">'+p.fuel+'&nbsp;&nbsp;บาท'+(Number(p.fuel)>0?'<div style="font-size:8pt;color:#c0392b;margin-top:1mm">*กรณีเติมน้ำมัน กรุณานำบิลไปคืนภายในไม่เกิน 3 วัน*</div>':'')+'</td></tr>'
     +'</table>'
     +'<table style="width:100%;border-collapse:collapse;border:1.5px solid #333;font-size:10pt;table-layout:fixed">'
     +'<colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>'
