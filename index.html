@@ -5237,6 +5237,7 @@ function renderPermitList(){
           ${p.status==='pending'?`<button class="btn btn-outline btn-sm" onclick="copyLink('${link}')">📋 คัดลอกลิงก์</button>`:''}
           ${p.status==='approved'?`<button class="btn btn-primary btn-sm" onclick="showPrintPage('${p.id}')">🖨️ พิมพ์ PDF</button>`:''}
           ${(p.billReceived===false||((p.billReceived===undefined||p.billReceived===null)&&Number(p.fuel)>0))&&p.status==='approved'&&adminLoggedIn?`<button class="btn btn-success btn-sm" onclick="toggleBillReceived('${p.id}')">✅ รับบิลแล้ว</button>`:''}
+          ${adminLoggedIn?`<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="adminEditPermitFuel('${p.id}')">⛽ แก้ยอดน้ำมัน</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
           ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
@@ -5244,6 +5245,38 @@ function renderPermitList(){
       </div>
     </div>`;
   }).join('');
+}
+
+function adminEditPermitFuel(permitId){
+  const p = db.permits.find(x=>x.id===permitId);
+  if(!p) return;
+  const newFuel = prompt(
+    `แก้ไขยอดน้ำมันของ ${p.name} (ใบที่ ${p.permitNo||'-'})\nยอดปัจจุบัน: ${p.fuel} บาท\n\nกรอกยอดใหม่:`,
+    p.fuel||'0'
+  );
+  if(newFuel === null) return;
+  if(!/^\d+(\.\d+)?$/.test(newFuel.trim())){ alert('กรุณากรอกตัวเลขเท่านั้น'); return; }
+  const oldFuel = Number(p.fuel)||0;
+  const newFuelNum = Number(newFuel.trim());
+  p.fuel = newFuelNum;
+  // ถ้าเดิม fuel=0 แต่แก้เป็นมีค่า → set billReceived = false เพื่อให้รับบิลได้
+  if(oldFuel === 0 && newFuelNum > 0 && p.billReceived === null){
+    p.billReceived = false;
+  }
+  // ถ้าแก้เป็น 0 → set billReceived = null
+  if(newFuelNum === 0){
+    p.billReceived = null;
+    p.billActualAmount = null;
+    p.billReceiptNo = null;
+    p.billNoFuel = null;
+  }
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(_fbReady) fbSetDoc('permits', p.id, {...p, updatedAt:new Date().toISOString()});
+  syncNow(()=>showSyncToast(true));
+  renderPermitList();
+  renderUcPermitList();
+  renderAdminBillPendingList();
+  alert(`✅ แก้ยอดน้ำมันเป็น ${newFuelNum} บาทแล้ว${newFuelNum>0&&oldFuel===0?' ปุ่มรับบิลจะโชว์แล้ว':''}`)
 }
 
 async function reprintFuelMemo(permitId){
