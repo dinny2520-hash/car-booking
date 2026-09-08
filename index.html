@@ -2650,15 +2650,16 @@ function exportFuelReport(){
   XLSX.utils.book_append_sheet(wb, plateWs, 'สรุปตามทะเบียน');
 
   // ชีตรายละเอียดทุกรายการ
-  const detailRows = [['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
+  const detailRows = [['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
   permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
     const m = getMileage(p);
     detailRows.push([
-      p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-', p.detail||'-',
+      p.permitNo||'-', p.date, p.dept||'-', p.name||'-', p.location||'-', p.reason||'-', p.detail||'-',
       p.car||'-', Number(p.fuel)||0,
       m.mileageOut, m.mileageIn, m.distance,
       p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-      p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
+      p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
+      p.billReceiptNo||''
     ]);
   });
   const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
@@ -2694,12 +2695,13 @@ function exportFuelReport(){
 
   // ชีตใบ permit แยกรถ
   if(carPermits.length){
-    const cRows=[['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
+    const cRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
     carPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
       const m=getMileage(p);
-      cRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,m.distance,
+      cRows.push([p.permitNo||'-',p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
+        p.billReceiptNo||''
       ]);
     });
     const cWs=XLSX.utils.aoa_to_sheet(cRows);
@@ -2709,11 +2711,12 @@ function exportFuelReport(){
 
   // ชีตใบ permit แยกการ์ดน้ำมัน
   if(cardPermits.length){
-    const dRows=[['วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','การ์ด/ทะเบียน','ค่าน้ำมัน (บาท)','สถานะ','หมายเหตุ']];
+    const dRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','การ์ด/ทะเบียน','ค่าน้ำมัน (บาท)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
     cardPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
-      dRows.push([p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,
+      dRows.push([p.permitNo||'-',p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
+        p.billReceiptNo||''
       ]);
     });
     const dWs=XLSX.utils.aoa_to_sheet(dRows);
@@ -2873,6 +2876,7 @@ function openBillModal(permitId){
   document.getElementById('bill-modal-info').innerHTML =
     `ใบที่ <b>${p.permitNo||'-'}</b> | ${p.name} | 📅 ${p.date}<br>⛽ ขอเบิก <b>${Number(p.fuel).toLocaleString('th-TH')} บาท</b>`;
   document.getElementById('bill-actual-amount').value = p.fuel || '';
+  document.getElementById('bill-receipt-no').value = '';
   document.getElementById('bill-modal-err').style.display = 'none';
   openModal('modal-bill-received');
 }
@@ -2880,6 +2884,7 @@ function openBillModal(permitId){
 function confirmBillReceived(fueled){
   const p = db.permits.find(x=>x.id===_billPermitId);
   if(!p) return;
+  const receiptNo = document.getElementById('bill-receipt-no').value.trim();
   if(fueled){
     const amt = document.getElementById('bill-actual-amount').value.trim();
     if(!amt || isNaN(amt) || Number(amt) < 0){
@@ -2891,11 +2896,13 @@ function confirmBillReceived(fueled){
     p.billActualAmount = Number(amt);
     p.billReceivedAt = new Date().toISOString();
     p.billNoFuel = false;
+    p.billReceiptNo = receiptNo || null;
   } else {
     p.billReceived = true;
     p.billNoFuel = true;
     p.billActualAmount = 0;
     p.billReceivedAt = new Date().toISOString();
+    p.billReceiptNo = null;
   }
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   if(_fbReady) fbSetDoc('permits', p.id, p);
@@ -2948,7 +2955,7 @@ function renderUcPermitList(){
       : p.billReceived===true && p.billNoFuel
         ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
         : p.billReceived===true
-          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}${p.billReceiptNo?' #'+p.billReceiptNo:''}</span>`
           : '';
     return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
@@ -5157,7 +5164,7 @@ function renderPermitList(){
       : p.billReceived===true && p.billNoFuel
         ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
         : p.billReceived===true
-          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}${p.billReceiptNo?' #'+p.billReceiptNo:''}</span>`
           : '';
     return `<div class="card" style="border-left:4px solid ${stColor};margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
@@ -5264,7 +5271,7 @@ async function loadPermitArchive(){
       const billBadge = p.billReceived===true && p.billNoFuel
         ? `<span style="font-size:11px;background:#f3f4f6;color:var(--g500);padding:1px 7px;border-radius:10px;margin-left:4px">❌ ไม่ได้เติม</span>`
         : p.billReceived===true
-          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}</span>`
+          ? `<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:10px;margin-left:4px">✅ รับบิล${p.billActualAmount!=null?' ฿'+Number(p.billActualAmount).toLocaleString('th-TH'):''}${p.billReceiptNo?' #'+p.billReceiptNo:''}</span>`
           : p.billReceived===false && Number(p.fuel)>0
             ? `<span style="font-size:11px;background:#fef3e2;color:var(--warning);padding:1px 7px;border-radius:10px;margin-left:4px">⚠️ รอบิล</span>`
             : '';
@@ -6168,6 +6175,10 @@ function renderPrintPage(p){
     <div class="form-row">
       <label>ยอดที่เติมจริง (บาท)</label>
       <input type="number" id="bill-actual-amount" placeholder="กรอกยอดจริงที่เติม" inputmode="numeric" min="0">
+    </div>
+    <div class="form-row">
+      <label>เลขที่บิลน้ำมัน (ปั๊ม)</label>
+      <input type="text" id="bill-receipt-no" placeholder="เช่น 0012345 หรือ INV-001">
     </div>
     <div id="bill-modal-err" class="alert alert-danger" style="display:none;margin-bottom:8px"></div>
     <div class="modal-actions">
