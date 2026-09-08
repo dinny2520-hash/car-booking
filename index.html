@@ -2774,47 +2774,91 @@ function submitUseCar(){
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('uc-fuel').value===''||!date||!empSig){
     errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;
   }
-  // ใช้ค่า max ระหว่าง lastPermitNo และเลขสูงสุดที่มีใน permits จริง (กัน desync)
-  const _maxExisting = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
-  const newPermitNo = Math.max(db.lastPermitNo||0, _maxExisting) + 1;
-  db.lastPermitNo = newPermitNo;
-  // force save lastPermitNo ขึ้น Firebase ทันที
-  if(_fbReady) fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:newPermitNo, updatedAt:new Date().toISOString()});
-  const permit={
-    id:'p'+Date.now(),name,dept,location:loc,reason,detail,
-    car,cartype,fuel,date,empSig,
-    permitNo: newPermitNo,
+  // ใช้ Firestore transaction กัน permitNo ชนกันเมื่อสร้างพร้อมกัน
+  const permitId = 'p'+Date.now();
+  const permitData = {
+    id:permitId, name, dept, location:loc, reason, detail,
+    car, cartype, fuel, date, empSig,
     billReceived: Number(fuel)>0 ? false : null,
-    status:'pending',createdAt:new Date().toISOString(),
-    managerSig:null,approvedAt:null
+    status:'pending', createdAt:new Date().toISOString(),
+    managerSig:null, approvedAt:null
   };
-  if(!db.permits)db.permits=[];
-  db.permits.unshift(permit);
-  const _ts = new Date().toISOString();
-  db._lastSync = _ts;
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-
-  const link=location.origin+location.pathname+'?approve='+permit.id;
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  const syncData={...buildSyncPayload(_ts)};
 
   errEl.textContent='⏳ กำลังบันทึก...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
 
-  syncNow();
-  db.syncEnabled=true;
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  errEl.style.display='none';
-  // ล้างฟอร์ม
-  ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.value='';
-  });
-  document.getElementById('uc-car-select').value='';
-  document.getElementById('uc-car-custom').value='';
-  document.getElementById('uc-car-custom').style.display='none';
-  renderUcPermitList();
-  copyLink(link);
-  alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+  const link=location.origin+location.pathname+'?approve='+permitId;
+
+  if(_fbReady){
+    const configRef = _fbDb.collection('config').doc('app');
+    _fbDb.runTransaction(async tx=>{
+      const snap = await tx.get(configRef);
+      const currentNo = snap.exists ? (snap.data().lastPermitNo||0) : 0;
+      const newPermitNo = Math.max(currentNo, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+      tx.update(configRef, {lastPermitNo: newPermitNo, updatedAt: new Date().toISOString()});
+      permitData.permitNo = newPermitNo;
+      db.lastPermitNo = newPermitNo;
+    }).then(()=>{
+      // push permit ขึ้น Firebase
+      fbSetDoc('permits', permitId, {...permitData, updatedAt:new Date().toISOString()});
+      db.permits = db.permits||[];
+      db.permits.unshift(permitData);
+      const _ts=new Date().toISOString(); db._lastSync=_ts;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      syncNow();
+      errEl.style.display='none';
+      ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
+        const el=document.getElementById(id);if(el)el.value='';
+      });
+      document.getElementById('uc-car-select').value='';
+      document.getElementById('uc-car-custom').value='';
+      document.getElementById('uc-car-custom').style.display='none';
+      renderUcPermitList();
+      copyLink(link);
+      alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+    }).catch(err=>{
+      console.error('Transaction error:', err);
+      // fallback: ใช้ local counter
+      const _maxExisting = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
+      permitData.permitNo = Math.max(db.lastPermitNo||0, _maxExisting) + 1;
+      db.lastPermitNo = permitData.permitNo;
+      db.permits = db.permits||[];
+      db.permits.unshift(permitData);
+      const _ts=new Date().toISOString(); db._lastSync=_ts;
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      syncNow();
+      errEl.style.display='none';
+      ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
+        const el=document.getElementById(id);if(el)el.value='';
+      });
+      document.getElementById('uc-car-select').value='';
+      document.getElementById('uc-car-custom').value='';
+      document.getElementById('uc-car-custom').style.display='none';
+      renderUcPermitList();
+      copyLink(link);
+      alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+    });
+  } else {
+    // Firebase ไม่พร้อม ใช้ local counter
+    const _maxExisting = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
+    permitData.permitNo = Math.max(db.lastPermitNo||0, _maxExisting) + 1;
+    db.lastPermitNo = permitData.permitNo;
+    db.permits = db.permits||[];
+    db.permits.unshift(permitData);
+    const _ts=new Date().toISOString(); db._lastSync=_ts;
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    syncNow();
+    errEl.style.display='none';
+    ['uc-name','uc-dept','uc-location','uc-reason','uc-detail','uc-cartype','uc-fuel','uc-empsig'].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.value='';
+    });
+    document.getElementById('uc-car-select').value='';
+    document.getElementById('uc-car-custom').value='';
+    document.getElementById('uc-car-custom').style.display='none';
+    renderUcPermitList();
+    copyLink(link);
+    alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
+  }
 }
 
 // ---- เลขที่ใบ permit ----
@@ -5109,43 +5153,57 @@ function submitPermitForm(){
   errEl.style.display='none';
   if(!name||!dept||!loc||!reason||!detail||!car||document.getElementById('pf-fuel').value===''||!date||!empSigName)
     {errEl.textContent='กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *';errEl.style.display='flex';return;}
-  const _maxExisting2 = (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0);
-  const newPermitNo2 = Math.max(db.lastPermitNo||0, _maxExisting2) + 1;
-  db.lastPermitNo = newPermitNo2;
-  if(_fbReady) fbSetDoc('config','app',{fuelPrice:db.fuelPrice||0, adminPass:db.adminPass, staffPins:db.staffPins||{}, lastPermitNo:newPermitNo2, updatedAt:new Date().toISOString()});
-  const permit={
-    id:'p'+Date.now(),name,dept,location:loc,reason,detail,
-    car,cartype,fuel,date,empSig:empSigName,
-    permitNo: newPermitNo2,
+  const permitId2 = 'p'+Date.now();
+  const permitData2 = {
+    id:permitId2, name, dept, location:loc, reason, detail,
+    car, cartype, fuel, date, empSig:empSigName,
     billReceived: Number(fuel)>0 ? false : null,
-    status:'pending',createdAt:new Date().toISOString(),
-    managerSig:null,approvedAt:null
+    status:'pending', createdAt:new Date().toISOString(),
+    managerSig:null, approvedAt:null
   };
-  if(!db.permits)db.permits=[];
-  db.permits.unshift(permit);
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  document.getElementById('pf-emp-sig-name').value='';
-  ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.value='';
-  });
-  document.getElementById('pf-car-select').value='';
-  document.getElementById('pf-car-custom').value='';
-  document.getElementById('pf-car-custom').style.display='none';
-  document.getElementById('pf-car').value='';
-  const link=location.origin+location.pathname+'?approve='+permit.id;
-  const gsUrl=db.gsUrl||DEFAULT_GS_URL;
-  const syncData={cars:db.cars,bookings:db.bookings,staff:db.staff,adminPass:db.adminPass,permits:db.permits,ts:new Date().toISOString()};
-  errEl.textContent='⏳ กำลังซิงค์ขึ้น Sheet กรุณารอสักครู่...';
+  const link2 = location.origin+location.pathname+'?approve='+permitId2;
+  errEl.textContent='⏳ กำลังบันทึก...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
-  syncViaGet(syncData, function(){
-    db.syncEnabled=true;try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-    errEl.style.display='none';renderPermitList();
-    copyLink(link);
-    alert('✅ สร้างฟอร์มและซิงค์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link);
-  }, function(){
-    errEl.style.display='none';renderPermitList();
-    alert('⚠️ บันทึกแล้ว แต่ซิงค์ไม่ได้\n\nลิงก์:\n'+link);
-  });
+
+  const doSavePermit2 = (permitNo)=>{
+    permitData2.permitNo = permitNo;
+    db.lastPermitNo = permitNo;
+    fbSetDoc('permits', permitId2, {...permitData2, updatedAt:new Date().toISOString()});
+    db.permits = db.permits||[];
+    db.permits.unshift(permitData2);
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    document.getElementById('pf-emp-sig-name').value='';
+    ['pf-name','pf-dept','pf-location','pf-reason','pf-detail','pf-cartype','pf-fuel'].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.value='';
+    });
+    document.getElementById('pf-car-select').value='';
+    document.getElementById('pf-car-custom').value='';
+    document.getElementById('pf-car-custom').style.display='none';
+    document.getElementById('pf-car').value='';
+    syncNow();
+    errEl.style.display='none';
+    renderPermitList();
+    copyLink(link2);
+    alert('✅ สร้างลิงก์สำเร็จ!\n\nลิงก์ถูกคัดลอกแล้ว ส่งให้หัวหน้าได้เลย:\n\n'+link2);
+  };
+
+  if(_fbReady){
+    const configRef2 = _fbDb.collection('config').doc('app');
+    _fbDb.runTransaction(async tx=>{
+      const snap = await tx.get(configRef2);
+      const currentNo2 = snap.exists ? (snap.data().lastPermitNo||0) : 0;
+      const newNo2 = Math.max(currentNo2, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+      tx.update(configRef2, {lastPermitNo: newNo2, updatedAt: new Date().toISOString()});
+      return newNo2;
+    }).then(newNo2=>doSavePermit2(newNo2))
+      .catch(()=>{
+        const fallback = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+        doSavePermit2(fallback);
+      });
+  } else {
+    const fallback = Math.max(db.lastPermitNo||0, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
+    doSavePermit2(fallback);
+  }
 }
 
 function renderPermitList(){
