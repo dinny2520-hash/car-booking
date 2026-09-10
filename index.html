@@ -2795,7 +2795,7 @@ function submitUseCar(){
       const snap = await tx.get(configRef);
       const currentNo = snap.exists ? (snap.data().lastPermitNo||0) : 0;
       const newPermitNo = Math.max(currentNo, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
-      tx.update(configRef, {lastPermitNo: newPermitNo, updatedAt: new Date().toISOString()});
+      tx.set(configRef, {lastPermitNo: newPermitNo, updatedAt: new Date().toISOString()}, {merge:true});
       permitData.permitNo = newPermitNo;
       db.lastPermitNo = newPermitNo;
     }).then(()=>{
@@ -5193,7 +5193,7 @@ function submitPermitForm(){
       const snap = await tx.get(configRef2);
       const currentNo2 = snap.exists ? (snap.data().lastPermitNo||0) : 0;
       const newNo2 = Math.max(currentNo2, (db.permits||[]).reduce((m,p)=>Math.max(m,p.permitNo||0),0)) + 1;
-      tx.update(configRef2, {lastPermitNo: newNo2, updatedAt: new Date().toISOString()});
+      tx.set(configRef2, {lastPermitNo: newNo2, updatedAt: new Date().toISOString()}, {merge:true});
       return newNo2;
     }).then(newNo2=>doSavePermit2(newNo2))
       .catch(()=>{
