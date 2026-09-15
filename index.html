@@ -4637,6 +4637,46 @@ function renderAdminCardBookingList(){
   }).join('');
 }
 
+function adminRevertFcBooking(id){
+  const b = db.fuelCardBookings.find(x=>x.id===id);
+  if(!b) return;
+  const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
+  if(!confirm(`ย้อนสถานะการจองการ์ด ${fc?fc.name:'?'} ของ ${b.name}?\nการ์ดจะกลับไปเป็น "กำลังใช้งาน"`)) return;
+
+  // คืนมูลค่าการ์ดที่ถูกหักไปตอนคืน
+  if(fc && b.valueBeforeDeduct != null){
+    fc.value = b.valueBeforeDeduct;
+  }
+  b.status = 'active';
+  b.returnStep = null;
+  b.returnedAt = null;
+  b.returnedBy = null;
+  b.fueled = null;
+  b.actualAmount = null;
+  b.invTrace = null;
+  b.noFuelReason = null;
+  b.valueBeforeDeduct = null;
+  b.valueAfterDeduct = null;
+  b._adminReturn = null;
+
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const _now = new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt:_now});
+    if(fc) fbSetDoc('fuelCards', fc.id, {...fc, updatedAt:_now});
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt:_now, changedIds:{fuelCardBookings:[b.id], fuelCards:fc?[fc.id]:[]}
+    });
+  } else {
+    syncNow(()=>showSyncToast(true));
+  }
+  renderAdminCardBookingList();
+  renderFcHistory();
+  renderFuelCards();
+  renderFcReturnList();
+  alert('✅ ย้อนสถานะสำเร็จ การ์ดกลับเป็น "กำลังใช้งาน" แล้ว');
+}
+
 function adminDeleteCardBooking(id){
   if(!confirm('ลบรายการจองการ์ดนี้ออกจากระบบ?'))return;
   db.fuelCardBookings=(db.fuelCardBookings||[]).filter(b=>b.id!==id);
