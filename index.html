@@ -752,6 +752,13 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section">
+        <h3>↩️ ยกเลิกการแจ้งคืนการ์ด</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการที่แจ้งคืนแล้ว แต่ยังไม่ได้รับการ์ดจริง — กรณีคืนผิดการ์ด กดยกเลิกเพื่อให้กลับเป็น "กำลังใช้งาน"</div>
+        <div id="admin-pending-fc-return-list" style="max-height:300px;overflow-y:auto"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="renderAdminPendingFcReturnList()">🔄 รีเฟรช</button>
+      </div>
+
+      <div class="settings-section">
         <h3>↩️ ยกเลิกการแจ้งคืนรถ</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการที่ผู้ยืมแจ้งคืนแล้ว แต่ยังไม่ได้รับกุญแจจริง — กรณีคืนผิดคัน กดยกเลิกเพื่อให้รถกลับเป็น "กำลังใช้งาน"</div>
         <div id="admin-pending-return-list" style="max-height:300px;overflow-y:auto"></div>
@@ -2114,6 +2121,7 @@ function renderSettings(){
   renderAdminBookingList();
   renderFcSettings();
   renderAdminPendingReturnList();
+  renderAdminPendingFcReturnList();
   renderAdminBillPendingList();
   // เฉพาะครั้งแรกที่เปิดหน้าตั้งค่า ให้เริ่มที่แท็บรถ
   const cardTabVisible = document.getElementById('admin-card-booking-list')?.style.display === 'block';
@@ -4642,8 +4650,7 @@ function adminRevertFcBooking(id){
   if(!b) return;
   const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
   if(!confirm(`ย้อนสถานะการจองการ์ด ${fc?fc.name:'?'} ของ ${b.name}?\nการ์ดจะกลับไปเป็น "กำลังใช้งาน"`)) return;
-
-  // คืนมูลค่าการ์ดที่ถูกหักไปตอนคืน
+  // คืนมูลค่าการ์ดที่ถูกหักไปตอนคืน (step2)
   if(fc && b.valueBeforeDeduct != null){
     fc.value = b.valueBeforeDeduct;
   }
@@ -4658,7 +4665,6 @@ function adminRevertFcBooking(id){
   b.valueBeforeDeduct = null;
   b.valueAfterDeduct = null;
   b._adminReturn = null;
-
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _now = new Date().toISOString();
   if(_fbReady){
@@ -4667,14 +4673,58 @@ function adminRevertFcBooking(id){
     _fbDb.collection('config').doc('lastUpdate').set({
       updatedAt:_now, changedIds:{fuelCardBookings:[b.id], fuelCards:fc?[fc.id]:[]}
     });
-  } else {
-    syncNow(()=>showSyncToast(true));
-  }
+  } else { syncNow(()=>showSyncToast(true)); }
   renderAdminCardBookingList();
   renderFcHistory();
   renderFuelCards();
   renderFcReturnList();
+  renderAdminPendingFcReturnList();
   alert('✅ ย้อนสถานะสำเร็จ การ์ดกลับเป็น "กำลังใช้งาน" แล้ว');
+}
+
+function cancelFcReturnStep(id){
+  const b = db.fuelCardBookings.find(x=>x.id===id);
+  if(!b) return;
+  const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
+  if(!confirm(`ยกเลิกการแจ้งคืนการ์ด ${fc?fc.name:'?'} ของ ${b.name}?\nการ์ดจะกลับไปเป็น "กำลังใช้งาน"`)) return;
+  b.returnStep = null;
+  b.fueled = null;
+  b.actualAmount = null;
+  b.invTrace = null;
+  b.noFuelReason = null;
+  b._adminReturn = null;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const _now = new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt:_now});
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt:_now, changedIds:{fuelCardBookings:[b.id]}
+    });
+  } else { syncNow(()=>showSyncToast(true)); }
+  renderFcReturnList();
+  renderFuelCards();
+  renderAdminPendingFcReturnList();
+}
+
+function renderAdminPendingFcReturnList(){
+  const list = document.getElementById('admin-pending-fc-return-list');
+  if(!list) return;
+  const pending = (db.fuelCardBookings||[]).filter(b=>b.returnStep==='pending'&&b.status!=='returned'&&b.status!=='cancelled');
+  if(!pending.length){
+    list.innerHTML='<p style="color:var(--g400);font-size:13px">ไม่มีรายการที่รอแจ้งคืน</p>';
+    return;
+  }
+  list.innerHTML = pending.map(b=>{
+    const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
+    return `<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="flex:1;font-size:13px;min-width:200px">
+        <span style="font-weight:600">💳 ${fc?fc.name:'?'}</span>
+        <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
+        <div style="font-size:12px;color:var(--warning);margin-top:2px">⏳ แจ้งคืนแล้ว รอรับการ์ด</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="cancelFcReturnStep('${b.id}')">↩️ ยกเลิกแจ้งคืน</button>
+    </div>`;
+  }).join('');
 }
 
 function adminDeleteCardBooking(id){
