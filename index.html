@@ -5611,10 +5611,6 @@ function submitApproval(){
     document.getElementById('approve-err').textContent='กรุณาลงลายเซ็น หรือพิมพ์ชื่อ หรือแนบรูปลายเซ็นก่อนอนุมัติ';
     document.getElementById('approve-err').style.display='flex';return;
   }
-  const p=db.permits.find(x=>x.id===id);
-  if(!p)return;
-  p.status='approved';p.managerSig=sig;p.approvedAt=new Date().toISOString();
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const errEl=document.getElementById('approve-err');
   errEl.textContent='⏳ กำลังบันทึก กรุณารอสักครู่...';
   errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
@@ -5634,26 +5630,56 @@ function submitApproval(){
     document.querySelector('#page-approve .btn-danger').style.display='none';
   }
 
-  // Force push permit ขึ้น Firebase ทันที (ไม่รอ _getChanged กัน miss)
-  if(_fbReady){
-    Promise.all([
-      fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()}),
-      fbSetDoc('signatures', id+'_mgr', {id: id+'_mgr', sig})
-    ]).then(()=>{
-      // notify ทุกเครื่องผ่าน lastUpdate
-      _fbDb.collection('config').doc('lastUpdate').set({
-        updatedAt: new Date().toISOString(),
-        changedIds: {permits: [p.id]}
+  function doApprove(p){
+    p.status='approved';
+    p.managerSig=sig;
+    p.approvedAt=new Date().toISOString();
+    // อัปเดต local db ด้วย
+    const idx=(db.permits||[]).findIndex(x=>x.id===id);
+    if(idx>=0) db.permits[idx]=p; else { db.permits=db.permits||[]; db.permits.unshift(p); }
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+
+    if(_fbReady){
+      Promise.all([
+        fbSetDoc('permits', p.id, {...p, updatedAt:new Date().toISOString()}),
+        fbSetDoc('signatures', id+'_mgr', {id:id+'_mgr', sig})
+      ]).then(()=>{
+        _fbDb.collection('config').doc('lastUpdate').set({
+          updatedAt:new Date().toISOString(), changedIds:{permits:[p.id]}
+        });
+        showSuccess();
+      }).catch(()=>{
+        // retry
+        syncNow(showSuccess, showSuccess);
       });
-      showSuccess();
+    } else {
+      syncNow(showSuccess, showSuccess);
+    }
+  }
+
+  // หา permit ใน local ก่อน ถ้าไม่เจอดึงจาก Firebase ตรงๆ
+  let p = (db.permits||[]).find(x=>x.id===id);
+  if(p){
+    doApprove(p);
+  } else if(_fbReady){
+    _fbDb.collection('permits').doc(id).get().then(snap=>{
+      if(snap.exists){
+        doApprove(snap.data());
+      } else {
+        // สร้าง permit stub แล้ว push เลย
+        doApprove({id, status:'pending', createdAt:new Date().toISOString()});
+      }
     }).catch(()=>{
-      // retry ผ่าน syncNow
-      saveSigToSheet(id, sig);
-      syncViaGet({}, showSuccess, showSuccess);
+      errEl.textContent='❌ ไม่พบข้อมูลใบ PM กรุณาติดต่อผู้ดูแลระบบ';
+      errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';
+      document.querySelector('#page-approve .btn-success').disabled=false;
+      document.querySelector('#page-approve .btn-danger').disabled=false;
     });
   } else {
-    saveSigToSheet(id, sig);
-    syncViaGet({}, showSuccess, showSuccess);
+    errEl.textContent='❌ ไม่มีการเชื่อมต่อ กรุณารอสักครู่แล้วลองใหม่';
+    errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';
+    document.querySelector('#page-approve .btn-success').disabled=false;
+    document.querySelector('#page-approve .btn-danger').disabled=false;
   }
 }
 
