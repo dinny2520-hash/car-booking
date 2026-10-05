@@ -2552,7 +2552,7 @@ function submitAdminReturn(){
 
 // ---- USE CAR PAGE ----
 // ---- รายงานสรุปค่าน้ำมัน (Excel) ----
-function exportFuelReport(){
+async function exportFuelReport(){
   const fromEl = document.getElementById('fuel-report-from');
   const toEl = document.getElementById('fuel-report-to');
   const fromVal = fromEl.value;
@@ -2562,10 +2562,26 @@ function exportFuelReport(){
   const toDate = new Date(toVal+'T23:59:59');
   if(fromDate > toDate){ alert('วันที่เริ่มต้องมาก่อนวันที่สิ้นสุด'); return; }
 
-  const permits = (db.permits||[]).filter(p=>{
-    if(!p.date) return false;
+  // ดึง permitArchive จาก Firebase รวมกับ permits ปัจจุบัน
+  let archivePermits = [];
+  if(_fbReady){
+    try{
+      const snap = await _fbDb.collection('permitArchive')
+        .where('date','>=',fromVal)
+        .where('date','<=',toVal)
+        .get();
+      archivePermits = snap.docs.map(d=>({...d.data(), _archived:true}));
+    }catch(e){ console.warn('permitArchive fetch error:', e); }
+  }
+
+  const allPermits = [...(db.permits||[]), ...archivePermits];
+  // dedup ด้วย id กัน overlap
+  const seen = new Set();
+  const permits = allPermits.filter(p=>{
+    if(!p.date || seen.has(p.id)) return false;
     const d = new Date(p.date);
-    return d >= fromDate && d <= toDate;
+    if(d >= fromDate && d <= toDate){ seen.add(p.id); return true; }
+    return false;
   });
 
   if(!permits.length){ alert('ไม่พบรายการขออนุมัติในช่วงวันที่ที่เลือก'); return; }
@@ -3240,20 +3256,55 @@ async function loadBookingArchive(){
 function exportBookingArchiveReport(){
   const monthVal = document.getElementById('booking-archive-month').value;
   const type = document.getElementById('booking-archive-type').value;
-  if(!monthVal||!_bookingArchiveCache.length){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
+  if(!monthVal){ alert('กรุณาเลือกเดือนก่อน'); return; }
   const isFC = type==='fc';
-  const rows = isFC
-    ? [['ชื่อ','การ์ด','เหตุผล','เริ่ม','สิ้นสุด','เชื้อเพลิง (บาท)','สถานะ','วันที่ลบ']]
-    : [['ชื่อ','รถ','สถานที่','เริ่ม','สิ้นสุด','สถานะ','วันที่ลบ']];
-  _bookingArchiveCache.forEach(b=>{
-    const archivedDate = b.archivedAt ? new Date(b.archivedAt).toLocaleString('th-TH') : '-';
-    if(isFC) rows.push([b.name||'-',b.fcName||'-',b.reason||'-',fmt(b.startDt)||'-',fmt(b.endDt)||'-',Number(b.fuel)||0,b.status==='returned'?'คืนแล้ว':'ยกเลิก',archivedDate]);
-    else rows.push([b.name||'-',b.car||'-',b.dest||'-',fmt(b.startDt)||'-',fmt(b.endDt)||'-',b.status==='returned'?'คืนแล้ว':'ยกเลิก',archivedDate]);
+  const [year, month] = monthVal.split('-').map(Number);
+  const fromDate = new Date(year, month-1, 1);
+  const toDate = new Date(year, month, 0, 23, 59, 59);
+
+  // รวม active + archive
+  const activeItems = isFC
+    ? (db.fuelCardBookings||[]).filter(b=>{
+        const d = new Date(b.startDt);
+        return d >= fromDate && d <= toDate;
+      })
+    : (db.bookings||[]).filter(b=>{
+        const d = new Date(b.startDt);
+        return d >= fromDate && d <= toDate;
+      });
+
+  const seen = new Set();
+  const allItems = [...activeItems, ..._bookingArchiveCache].filter(b=>{
+    if(seen.has(b.id)) return false;
+    seen.add(b.id); return true;
   });
+
+  if(!allItems.length){ alert('ไม่พบรายการในเดือนที่เลือก'); return; }
+
+  allItems.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
+
+  const rows = isFC
+    ? [['ชื่อ','การ์ด','เหตุผล','เริ่ม','สิ้นสุด','เชื้อเพลิง (บาท)','สถานะ','หมายเหตุ']]
+    : [['ชื่อ','รถ','สถานที่','เริ่ม','สิ้นสุด','ไมล์ออก','ไมล์กลับ','สถานะ','หมายเหตุ']];
+
+  allItems.forEach(b=>{
+    const note = b.archivedAt ? 'ลบแล้ว' : '';
+    const stLabel = b.status==='returned'?'คืนแล้ว':b.status==='cancelled'?'ยกเลิก':b.status==='booked'?'จองอยู่':'กำลังใช้งาน';
+    if(isFC){
+      const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
+      rows.push([b.name||'-', fc?fc.name:(b.fcName||'-'), b.reason||'-', fmt(b.startDt)||'-', fmt(b.endDt)||'-', Number(b.fuelAmount)||0, stLabel, note]);
+    } else {
+      rows.push([b.name||'-', b.car||'-', b.dest||'-', fmt(b.startDt)||'-', fmt(b.endDt)||'-', b.mileageOut!=null?b.mileageOut:'-', b.mileageIn!=null?b.mileageIn:'-', stLabel, note]);
+    }
+  });
+
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Archive');
-  XLSX.writeFile(wb, `รายงาน_Archive_${type==='fc'?'การ์ด':'รถ'}_${monthVal}.xlsx`);
+  ws['!cols'] = isFC
+    ? [{wch:20},{wch:18},{wch:20},{wch:16},{wch:16},{wch:14},{wch:12},{wch:10}]
+    : [{wch:20},{wch:18},{wch:20},{wch:16},{wch:16},{wch:12},{wch:12},{wch:12},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, ws, isFC?'จองการ์ด':'จองรถ');
+  XLSX.writeFile(wb, `รายงาน_${isFC?'การ์ด':'รถ'}_${monthVal}.xlsx`);
 }
 
 var _permanentDeleteBookingId = null;
@@ -5663,14 +5714,17 @@ function submitApproval(){
     doApprove(p);
   } else if(_fbReady){
     _fbDb.collection('permits').doc(id).get().then(snap=>{
-      if(snap.exists){
+      if(snap.exists && snap.data().name){
         doApprove(snap.data());
       } else {
-        // สร้าง permit stub แล้ว push เลย
-        doApprove({id, status:'pending', createdAt:new Date().toISOString()});
+        // ไม่พบข้อมูลใบจริง — ไม่สร้าง stub กัน data loss
+        errEl.textContent='❌ ไม่พบข้อมูลใบ PM กรุณารอให้ระบบโหลดข้อมูลครบก่อนแล้วลองใหม่';
+        errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';
+        document.querySelector('#page-approve .btn-success').disabled=false;
+        document.querySelector('#page-approve .btn-danger').disabled=false;
       }
     }).catch(()=>{
-      errEl.textContent='❌ ไม่พบข้อมูลใบ PM กรุณาติดต่อผู้ดูแลระบบ';
+      errEl.textContent='❌ ไม่มีการเชื่อมต่อ กรุณารอสักครู่แล้วลองใหม่';
       errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';
       document.querySelector('#page-approve .btn-success').disabled=false;
       document.querySelector('#page-approve .btn-danger').disabled=false;
