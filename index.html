@@ -657,6 +657,7 @@ tr:hover td{background:var(--g50)}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="exportFuelReport()">📥 รายงานใบ permit</button>
           <button class="btn btn-outline btn-sm" onclick="exportCardReport()">💳 รายงานการใช้การ์ด</button>
+          <button class="btn btn-outline btn-sm" onclick="exportCarUsageReport()">🚗 รายงานการใช้รถ</button>
         </div>
       </div>
 
@@ -2553,6 +2554,71 @@ function submitAdminReturn(){
 
 // ---- USE CAR PAGE ----
 // ---- รายงานสรุปค่าน้ำมัน (Excel) ----
+async function exportCarUsageReport(){
+  const fromEl = document.getElementById('fuel-report-from');
+  const toEl = document.getElementById('fuel-report-to');
+  const fromVal = fromEl.value;
+  const toVal = toEl.value;
+  if(!fromVal || !toVal){ alert('กรุณาเลือกช่วงวันที่ให้ครบทั้งสองช่อง'); return; }
+  const fromDate = new Date(fromVal);
+  const toDate = new Date(toVal+'T23:59:59');
+  if(fromDate > toDate){ alert('วันที่เริ่มต้องมาก่อนวันที่สิ้นสุด'); return; }
+
+  // ดึง bookingArchive จาก Firebase
+  let archiveBookings = [];
+  if(_fbReady){
+    try{
+      const snap = await _fbDb.collection('bookingArchive')
+        .where('startDt','>=',fromVal)
+        .where('startDt','<=',toVal+'T23:59:59')
+        .get();
+      archiveBookings = snap.docs.map(d=>({...d.data(), _archived:true}));
+    }catch(e){ console.warn('bookingArchive fetch error:', e); }
+  }
+
+  // รวม active + archive กรอง dedup
+  const seen = new Set();
+  const allBookings = [...(db.bookings||[]), ...archiveBookings].filter(b=>{
+    if(!b.startDt || seen.has(b.id)) return false;
+    const d = new Date(b.startDt);
+    if(d >= fromDate && d <= toDate){ seen.add(b.id); return true; }
+    return false;
+  });
+
+  if(!allBookings.length){ alert('ไม่พบรายการจองในช่วงวันที่ที่เลือก'); return; }
+
+  allBookings.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
+
+  const rows = [['วันที่เริ่ม','วันที่คืน','ชื่อผู้จอง','ทะเบียนรถ','สถานที่','เหตุผล','ไมล์ออก','ไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
+
+  allBookings.forEach(b=>{
+    const car = db.cars.find(c=>c.id===b.carId);
+    const plate = car ? car.plate : (b.car||'-');
+    const dist = (b.mileageIn!=null && b.mileageOut!=null) ? Number(b.mileageIn)-Number(b.mileageOut) : '-';
+    const stLabel = b.status==='returned'?'คืนแล้ว':b.status==='cancelled'?'ยกเลิก':b.status==='booked'?'จองอยู่':'กำลังใช้งาน';
+    const note = b._archived ? 'ลบแล้ว' : '';
+    rows.push([
+      fmt(b.startDt)||'-',
+      fmt(b.endDt)||'-',
+      b.name||'-',
+      plate,
+      b.dest||'-',
+      b.reason||'-',
+      b.mileageOut!=null ? b.mileageOut : '-',
+      b.mileageIn!=null ? b.mileageIn : '-',
+      dist,
+      stLabel,
+      note
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:16},{wch:16},{wch:20},{wch:16},{wch:20},{wch:20},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, ws, 'การใช้รถ');
+  XLSX.writeFile(wb, `รายงานการใช้รถ_${fromVal}_${toVal}.xlsx`);
+}
+
 async function exportFuelReport(){
   const fromEl = document.getElementById('fuel-report-from');
   const toEl = document.getElementById('fuel-report-to');
