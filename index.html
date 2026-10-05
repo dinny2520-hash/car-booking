@@ -2694,21 +2694,22 @@ async function exportFuelReport(){
   // ชีตแยกตามแผนก
   Object.keys(byDept).sort().forEach(dept=>{
     const items = byDept[dept].sort((a,b)=>new Date(a.date)-new Date(b.date));
-    const rows = [['วันที่','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
+    const rows = [['เลขที่ใบ PM','วันที่','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
     let deptTotal=0, deptDist=0;
     items.forEach(p=>{
       const m = getMileage(p);
-      rows.push([p.date, p.name||'-', p.dept||'-', p.location||'-', p.reason||'-', p.detail||'-', p.car||'-',
+      rows.push([p.permitNo||'-', p.date, p.name||'-', p.dept||'-', p.location||'-', p.reason||'-', p.detail||'-', p.car||'-',
         Number(p.fuel)||0, m.mileageOut, m.mileageIn, m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
-        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):''
+        p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
+        p.billReceiptNo||''
       ]);
       deptTotal += Number(p.fuel)||0;
       deptDist += typeof m.distance==='number' ? m.distance : 0;
     });
     rows.push(['','','','','','รวม', '', deptTotal,'','', deptDist||'-','']);
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:12},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20}];
+    ws['!cols'] = [{wch:12},{wch:12},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20},{wch:18}];
     const safeName = dept.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31) || 'แผนก';
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
