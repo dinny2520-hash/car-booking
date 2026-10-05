@@ -2589,7 +2589,7 @@ async function exportCarUsageReport(){
 
   allBookings.sort((a,b)=>new Date(a.startDt)-new Date(b.startDt));
 
-  const rows = [['วันที่เริ่ม','วันที่คืน','ชื่อผู้จอง','ทะเบียนรถ','สถานที่','เหตุผล','ไมล์ออก','ไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
+  const rows = [['วันที่เริ่ม','วันที่คืน','ชื่อผู้จอง','แผนก','ทะเบียนรถ','สถานที่','เหตุผล','ไมล์ออก','ไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ']];
 
   allBookings.forEach(b=>{
     const car = db.cars.find(c=>c.id===b.carId);
@@ -2597,10 +2597,14 @@ async function exportCarUsageReport(){
     const dist = (b.mileageIn!=null && b.mileageOut!=null) ? Number(b.mileageIn)-Number(b.mileageOut) : '-';
     const stLabel = b.status==='returned'?'คืนแล้ว':b.status==='cancelled'?'ยกเลิก':b.status==='booked'?'จองอยู่':'กำลังใช้งาน';
     const note = b._archived ? 'ลบแล้ว' : '';
+    // หาแผนกจาก staff
+    const staff = (db.staff||[]).find(s=>s.name===b.name);
+    const dept = b.dept || (staff?staff.dept:'-') || '-';
     rows.push([
       fmt(b.startDt)||'-',
       fmt(b.endDt)||'-',
       b.name||'-',
+      dept,
       plate,
       b.dest||'-',
       b.reason||'-',
@@ -2614,7 +2618,7 @@ async function exportCarUsageReport(){
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:16},{wch:16},{wch:20},{wch:16},{wch:20},{wch:20},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
+  ws['!cols'] = [{wch:16},{wch:16},{wch:20},{wch:14},{wch:16},{wch:20},{wch:20},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
   XLSX.utils.book_append_sheet(wb, ws, 'การใช้รถ');
   XLSX.writeFile(wb, `รายงานการใช้รถ_${fromVal}_${toVal}.xlsx`);
 }
