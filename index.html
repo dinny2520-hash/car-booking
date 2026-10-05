@@ -1905,8 +1905,9 @@ function openStep1Modal(bkId){
   document.getElementById('s1-mileage-in').value='';
   // เช็คว่ามี booking อื่นของรถคันนี้ที่รอรับคืนอยู่ไหม
   const pendingReturnS1 = db.bookings
-    .filter(x=> x.carId===b.carId && x.id!==bkId && x.returnStep==='pending' && x.mileageIn!=null)
-    .sort((a,c)=>new Date(a.startDt)-new Date(c.startDt))[0] || null;
+    .filter(x=> x.carId===b.carId && x.id!==bkId && x.returnStep==='pending' && x.mileageIn!=null
+      && new Date(x.startDt) < new Date(b.startDt))
+    .sort((a,c)=>new Date(c.startDt)-new Date(a.startDt))[0] || null;
   const refMileage = pendingReturnS1 ? pendingReturnS1.mileageIn : (car&&car.mileage!=null ? car.mileage : null);
   const refLabel = pendingReturnS1
     ? `เลขไมล์จากการคืนของ ${pendingReturnS1.name}: ${Number(refMileage).toLocaleString('th-TH')} กม.`
@@ -2023,10 +2024,11 @@ async function openStep2Modal(bkId){
 
   // เช็คว่ามี booking อื่นของรถคันนี้ที่รอรับคืน (returnStep==='pending') อยู่ไหม
   // ถ้ามี ให้ใช้ mileageIn ของ booking นั้นเป็นไมล์ขาออกแทน car.mileage
-  // เรียงตาม startDt เอาคนที่จองก่อนสุดที่รอรับคืนอยู่
+  // ดึงไมล์จาก pending อื่นเฉพาะถ้า booking นั้นจองก่อน booking ปัจจุบัน
   const pendingReturn = db.bookings
-    .filter(x=> x.carId===b.carId && x.id!==b.id && x.returnStep==='pending' && x.mileageIn!=null)
-    .sort((a,c)=>new Date(a.startDt)-new Date(c.startDt))[0] || null;
+    .filter(x=> x.carId===b.carId && x.id!==b.id && x.returnStep==='pending' && x.mileageIn!=null
+      && new Date(x.startDt) < new Date(b.startDt))
+    .sort((a,c)=>new Date(c.startDt)-new Date(a.startDt))[0] || null;
   const mileageOutValue = pendingReturn
     ? pendingReturn.mileageIn
     : (car&&car.mileage!=null ? car.mileage : '');
