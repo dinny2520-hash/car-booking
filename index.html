@@ -3118,47 +3118,6 @@ function renderUcPermitList(){
   }).join('');
 }
 
-function goToPermitFromBooking(){
-  // ดึงข้อมูลจากการจองล่าสุด
-  const bk = db.bookings[0];
-  if(!bk) { showPage('permit', document.getElementById('nav-permit')); return; }
-  const car = db.cars.find(c=>c.id===bk.carId);
-  // ไปหน้าใช้รถแล้วใส่ข้อมูลให้อัตโนมัติ
-  showPage('usecart', document.getElementById('nav-usecart'));
-  setTimeout(()=>{
-    const setVal = (id, val) => { const el=document.getElementById(id); if(el) el.value=val; };
-    setVal('uc-name', bk.name);
-    setVal('uc-location', bk.dest);
-    setVal('uc-reason', bk.reason);
-    setVal('uc-detail', bk.reason);
-    setVal('uc-empsig', bk.name);
-    const _today = new Date().toISOString().slice(0,10);
-    const _bookingDate = bk.startDt ? bk.startDt.slice(0,10) : _today;
-    setVal('uc-date', _bookingDate >= _today ? _bookingDate : _today);
-    // set min ด้วย
-    const ucDateEl = document.getElementById('uc-date');
-    if(ucDateEl) ucDateEl.min = _today;
-    // เลือกทะเบียนรถจากการจอง
-    if(car){
-      const sel=document.getElementById('uc-car-select');
-      if(sel){
-        // หา option ที่ตรงกับทะเบียนรถ
-        const opt=[...sel.options].find(o=>o.value===car.plate);
-        if(opt) sel.value=car.plate;
-        else {
-          sel.value='__other__';
-          setVal('uc-car-custom', car.plate);
-          document.getElementById('uc-car-custom').style.display='block';
-        }
-      }
-    }
-    // focus ที่ช่องแผนก (ยังต้องกรอก)
-    const deptEl=document.getElementById('uc-dept');
-    if(deptEl){ deptEl.focus(); deptEl.scrollIntoView({behavior:'smooth',block:'center'}); }
-  }, 300);
-}
-
-
 // ---- SIGNATURE TAB ----
 var _currentSigTab = 'draw';
 
