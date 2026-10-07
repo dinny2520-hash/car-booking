@@ -233,7 +233,7 @@ tr:hover td{background:var(--g50)}
       <span class="nav-icon">📅</span><span class="nav-label">ตาราง</span>
     </button>
     <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">
-      <span class="nav-icon">🔑</span><span class="nav-label">คืนรถ</span>
+      <span class="nav-icon">🔑</span><span class="nav-label">คืนรถ/การ์ด</span>
     </button>
     <button class="nav-btn" id="nav-usecart" onclick="showPage('usecart',this)">
       <span class="nav-icon">🚗</span><span class="nav-label">ใบออกนอกสถานที่/เบิกน้ำมัน</span>
@@ -620,6 +620,11 @@ tr:hover td{background:var(--g50)}
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
         <span>📋 รายการขออนุมัติของฉัน</span>
         <button class="btn btn-outline btn-sm" onclick="refreshPermitList()">🔄 ตรวจสอบ</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="permit-search" placeholder="🔍 ค้นหาเลขที่ใบ หรือ ชื่อ..." 
+          style="width:100%;padding:8px 12px;border:1.5px solid var(--g200);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box"
+          oninput="renderUcPermitList()">
       </div>
       <div id="uc-permit-list"></div>
     </div>
@@ -3081,9 +3086,21 @@ function renderAdminBillPendingList(){
 function renderUcPermitList(){
   const list=document.getElementById('uc-permit-list');
   if(!list)return;
-  const myPermits=(db.permits||[]);
+  const searchEl = document.getElementById('permit-search');
+  const kw = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let myPermits=(db.permits||[]);
+  if(kw){
+    myPermits = myPermits.filter(p=>{
+      const noMatch = p.permitNo ? String(p.permitNo).includes(kw) : false;
+      const nameMatch = (p.name||'').toLowerCase().includes(kw);
+      return noMatch || nameMatch;
+    });
+  }
   if(!myPermits.length){
-    list.innerHTML='<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';return;
+    list.innerHTML=kw
+      ? `<div class="empty-state"><div style="font-size:30px">🔍</div><div>ไม่พบรายการที่ค้นหา</div></div>`
+      : '<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';
+    return;
   }
   list.innerHTML=myPermits.map(p=>{
     const stColor=p.status==='approved'?'var(--success)':p.status==='rejected'?'var(--danger)':'var(--warning)';
