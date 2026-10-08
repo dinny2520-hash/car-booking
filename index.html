@@ -493,6 +493,11 @@ tr:hover td{background:var(--g50)}
         <span>⏳ รายการรออนุมัติ / อนุมัติแล้ว</span>
         <button class="btn btn-outline btn-sm" onclick="refreshPermitList()">🔄 ตรวจสอบสถานะ</button>
       </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="permit-search-admin" placeholder="🔍 ค้นหาเลขที่ใบ หรือ ชื่อ..."
+          style="width:100%;padding:8px 12px;border:1.5px solid var(--g200);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box"
+          oninput="renderPermitList()">
+      </div>
       <div id="permit-list"></div>
     </div>
 
@@ -4150,7 +4155,9 @@ function openFcStep2(id){
   fcReturnId=id;
   const b=(db.fuelCardBookings||[]).find(x=>x.id===id);
   const fc=(db.fuelCards||[]).find(f=>f.id===b?.fcId);
-  document.getElementById('fc-s2-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}<br>✅ ผู้ยืมยืนยันแล้ว | ยอดที่แจ้งใช้: <b>฿${Number(b?.usedAmount||0).toLocaleString('th-TH')}</b>`;
+  const _shownAmt = b?.actualAmount!=null ? b.actualAmount : (b?.fuelAmount||0);
+  const _amtLabel = b?.fueled===false ? 'ไม่ได้เติม' : `฿${Number(_shownAmt).toLocaleString('th-TH')}`;
+  document.getElementById('fc-s2-info').innerHTML=`<b>${fc?fc.name:'?'}</b> | 👤 ${b?.name}<br>✅ ผู้ยืมยืนยันแล้ว | ยอดที่แจ้งใช้: <b>${_amtLabel}</b>`;
   document.getElementById('fc-s2-inv-display').innerHTML=b?.invTrace?`🧾 INV/TRACE#: <b>${b.invTrace}</b>`:'ไม่มีเลข INV/TRACE#';
   document.getElementById('fc-s2-code').value='';
   document.getElementById('fc-s2-err').style.display='none';
@@ -5398,10 +5405,23 @@ function submitPermitForm(){
 function renderPermitList(){
   const list=document.getElementById('permit-list');
   if(!list)return;
-  if(!db.permits||!db.permits.length){
-    list.innerHTML='<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';return;
+  const searchEl = document.getElementById('permit-search-admin');
+  const kw = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let permits = (db.permits||[]);
+  if(kw){
+    permits = permits.filter(p=>{
+      const noMatch = p.permitNo ? String(p.permitNo).includes(kw) : false;
+      const nameMatch = (p.name||'').toLowerCase().includes(kw);
+      return noMatch || nameMatch;
+    });
   }
-  list.innerHTML=db.permits.map(p=>{
+  if(!permits.length){
+    list.innerHTML = kw
+      ? `<div class="empty-state"><div style="font-size:30px">🔍</div><div>ไม่พบรายการที่ค้นหา</div></div>`
+      : '<div class="empty-state"><div style="font-size:30px">📋</div><div>ยังไม่มีคำขออนุมัติ</div></div>';
+    return;
+  }
+  list.innerHTML=permits.map(p=>{
     const stColor=p.status==='approved'?'var(--success)':p.status==='rejected'?'var(--danger)':'var(--warning)';
     const stLabel=p.status==='approved'?'✅ อนุมัติแล้ว':p.status==='rejected'?'❌ ไม่อนุมัติ':'⏳ รออนุมัติ';
     const link=location.origin+location.pathname+'?approve='+p.id;
