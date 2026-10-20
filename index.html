@@ -2125,6 +2125,7 @@ function renderSettings(){
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
       <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''}</span>
       <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
+      <button class="btn btn-outline btn-sm" onclick="editCarPlate('${c.id}')">แก้ทะเบียน</button>
       <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
       <button class="btn btn-sm" style="background:${c.testDrive?'#6b7280':'#10b981'};color:#fff;border:none" onclick="toggleCarTestDrive('${c.id}')">${c.testDrive?'ยกเลิกทดลองขับ':'🚗 ตั้งเป็นทดลองขับ'}</button>
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
@@ -2150,6 +2151,24 @@ function toggleCarTestDrive(id){
   car.testDrive=!car.testDrive;
   syncNow();
   renderSettings();
+}
+
+function editCarPlate(id){
+  const car=db.cars.find(c=>c.id===id);
+  if(!car)return;
+  const val=prompt('แก้ทะเบียนรถ (ปัจจุบัน: '+car.plate+')', car.plate);
+  if(val===null) return;
+  const newPlate = val.trim();
+  if(!newPlate){alert('กรุณากรอกทะเบียนรถ');return;}
+  if(db.cars.find(c=>c.id!==id && c.plate===newPlate && c.active)){alert('ทะเบียนนี้มีอยู่แล้ว');return;}
+  // อัปเดต bookings ที่อ้างถึงทะเบียนเดิมด้วย
+  (db.bookings||[]).forEach(b=>{ if(b.car===car.plate) b.car=newPlate; });
+  car.plate=newPlate;
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(_fbReady) fbSetDoc('cars', id, {...car, updatedAt:_ts});
+  syncNow();
+  renderSettings();renderCars();
 }
 
 function editCarMileage(id){
@@ -4286,6 +4305,7 @@ function renderFcSettings(){
     <div class="staff-item">
       <span class="staff-name">💳 ${fc.name}</span>
       <span style="font-size:12px;color:var(--g600)">฿${Number(fc.value||0).toLocaleString('th-TH')}</span>
+      <button class="btn btn-outline btn-sm" onclick="editFcName('${fc.id}')">แก้ชื่อ</button>
       <button class="btn btn-outline btn-sm" onclick="editFcValue('${fc.id}')">แก้มูลค่า</button>
       <button class="btn btn-danger btn-sm" onclick="removeFuelCard('${fc.id}')">ลบ</button>
     </div>`).join('');
@@ -4311,6 +4331,21 @@ function removeFuelCard(id){
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   if(_fbReady) fbDeleteDoc('fuelCards', id);
+  syncNow();
+  renderFcSettings();renderFuelCards();
+}
+
+function editFcName(id){
+  const fc=(db.fuelCards||[]).find(f=>f.id===id);
+  if(!fc) return;
+  const val=prompt('แก้ชื่อการ์ด (ปัจจุบัน: '+fc.name+')', fc.name);
+  if(val===null) return;
+  const newName = val.trim();
+  if(!newName){alert('กรุณากรอกชื่อการ์ด');return;}
+  fc.name=newName;
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(_fbReady) fbSetDoc('fuelCards', id, {...fc, updatedAt:_ts});
   syncNow();
   renderFcSettings();renderFuelCards();
 }
