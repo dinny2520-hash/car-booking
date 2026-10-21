@@ -4095,11 +4095,33 @@ function renderFcReturnList(){
       <div style="font-size:13px;color:var(--g600)">👤 ${b.name} | 📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
       <div style="font-size:13px;color:var(--g600)">📝 ${b.reason}</div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
+        ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
         ${isPending?`<button class="btn btn-success btn-sm" onclick="openFcStep2('${b.id}')">✅ เจ้าหน้าที่รับคืน</button>`:''}
+        ${!isPending?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="cancelFcBooking('${b.id}')">❌ ยกเลิกการจองการ์ด</button>`:''}
       </div>
     </div>`;
   }).join('');
+}
+
+function cancelFcBooking(id){
+  const b = (db.fuelCardBookings||[]).find(x=>x.id===id);
+  if(!b) return;
+  const fc = (db.fuelCards||[]).find(f=>f.id===b.fcId);
+  if(!confirm(`ยกเลิกการจองการ์ด ${fc?fc.name:'?'} ของ ${b.name}?`)) return;
+  b.status = 'cancelled';
+  b.cancelledAt = nowISO();
+  b.cancelledBy = 'user';
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const _now = new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt:_now});
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt:_now, changedIds:{fuelCardBookings:[b.id]}
+    });
+  } else { syncNow(()=>showSyncToast(true)); }
+  renderFcReturnList();
+  renderFuelCards();
+  renderFcHistory();
 }
 
 function openFcStep1(id){
