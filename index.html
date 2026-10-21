@@ -4107,21 +4107,15 @@ function cancelFcBooking(id){
   const b = (db.fuelCardBookings||[]).find(x=>x.id===id);
   if(!b) return;
   const fc = (db.fuelCards||[]).find(f=>f.id===b.fcId);
-  if(!confirm(`ยกเลิกการจองการ์ด ${fc?fc.name:'?'} ของ ${b.name}?`)) return;
-  b.status = 'cancelled';
-  b.cancelledAt = nowISO();
-  b.cancelledBy = 'user';
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  const _now = new Date().toISOString();
-  if(_fbReady){
-    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt:_now});
-    _fbDb.collection('config').doc('lastUpdate').set({
-      updatedAt:_now, changedIds:{fuelCardBookings:[b.id]}
-    });
-  } else { syncNow(()=>showSyncToast(true)); }
-  renderFcReturnList();
-  renderFuelCards();
-  renderFcHistory();
+  fcCancelId = id;
+  document.getElementById('fc-cancel-info').textContent = `💳 ${fc?fc.name:'?'} | 👤 ${b.name}`;
+  document.getElementById('fcc-reason').value = '';
+  document.getElementById('fcc-admin').value = '';
+  document.getElementById('fc-cancel-err').style.display = 'none';
+  clearPins('fccpin');
+  // clear PINs manually
+  ['fcc1','fcc2','fcc3','fcc4'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  openModal('modal-fc-cancel');
 }
 
 function openFcStep1(id){
@@ -4472,22 +4466,31 @@ function openFcCancel(id){
 function confirmFcCancel(){
   const pin=getModalPin('fcc');
   const adminPass=document.getElementById('fcc-admin').value.trim();
+  const reason=document.getElementById('fcc-reason')?.value.trim()||'';
   const errEl=document.getElementById('fc-cancel-err');
   errEl.style.display='none';
-  const b=(db.fuelCardBookings||[]).find(x=>x.id===_fcCancelId);
+  const b=(db.fuelCardBookings||[]).find(x=>x.id===(_fcCancelId||fcCancelId));
   if(!b) return;
+  if(!reason){errEl.textContent='กรุณากรอกเหตุผลการยกเลิก';errEl.style.display='flex';return;}
   let authorized=false;
   if(adminPass===db.adminPass) authorized=true;
   else if(pin.length===4&&pin===b.pin) authorized=true;
   if(!authorized){errEl.textContent='PIN หรือรหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
-  // ยกเลิกการจอง — ไม่ต้องคืนยอดเพราะยังไม่ได้หักการ์ดตอนจอง
-  b.status='cancelled';b.cancelledAt=nowISO();
-  syncNow();
+  b.status='cancelled';
+  b.cancelledAt=nowISO();
+  b.cancelledBy=adminPass===db.adminPass?'admin':'user';
+  b.cancelReason=reason;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const _now=new Date().toISOString();
+  if(_fbReady){
+    fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt:_now});
+    _fbDb.collection('config').doc('lastUpdate').set({updatedAt:_now, changedIds:{fuelCardBookings:[b.id]}});
+  } else { syncNow(()=>showSyncToast(true)); }
   closeModal('modal-fc-cancel');
   renderFcReturnList();
   renderFuelCards();
   renderFcHistory();
-  alert('✅ ยกเลิกการจองการ์ดสำเร็จ ยอดถูกคืนกลับแล้ว');
+  alert('✅ ยกเลิกการจองการ์ดสำเร็จ');
 }
 
 // ---- FUEL CARD HISTORY ----
@@ -6763,6 +6766,9 @@ function renderPrintPage(p){
   <div class="modal">
     <div class="modal-title">❌ ยกเลิกการจองการ์ด</div>
     <div id="fc-cancel-info" class="alert alert-warning" style="margin-bottom:14px"></div>
+    <div class="form-row"><label>เหตุผลการยกเลิก *</label>
+      <input type="text" id="fcc-reason" placeholder="เช่น ไม่ได้ใช้งาน, เปลี่ยนแผน">
+    </div>
     <div style="font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px">กรอกรหัส PIN 4 หลัก</div>
     <div class="pin-input">
       <input type="password" maxlength="1" id="fcc1" inputmode="numeric" oninput="pinNext(this,'fcc2')">
