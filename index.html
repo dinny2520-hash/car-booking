@@ -5686,10 +5686,15 @@ async function restorePermitFromArchive(permitId){
       updatedAt: new Date().toISOString(),
       changedIds: {permits:[permitId]}
     });
-    // ลบออกจาก cache
+    // ลบออกจาก cache และ re-render archive list โดยไม่เรียก loadPermitArchive (กัน recursive)
     _permitArchiveCache = _permitArchiveCache.filter(x=>x.id!==permitId);
-    // re-render
-    await loadPermitArchive();
+    const listEl = document.getElementById('permit-archive-list');
+    if(listEl){
+      const remaining = _permitArchiveCache;
+        if(!remaining.length){
+        listEl.innerHTML = '<div class="empty-state"><div style="font-size:30px">🗄️</div><div>ไม่พบใบที่ถูกลบในเดือนนี้</div></div>';
+      }
+    }
     renderPermitList();
     renderUcPermitList();
     alert('✅ กู้คืนใบ PM สำเร็จ กลับไปที่รายการใบ PM แล้ว');
