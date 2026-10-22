@@ -5700,7 +5700,14 @@ async function restorePermitFromArchive(permitId){
     }
     renderPermitList();
     renderUcPermitList();
-    alert('✅ กู้คืนใบ PM สำเร็จ กลับไปที่รายการใบ PM แล้ว');
+    // ไปหน้า permit และ scroll หาใบที่กู้คืน
+    _lastViewedPermitId = permitId;
+    showPage('permit', document.getElementById('nav-permit'));
+    setTimeout(()=>{
+      const el = document.querySelector(`[data-permit-id="${permitId}"]`);
+      if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+    }, 300);
+    alert('✅ กู้คืนใบ PM สำเร็จ');
   }catch(err){
     console.error('restorePermit error:', err);
     alert('❌ กู้คืนไม่สำเร็จ: '+err.message);
