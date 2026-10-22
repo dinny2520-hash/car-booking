@@ -5673,9 +5673,13 @@ async function restorePermitFromArchive(permitId){
     const check = await _fbDb.collection('permits').doc(permitId).get();
     if(!check.exists) throw new Error('permits doc ไม่พบหลัง set');
     await _fbDb.collection('permitArchive').doc(permitId).delete();
-    // อัปเดต local db
+    // ดึงใบที่ restore มาจาก Firebase ตรงๆ แล้ว merge เข้า local db
+    const restoredSnap = await _fbDb.collection('permits').doc(permitId).get();
+    const restoredData = restoredSnap.data();
     db.permits = db.permits||[];
-    db.permits.unshift(restored);
+    // ลบออกถ้ามีอยู่แล้ว แล้วเพิ่มใหม่
+    db.permits = db.permits.filter(x=>x.id!==permitId);
+    db.permits.unshift(restoredData);
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     // notify ทุกเครื่อง
     _fbDb.collection('config').doc('lastUpdate').set({
@@ -5684,7 +5688,7 @@ async function restorePermitFromArchive(permitId){
     });
     // ลบออกจาก cache
     _permitArchiveCache = _permitArchiveCache.filter(x=>x.id!==permitId);
-    // re-render archive list
+    // re-render
     await loadPermitArchive();
     renderPermitList();
     renderUcPermitList();
