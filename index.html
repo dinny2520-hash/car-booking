@@ -5664,13 +5664,14 @@ async function restorePermitFromArchive(permitId){
   if(!p){ alert('ไม่พบข้อมูล'); return; }
   if(!_fbReady){ alert('ไม่มีการเชื่อมต่อ Firebase'); return; }
   try{
-    // ลบ archivedAt ออกก่อน push กลับ
     const restored = {...p};
     delete restored.archivedAt;
     restored.updatedAt = new Date().toISOString();
-    // เพิ่มกลับใน permits collection
+    // set permits ก่อน ถ้าสำเร็จแล้วค่อยลบ archive
     await _fbDb.collection('permits').doc(permitId).set(restored);
-    // ลบออกจาก permitArchive
+    // ยืนยันว่า set สำเร็จจริงก่อนลบ archive
+    const check = await _fbDb.collection('permits').doc(permitId).get();
+    if(!check.exists) throw new Error('permits doc ไม่พบหลัง set');
     await _fbDb.collection('permitArchive').doc(permitId).delete();
     // อัปเดต local db
     db.permits = db.permits||[];
