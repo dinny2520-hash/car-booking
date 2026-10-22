@@ -1147,6 +1147,7 @@ let _lastChangedIds = {}; // เก็บ changedIds จาก lastUpdate ล่
 let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0;
+const _restoredPermitIds = new Set(); // ใบที่เพิ่ง restore กัน pull ทับ
 // ถ้า reload จาก checkAppVersion ให้ใช้ timestamp เดิม กัน full pull ทันที
 try{
   const saved = localStorage.getItem('_lastFullPull');
@@ -1262,7 +1263,10 @@ async function _smartPull(sinceTs){
 
       const localPMap = {};
       (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
-      fbPermits.forEach(p=>{ if(!_isRecentlyPushed(p.id)) localPMap[p.id]=p; });
+      fbPermits.forEach(p=>{
+        // ไม่ทับใบที่เพิ่ง restore มา (กัน pull ทับ)
+        if(!_isRecentlyPushed(p.id) && !_restoredPermitIds.has(p.id)) localPMap[p.id]=p;
+      });
       db.permits = Object.values(localPMap)
         .filter(p=>!deletedPermits.has(p.id))
         .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
@@ -5679,6 +5683,9 @@ async function restorePermitFromArchive(permitId){
     db.permits = db.permits||[];
     db.permits = db.permits.filter(x=>x.id!==permitId);
     db.permits.unshift(restored);
+    // mark ใบนี้กัน pull ทับ 30 วินาที
+    _restoredPermitIds.add(permitId);
+    setTimeout(()=>_restoredPermitIds.delete(permitId), 30000);
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     // notify ทุกเครื่อง — แต่ไม่รอ pull เสร็จ
     _fbDb.collection('config').doc('lastUpdate').set({
