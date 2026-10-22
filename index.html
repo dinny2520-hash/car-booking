@@ -5667,12 +5667,14 @@ async function restorePermitFromArchive(permitId){
     const restored = {...p};
     delete restored.archivedAt;
     restored.updatedAt = new Date().toISOString();
-    // set permits ก่อน ถ้าสำเร็จแล้วค่อยลบ archive
+    // เขียนตรงๆ โดยไม่ผ่าน fbSetDoc (กัน _isRecentlyPushed block การ merge)
     await _fbDb.collection('permits').doc(permitId).set(restored);
     // ยืนยันว่า set สำเร็จจริงก่อนลบ archive
     const check = await _fbDb.collection('permits').doc(permitId).get();
     if(!check.exists) throw new Error('permits doc ไม่พบหลัง set');
     await _fbDb.collection('permitArchive').doc(permitId).delete();
+    // clear recently pushed flag สำหรับ id นี้ กัน incremental pull ข้ามไป
+    if(typeof _lastPushed !== 'undefined') delete _lastPushed[permitId];
     // ดึงใบที่ restore มาจาก Firebase ตรงๆ แล้ว merge เข้า local db
     const restoredSnap = await _fbDb.collection('permits').doc(permitId).get();
     const restoredData = restoredSnap.data();
