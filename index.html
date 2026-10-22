@@ -5673,15 +5673,16 @@ async function restorePermitFromArchive(permitId){
     const check = await _fbDb.collection('permits').doc(permitId).get();
     if(!check.exists) throw new Error('permits doc ไม่พบหลัง set');
     await _fbDb.collection('permitArchive').doc(permitId).delete();
-    // clear recently pushed flag สำหรับ id นี้ กัน incremental pull ข้ามไป
-    if(typeof _lastPushed !== 'undefined') delete _lastPushed[permitId];
-    // ดึงใบที่ restore มาจาก Firebase ตรงๆ แล้ว merge เข้า local db
-    const restoredSnap = await _fbDb.collection('permits').doc(permitId).get();
-    const restoredData = restoredSnap.data();
+    // clear recently pushed flag กัน incremental pull ข้ามใบนี้ไป
+    if(typeof _recentlyPushedAt !== 'undefined') delete _recentlyPushedAt[permitId];
+    // inject ใบที่ restore เข้า db.permits ทันที ก่อน pull จะมาทับ
     db.permits = db.permits||[];
-    // ลบออกถ้ามีอยู่แล้ว แล้วเพิ่มใหม่
     db.permits = db.permits.filter(x=>x.id!==permitId);
-    db.permits.unshift(restoredData);
+    db.permits.unshift(restored);
+    // clear _recentlyPushedAt กัน incremental pull ข้ามใบนี้ไป
+    try{
+      if(typeof _recentlyPushedAt !== 'undefined') delete _recentlyPushedAt[permitId];
+    }catch(e){}
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     // notify ทุกเครื่อง
     _fbDb.collection('config').doc('lastUpdate').set({
