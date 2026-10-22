@@ -5645,13 +5645,52 @@ async function loadPermitArchive(){
               <div style="color:var(--danger);margin-top:2px">🗑️ ลบเมื่อ ${archivedDate}</div>
             </div>
           </div>
-          <button class="btn btn-danger btn-sm" onclick="openPermanentDeleteModal('${p.id}')">ลบถาวร</button>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn btn-outline btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restorePermitFromArchive('${p.id}')">↩️ กู้คืน</button>
+            <button class="btn btn-danger btn-sm" onclick="openPermanentDeleteModal('${p.id}')">ลบถาวร</button>
+          </div>
         </div>
       </div>`;
     }).join('');
   }catch(err){
     console.error('loadPermitArchive error:', err);
     listEl.innerHTML = '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง</div>';
+  }
+}
+
+async function restorePermitFromArchive(permitId){
+  if(!confirm('กู้คืนใบ PM นี้กลับมาในรายการหลัก?')) return;
+  const p = _permitArchiveCache.find(x=>x.id===permitId);
+  if(!p){ alert('ไม่พบข้อมูล'); return; }
+  if(!_fbReady){ alert('ไม่มีการเชื่อมต่อ Firebase'); return; }
+  try{
+    // ลบ archivedAt ออกก่อน push กลับ
+    const restored = {...p};
+    delete restored.archivedAt;
+    restored.updatedAt = new Date().toISOString();
+    // เพิ่มกลับใน permits collection
+    await _fbDb.collection('permits').doc(permitId).set(restored);
+    // ลบออกจาก permitArchive
+    await _fbDb.collection('permitArchive').doc(permitId).delete();
+    // อัปเดต local db
+    db.permits = db.permits||[];
+    db.permits.unshift(restored);
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    // notify ทุกเครื่อง
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt: new Date().toISOString(),
+      changedIds: {permits:[permitId]}
+    });
+    // ลบออกจาก cache
+    _permitArchiveCache = _permitArchiveCache.filter(x=>x.id!==permitId);
+    // re-render archive list
+    await loadPermitArchive();
+    renderPermitList();
+    renderUcPermitList();
+    alert('✅ กู้คืนใบ PM สำเร็จ กลับไปที่รายการใบ PM แล้ว');
+  }catch(err){
+    console.error('restorePermit error:', err);
+    alert('❌ กู้คืนไม่สำเร็จ: '+err.message);
   }
 }
 
