@@ -4025,8 +4025,15 @@ function selectFuelCard(id){
 function submitFcBooking(){
   const name=document.getElementById('fc-name').value.trim();
   const reason=document.getElementById('fc-reason').value.trim();
-  const start=document.getElementById('fc-start').value;
-  const end=document.getElementById('fc-end').value;
+  // แปลง พ.ศ. → ค.ศ. ถ้า browser ส่งปีเป็น พ.ศ.
+  const _fixBEYear = v => {
+    if(!v) return v;
+    const m = v.match(/^(\d{4})(-.+)$/);
+    if(m && Number(m[1]) > 2500) return (Number(m[1])-543)+m[2];
+    return v;
+  };
+  const start=_fixBEYear(document.getElementById('fc-start').value);
+  const end=_fixBEYear(document.getElementById('fc-end').value);
   const pin=getModalPin('fcpin');
   const fuelAmt=getFuelBahtValue('fc');
   const fuelRaw=document.getElementById('fc-fuel').value;
@@ -5683,6 +5690,14 @@ async function restorePermitFromArchive(permitId){
     db.permits = db.permits||[];
     db.permits = db.permits.filter(x=>x.id!==permitId);
     db.permits.unshift(restored);
+    // ลบออกจาก deletedPermitIds ทั้ง local และ Firebase กัน pull filter ออกอีก
+    db.deletedPermitIds = (db.deletedPermitIds||[]).filter(id=>id!==permitId);
+    // อัปเดต Firebase config/deletedIds ด้วย
+    _fbDb.collection('config').doc('deletedIds').set({
+      deletedPermitIds: db.deletedPermitIds||[],
+      deletedBookingIds: db.deletedBookingIds||[],
+      updatedAt: new Date().toISOString()
+    });
     // mark ใบนี้กัน pull ทับ 30 วินาที
     _restoredPermitIds.add(permitId);
     setTimeout(()=>_restoredPermitIds.delete(permitId), 30000);
