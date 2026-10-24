@@ -3958,13 +3958,11 @@ function renderFuelCards(){
     else if(fcSt==='upcoming'){ statusLabel='⏳ รอใช้งาน'; statusStyle=''; blocked=false; }
     const selected = selectedFcId===fc.id;
     // แสดงชื่อผู้ยืมและเหตุผลถ้ากำลังถูกใช้งาน
-    const activeBkSt = activeBk ? getFcBkStatus(activeBk) : null;
     const borrowerInfo = activeBk ? `
       <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.3);font-size:12px">
         <div>👤 <b>${activeBk.name}</b></div>
         <div style="opacity:0.85">📝 ${activeBk.reason}</div>
         <div style="opacity:0.85">📅 ${fmt(activeBk.startDt)} → ${fmt(activeBk.endDt)}</div>
-        ${activeBkSt==='upcoming'?`<button class="btn btn-outline btn-sm" style="margin-top:6px;color:var(--danger);border-color:var(--danger);background:rgba(255,255,255,0.9)" onclick="event.stopPropagation();cancelFcBooking('${activeBk.id}')">ยกเลิก</button>`:''}
       </div>` : '';
     return `<div class="fuel-card${selected?' selected':''}${blocked?' in-use-card':''}"
       style="${statusStyle}" onclick="selectFuelCard('${fc.id}')">
@@ -4581,11 +4579,16 @@ function renderFcSchedule(){
     return `<div class="card" style="margin-bottom:12px">
       <div style="font-weight:700;margin-bottom:8px">💳 ${fc.name} | มูลค่าคงเหลือ: ฿${Number(fc.value||0).toLocaleString('th-TH')}</div>
       ${bks.length?bks.map(b=>{
-        const stColor=b.status==='returned'?'var(--success)':b.returnStep==='pending'?'var(--warning)':'var(--primary)';
-        return `<div style="border-left:3px solid ${stColor};padding:6px 10px;margin-bottom:6px;border-radius:0 6px 6px 0;background:var(--g50)">
-          <div style="font-size:13px;font-weight:600">👤 ${b.name}</div>
-          <div style="font-size:12px;color:var(--g600)">📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
-          <div style="font-size:12px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
+        const bkSt=getFcBkStatus(b);
+        const stColor=b.status==='returned'?'var(--success)':b.returnStep==='pending'?'var(--warning)':bkSt==='upcoming'?'var(--g400)':'var(--primary)';
+        const isUpcoming = bkSt==='upcoming' && b.status!=='returned';
+        return `<div style="border-left:3px solid ${stColor};padding:6px 10px;margin-bottom:6px;border-radius:0 6px 6px 0;background:var(--g50);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div>
+            <div style="font-size:13px;font-weight:600">👤 ${b.name}</div>
+            <div style="font-size:12px;color:var(--g600)">📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
+            <div style="font-size:12px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
+          </div>
+          ${isUpcoming?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);white-space:nowrap;flex-shrink:0" onclick="cancelFcBooking('${b.id}')">ยกเลิก</button>`:''}
         </div>`;
       }).join(''):'<div style="font-size:13px;color:var(--g400)">ไม่มีการจอง</div>'}
     </div>`;
