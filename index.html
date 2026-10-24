@@ -3958,11 +3958,13 @@ function renderFuelCards(){
     else if(fcSt==='upcoming'){ statusLabel='⏳ รอใช้งาน'; statusStyle=''; blocked=false; }
     const selected = selectedFcId===fc.id;
     // แสดงชื่อผู้ยืมและเหตุผลถ้ากำลังถูกใช้งาน
+    const activeBkSt = activeBk ? getFcBkStatus(activeBk) : null;
     const borrowerInfo = activeBk ? `
       <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.3);font-size:12px">
         <div>👤 <b>${activeBk.name}</b></div>
         <div style="opacity:0.85">📝 ${activeBk.reason}</div>
         <div style="opacity:0.85">📅 ${fmt(activeBk.startDt)} → ${fmt(activeBk.endDt)}</div>
+        ${activeBkSt==='upcoming'?`<button class="btn btn-outline btn-sm" style="margin-top:6px;color:var(--danger);border-color:var(--danger);background:rgba(255,255,255,0.9)" onclick="event.stopPropagation();cancelFcBooking('${activeBk.id}')">ยกเลิก</button>`:''}
       </div>` : '';
     return `<div class="fuel-card${selected?' selected':''}${blocked?' in-use-card':''}"
       style="${statusStyle}" onclick="selectFuelCard('${fc.id}')">
@@ -4108,7 +4110,6 @@ function renderFcReturnList(){
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         ${!isPending?`<button class="btn btn-primary btn-sm" onclick="openFcStep1('${b.id}')">📋 แจ้งคืนการ์ด (ผู้ยืม)</button>`:''}
         ${isPending?`<button class="btn btn-success btn-sm" onclick="openFcStep2('${b.id}')">✅ เจ้าหน้าที่รับคืน</button>`:''}
-        ${!isPending?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="cancelFcBooking('${b.id}')">❌ ยกเลิกการจองการ์ด</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4527,6 +4528,7 @@ function renderFcHistory(){
           ${b.noFuelReason?`<div style="font-size:13px;color:var(--warning)">🚫 ไม่ได้เติม: ${b.noFuelReason}</div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
+          ${bkSt==='upcoming'&&b.status!=='cancelled'&&b.status!=='returned'?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="cancelFcBooking('${b.id}')">ยกเลิก</button>`:''}
         </div>
       </div>
     </div>`;
