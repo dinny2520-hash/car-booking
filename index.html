@@ -58,6 +58,13 @@ body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-h
 .nav-icon{font-size:18px;line-height:1}
 .nav-label{font-size:11px;line-height:1}
 @media(min-width:480px){.nav-btn{min-width:60px;padding:6px 12px}.nav-label{font-size:12px}}
+.cal-cell{min-height:66px;border:1px solid #e5e7eb;border-radius:6px;padding:3px;background:#fff;cursor:pointer;overflow:hidden;box-sizing:border-box}
+.cal-cell.today{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset}
+.cal-cell.sel{background:#eff6ff;border-color:#2563eb}
+.cal-dn{font-size:11px;font-weight:700;color:#374151;margin-bottom:2px}
+.cal-chip{font-size:9px;line-height:1.35;padding:1px 3px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid #999}
+.cal-more{font-size:9px;color:#6b7280}
+@media(min-width:600px){.cal-cell{min-height:96px;padding:4px}.cal-chip{font-size:11px;padding:1px 5px}.cal-dn{font-size:12px}.cal-more{font-size:11px}}
 .container{max-width:1100px;margin:0 auto;padding:20px 14px}
 .page{display:none}.page.active{display:block}
 .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:20px}
@@ -232,6 +239,9 @@ tr:hover td{background:var(--g50)}
     <button class="nav-btn" id="nav-carschedule" onclick="showPage('carschedule',this)">
       <span class="nav-icon">📅</span><span class="nav-label">ตาราง</span>
     </button>
+    <button class="nav-btn" id="nav-calendar" onclick="showPage('calendar',this)">
+      <span class="nav-icon">🗓️</span><span class="nav-label">ปฏิทิน</span>
+    </button>
     <button class="nav-btn" id="nav-return" onclick="showPage('return',this)">
       <span class="nav-icon">🔑</span><span class="nav-label">คืนรถ/การ์ด</span>
     </button>
@@ -352,6 +362,34 @@ tr:hover td{background:var(--g50)}
         <div class="card-title">💳 ตารางการจองการ์ดน้ำมัน</div>
         <div id="fc-schedule-list"></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- CALENDAR PAGE -->
+<div id="page-calendar" class="page">
+  <div class="container">
+    <div class="card">
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-primary" id="ctab-car" onclick="calSwitchMode('car')" style="flex:1;font-size:15px;padding:12px;border-radius:10px">🚗 ปฏิทินรถ</button>
+        <button class="btn btn-outline" id="ctab-card" onclick="calSwitchMode('card')" style="flex:1;font-size:15px;padding:12px;border-radius:10px">💳 ปฏิทินการ์ด</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="calNav(-1)">◀</button>
+        <div id="cal-title" style="font-weight:700;font-size:16px"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="calNav(0)">วันนี้</button>
+          <button class="btn btn-outline btn-sm" onclick="calNav(1)">▶</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#4b5563;margin-bottom:10px">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9ca3af;margin-right:4px"></span>รอใช้งาน</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#2563eb;margin-right:4px"></span>กำลังใช้อยู่</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626;margin-right:4px"></span>เกินกำหนด</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>รอรับคืน</span>
+      </div>
+      <div id="cal-grid"></div>
+      <div id="cal-detail" style="margin-top:14px"></div>
     </div>
   </div>
 </div>
@@ -974,7 +1012,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261022-001'; // Force reload version
+const APP_VERSION = '20261031-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1318,6 +1356,7 @@ async function _smartPull(sinceTs){
     checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
     renderCars(); renderHistory(); renderFuelCards();
     renderFcReturnList(); renderFcHistory();
+    if(document.getElementById('page-calendar')?.classList.contains('active')) renderCalendar();
     renderUcPermitList(); renderPermitList();
     renderReturnList();
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
@@ -1421,6 +1460,7 @@ function showPage(name,btn){
   if(name==='booking')renderCars();
   if(name==='history')renderHistory();
   if(name==='carschedule')initCarSchedule();
+  if(name==='calendar')initCalendar();
   if(name==='return')renderReturnList();
   if(name==='usecart'){initUseCar();}
   if(name==='permit'){initPermitPage();startPermitPoll();}
@@ -4551,6 +4591,167 @@ function switchHistoryMode(mode, el){
   }
 }
 
+
+// ---- CALENDAR ----
+var _calMode = 'car';
+var _calYear = null, _calMonth = null, _calSelDay = null;
+var _CAL_ST = {
+  'upcoming':       {c:'#6b7280', bg:'#f3f4f6', label:'รอใช้งาน'},
+  'in-use':         {c:'#2563eb', bg:'#dbeafe', label:'กำลังใช้อยู่'},
+  'overdue':        {c:'#dc2626', bg:'#fee2e2', label:'เกินกำหนด'},
+  'pending-return': {c:'#d97706', bg:'#fef3c7', label:'รอรับคืน'}
+};
+
+function _calEsc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];
+  });
+}
+
+// แปลงปี พ.ศ. ที่หลุดเข้ามาในข้อมูล (เช่น 2569) เป็น ค.ศ. ก่อนสร้าง Date
+function _calParse(v){
+  if(!v) return null;
+  var s = (v instanceof Date) ? v : String(v);
+  if(typeof s === 'string'){
+    var m = s.match(/^(\d{4})(-.*)$/);
+    if(m && Number(m[1]) > 2500) s = (Number(m[1]) - 543) + m[2];
+  }
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function _calItems(){
+  var now = new Date();
+  var src = _calMode === 'car' ? (db.bookings||[]) : (db.fuelCardBookings||[]);
+  var out = [];
+  src.forEach(function(b){
+    // คืนแล้ว/ยกเลิก ไม่แสดงในปฏิทิน
+    if(b.status === 'returned' || b.status === 'cancelled') return;
+    var s = _calParse(b.startDt), e = _calParse(b.endDt);
+    if(!s || !e) return;
+    var st;
+    if(b.returnStep === 'pending') st = 'pending-return';
+    else if(e < now) st = 'overdue';
+    else if(s <= now) st = 'in-use';
+    else st = 'upcoming';
+    var label;
+    if(_calMode === 'car'){
+      var car = (db.cars||[]).find(function(c){return c.id === b.carId;});
+      label = car ? car.plate : (b.car || '?');
+    } else {
+      var fc = (db.fuelCards||[]).find(function(f){return f.id === b.fcId;});
+      label = fc ? fc.name : (b.fcName || '?');
+    }
+    // ยังไม่ได้คืนและเลยกำหนดแล้ว → แสดงต่อเนื่องถึงวันนี้
+    var effEnd = (e < now) ? now : e;
+    out.push({id:b.id, label:label, name:b.name||'-', s:s, e:e, effEnd:effEnd, st:st});
+  });
+  return out;
+}
+
+function initCalendar(){
+  if(_calYear === null){
+    var n = new Date();
+    _calYear = n.getFullYear();
+    _calMonth = n.getMonth();
+  }
+  renderCalendar();
+}
+
+function calSwitchMode(mode){
+  _calMode = mode;
+  _calSelDay = null;
+  document.getElementById('ctab-car').className = 'btn ' + (mode==='car' ? 'btn-primary' : 'btn-outline');
+  document.getElementById('ctab-card').className = 'btn ' + (mode==='card' ? 'btn-primary' : 'btn-outline');
+  renderCalendar();
+}
+
+function calNav(delta){
+  if(delta === 0){
+    var n = new Date();
+    _calYear = n.getFullYear();
+    _calMonth = n.getMonth();
+  } else {
+    _calMonth += delta;
+    if(_calMonth < 0){ _calMonth = 11; _calYear--; }
+    if(_calMonth > 11){ _calMonth = 0; _calYear++; }
+  }
+  _calSelDay = null;
+  renderCalendar();
+}
+
+function calSelectDay(d){
+  _calSelDay = (_calSelDay === d) ? null : d;
+  renderCalendar();
+}
+
+function renderCalendar(){
+  var grid = document.getElementById('cal-grid');
+  if(!grid) return;
+  if(_calYear === null){ var n0 = new Date(); _calYear = n0.getFullYear(); _calMonth = n0.getMonth(); }
+  var y = _calYear, m = _calMonth;
+  var months = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  document.getElementById('cal-title').textContent = months[m] + ' ' + (y + 543);
+
+  var items = _calItems();
+  var startDow = new Date(y, m, 1).getDay();
+  var dim = new Date(y, m + 1, 0).getDate();
+  var today = new Date();
+  var isThisMonth = today.getFullYear() === y && today.getMonth() === m;
+
+  function itemsOfDay(d){
+    var ds = new Date(y, m, d, 0, 0, 0), de = new Date(y, m, d, 23, 59, 59);
+    return items.filter(function(it){ return it.s <= de && it.effEnd >= ds; })
+                .sort(function(a,b){ return a.s - b.s; });
+  }
+
+  var html = '<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px">';
+  ['อา','จ','อ','พ','พฤ','ศ','ส'].forEach(function(h){
+    html += '<div style="text-align:center;font-size:12px;font-weight:700;color:#6b7280;padding:4px 0">' + h + '</div>';
+  });
+  for(var i = 0; i < startDow; i++) html += '<div></div>';
+
+  for(var d = 1; d <= dim; d++){
+    var list = itemsOfDay(d);
+    var cls = 'cal-cell';
+    if(isThisMonth && today.getDate() === d) cls += ' today';
+    if(_calSelDay === d) cls += ' sel';
+    html += '<div class="' + cls + '" onclick="calSelectDay(' + d + ')">';
+    html += '<div class="cal-dn">' + d + '</div>';
+    list.slice(0,3).forEach(function(it){
+      var c = _CAL_ST[it.st];
+      html += '<div class="cal-chip" style="background:' + c.bg + ';border-left-color:' + c.c + ';color:#1f2937">'
+            + _calEsc(it.label) + ' · ' + _calEsc(it.name) + '</div>';
+    });
+    if(list.length > 3) html += '<div class="cal-more">+' + (list.length - 3) + ' รายการ</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+
+  // รายละเอียดของวันที่เลือก
+  var det = document.getElementById('cal-detail');
+  if(!_calSelDay){
+    det.innerHTML = '<div style="font-size:13px;color:#9ca3af;text-align:center">แตะที่วันที่เพื่อดูรายการทั้งหมดของวันนั้น</div>';
+    return;
+  }
+  var dayList = itemsOfDay(_calSelDay);
+  var head = '<div style="font-weight:700;margin-bottom:8px">📆 ' + _calSelDay + ' ' + months[m] + ' ' + (y + 543) + '</div>';
+  if(!dayList.length){
+    det.innerHTML = head + '<div style="font-size:13px;color:#9ca3af">ไม่มีรายการ</div>';
+    return;
+  }
+  det.innerHTML = head + dayList.map(function(it){
+    var c = _CAL_ST[it.st];
+    return '<div style="border-left:4px solid ' + c.c + ';background:' + c.bg + ';border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:6px">'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      + '<div style="font-weight:700;font-size:14px">' + (_calMode==='car' ? '🚗 ' : '💳 ') + _calEsc(it.label) + '</div>'
+      + '<span style="font-size:12px;font-weight:700;color:' + c.c + '">' + c.label + '</span></div>'
+      + '<div style="font-size:13px;color:#374151;margin-top:2px">👤 ' + _calEsc(it.name) + '</div>'
+      + '<div style="font-size:12px;color:#6b7280;margin-top:2px">📅 ' + fmt(it.s) + ' → ' + fmt(it.e) + '</div>'
+      + '</div>';
+  }).join('');
+}
 
 function switchScheduleMode(mode, el){
   document.getElementById('stab-car')?.classList.replace('btn-primary','btn-outline');
