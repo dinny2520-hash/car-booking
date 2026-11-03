@@ -382,6 +382,10 @@ tr:hover td{background:var(--g50)}
           <button class="btn btn-outline btn-sm" onclick="calNav(1)">▶</button>
         </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <label id="cal-filter-label" style="font-size:13px;font-weight:600;color:var(--g600)">ทะเบียนรถ:</label>
+        <select id="cal-filter" onchange="calSetFilter(this.value)" style="padding:7px 12px;border:1.5px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;outline:none;max-width:100%"></select>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#4b5563;margin-bottom:10px">
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9ca3af;margin-right:4px"></span>รอใช้งาน</span>
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#2563eb;margin-right:4px"></span>กำลังใช้อยู่</span>
@@ -1012,7 +1016,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261031-001'; // Force reload version
+const APP_VERSION = '20261103-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -4595,6 +4599,7 @@ function switchHistoryMode(mode, el){
 // ---- CALENDAR ----
 var _calMode = 'car';
 var _calYear = null, _calMonth = null, _calSelDay = null;
+var _calFilter = ''; // id รถ/การ์ดที่เลือกกรอง ('' = ทั้งหมด)
 var _CAL_ST = {
   'upcoming':       {c:'#6b7280', bg:'#f3f4f6', label:'รอใช้งาน'},
   'in-use':         {c:'#2563eb', bg:'#dbeafe', label:'กำลังใช้อยู่'},
@@ -4627,6 +4632,7 @@ function _calItems(){
   src.forEach(function(b){
     // คืนแล้ว/ยกเลิก ไม่แสดงในปฏิทิน
     if(b.status === 'returned' || b.status === 'cancelled') return;
+    if(_calFilter && (_calMode === 'car' ? b.carId : b.fcId) !== _calFilter) return;
     var s = _calParse(b.startDt), e = _calParse(b.endDt);
     if(!s || !e) return;
     var st;
@@ -4649,6 +4655,32 @@ function _calItems(){
   return out;
 }
 
+function calSetFilter(v){
+  _calFilter = v || '';
+  _calSelDay = null;
+  renderCalendar();
+}
+
+function _calFillFilter(){
+  var sel = document.getElementById('cal-filter');
+  if(!sel) return;
+  var lbl = document.getElementById('cal-filter-label');
+  var opts;
+  if(_calMode === 'car'){
+    if(lbl) lbl.textContent = 'ทะเบียนรถ:';
+    opts = '<option value="">ทุกคัน</option>' + (db.cars||[]).filter(function(c){return c.active !== false;})
+      .map(function(c){ return '<option value="' + _calEsc(c.id) + '">' + _calEsc(c.plate) + '</option>'; }).join('');
+  } else {
+    if(lbl) lbl.textContent = 'การ์ด:';
+    opts = '<option value="">ทุกการ์ด</option>' + (db.fuelCards||[]).filter(function(f){return f.active !== false;})
+      .map(function(f){ return '<option value="' + _calEsc(f.id) + '">' + _calEsc(f.name) + '</option>'; }).join('');
+  }
+  sel.innerHTML = opts;
+  sel.value = _calFilter;
+  // ถ้าค่าที่เลือกไม่มีในรายการแล้ว (เช่นรถถูกลบ) ให้กลับเป็นทั้งหมด
+  if(sel.value !== _calFilter){ _calFilter = ''; sel.value = ''; }
+}
+
 function initCalendar(){
   if(_calYear === null){
     var n = new Date();
@@ -4661,6 +4693,7 @@ function initCalendar(){
 function calSwitchMode(mode){
   _calMode = mode;
   _calSelDay = null;
+  _calFilter = '';
   document.getElementById('ctab-car').className = 'btn ' + (mode==='car' ? 'btn-primary' : 'btn-outline');
   document.getElementById('ctab-card').className = 'btn ' + (mode==='card' ? 'btn-primary' : 'btn-outline');
   renderCalendar();
@@ -4689,6 +4722,7 @@ function renderCalendar(){
   var grid = document.getElementById('cal-grid');
   if(!grid) return;
   if(_calYear === null){ var n0 = new Date(); _calYear = n0.getFullYear(); _calMonth = n0.getMonth(); }
+  _calFillFilter();
   var y = _calYear, m = _calMonth;
   var months = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
   document.getElementById('cal-title').textContent = months[m] + ' ' + (y + 543);
