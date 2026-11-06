@@ -64,6 +64,7 @@ body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-h
 .cal-dn{font-size:11px;font-weight:700;color:#374151;margin-bottom:2px}
 .cal-chip{font-size:9px;line-height:1.35;padding:1px 3px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid #999}
 .cal-more{font-size:9px;color:#6b7280}
+#page-settings.role-backup .full-only{display:none!important}
 @media(min-width:600px){.cal-cell{min-height:96px;padding:4px}.cal-chip{font-size:11px;padding:1px 5px}.cal-dn{font-size:12px}.cal-more{font-size:11px}}
 .container{max-width:1100px;margin:0 auto;padding:20px 14px}
 .page{display:none}.page.active{display:block}
@@ -683,9 +684,9 @@ tr:hover td{background:var(--g50)}
 <div id="page-settings" class="page">
   <div class="container">
     <div class="card">
-      <div class="card-title">⚙️ ตั้งค่าระบบ (แอดมินหลัก)</div>
+      <div class="card-title" id="settings-title">⚙️ ตั้งค่าระบบ (แอดมินหลัก)</div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🔑 Google Sheet Integration</h3>
         <div class="form-row"><label>URL ของ Google Apps Script Web App</label>
           <input type="text" id="gs-url" placeholder="https://script.google.com/macros/s/...">
@@ -697,7 +698,7 @@ tr:hover td{background:var(--g50)}
         </div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>📊 รายงานสรุปค่าน้ำมัน (ใบ permit)</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:14px">ดาวน์โหลดรายงาน permit แยกรถ และการ์ดน้ำมัน</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -713,7 +714,7 @@ tr:hover td{background:var(--g50)}
         </div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>💳 จัดการการ์ดน้ำมัน</h3>
         <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap">
           <input type="text" id="new-fc-name" placeholder="ชื่อการ์ด เช่น บัตร PTT-01" style="flex:1;min-width:160px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
@@ -723,7 +724,7 @@ tr:hover td{background:var(--g50)}
         <div id="fc-list-settings"></div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🚗 จัดการรถ</h3>
         <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap;align-items:center">
           <input type="text" id="new-car-plate" placeholder="ทะเบียนรถ เช่น กข 1234" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
@@ -736,7 +737,7 @@ tr:hover td{background:var(--g50)}
         <div id="car-list-settings"></div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>👤 จัดการเจ้าหน้าที่รับคืนรถ</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <input type="text" id="new-staff-name" placeholder="ชื่อเจ้าหน้าที่" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
@@ -804,21 +805,21 @@ tr:hover td{background:var(--g50)}
         </div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>↩️ ยกเลิกการแจ้งคืนการ์ด</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการที่แจ้งคืนแล้ว แต่ยังไม่ได้รับการ์ดจริง — กรณีคืนผิดการ์ด กดยกเลิกเพื่อให้กลับเป็น "กำลังใช้งาน"</div>
         <div id="admin-pending-fc-return-list" style="max-height:300px;overflow-y:auto"></div>
         <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="renderAdminPendingFcReturnList()">🔄 รีเฟรช</button>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>↩️ ยกเลิกการแจ้งคืนรถ</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการที่ผู้ยืมแจ้งคืนแล้ว แต่ยังไม่ได้รับกุญแจจริง — กรณีคืนผิดคัน กดยกเลิกเพื่อให้รถกลับเป็น "กำลังใช้งาน"</div>
         <div id="admin-pending-return-list" style="max-height:300px;overflow-y:auto"></div>
         <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="renderAdminPendingReturnList()">🔄 รีเฟรช</button>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🗄️ ประวัติการจองที่ถูกลบ (Archive)</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการจองรถและบัตรน้ำมันที่คืน/ยกเลิกเกิน 30 วัน จะถูกย้ายมาเก็บที่นี่อัตโนมัติ</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
@@ -834,7 +835,7 @@ tr:hover td{background:var(--g50)}
         <div id="booking-archive-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🗄️ ใบ permit ที่ถูกลบ</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใบที่ถูกลบจากหน้าใช้งานจะถูกเก็บสำรองไว้ที่นี่ ดึงรายงานรายเดือนหรือลบถาวรได้</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
@@ -846,7 +847,7 @@ tr:hover td{background:var(--g50)}
         <div id="permit-archive-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>⛽ ราคาน้ำมันปัจจุบัน</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใช้คำนวณเมื่อผู้ใช้เลือกกรอกน้ำมันเป็นลิตร</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -857,14 +858,14 @@ tr:hover td{background:var(--g50)}
         </div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🗄️ จัดการ Cache</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">Cache ลายเซ็นเก็บไว้ใน localStorage เพื่อให้พิมพ์ PDF เร็วขึ้น ลบได้ปลอดภัย ลายเซ็นจริงยังอยู่ใน Sheet</div>
         <button class="btn btn-outline btn-sm" onclick="clearSigCache()">🗑️ ล้าง Cache ลายเซ็น</button>
         <span id="sig-cache-size" style="font-size:12px;color:var(--g600);margin-left:10px"></span>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section full-only">
         <h3>🔐 เปลี่ยนรหัสแอดมินหลัก</h3>
         <div class="form-grid-2">
           <div class="form-row"><label>รหัสใหม่</label><input type="password" id="new-admin-pass" placeholder="รหัสใหม่"></div>
@@ -1016,7 +1017,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261106-001'; // Force reload version
+const APP_VERSION = '20261106-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1400,6 +1401,11 @@ function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){
 loadDB();
 
 let selectedCarId=null, adminLoggedIn=false, cancelBookingId=null, hFilter='all';
+// แอดมินสำรอง: 'full' = แอดมินหลัก, 'backup' = แอดมินสำรอง (เห็นตั้งค่าเฉพาะบางส่วน + ไม่เห็นปุ่มลบใบ PM)
+let adminRole=null;
+const BACKUP_ADMIN={name:'Adminปลวกแดง', pass:'8535'};
+// ใช้กับช่องกรอกรหัสแอดมินทั่วไป (ยกเลิกแทน/รับคืนแทน/แก้ไมล์) — รับทั้งแอดมินหลักและสำรอง
+function isAdminPass(p){ return !!p && (p===db.adminPass || p===BACKUP_ADMIN.pass); }
 
 // ---- UTILS ----
 function genId(){return 'b'+Date.now()+Math.random().toString(36).slice(2,5);}
@@ -1753,7 +1759,7 @@ function openAdminCancelModal(){
 function confirmCancelAdmin(){
   const pass=document.getElementById('cancel-admin-pass').value;
   const errEl=document.getElementById('cancel-admin-err');
-  if(pass!==db.adminPass){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
+  if(!isAdminPass(pass)){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===cancelBookingId);
   if(b){
     b.status='cancelled';b.cancelledAt=nowISO();b.cancelledBy='admin';
@@ -2154,10 +2160,20 @@ function showAdminLogin(){
 }
 function doAdminLogin(){
   const pass=document.getElementById('admin-pass-input').value;
-  if(pass===db.adminPass){closeModal('modal-admin-login');adminLoggedIn=true;showPageDirect('settings');renderPermitList();}
+  let role=null;
+  if(pass===db.adminPass) role='full';
+  else if(pass===BACKUP_ADMIN.pass) role='backup';
+  if(role){closeModal('modal-admin-login');adminLoggedIn=true;adminRole=role;applyAdminRole();showPageDirect('settings');renderPermitList();}
   else{document.getElementById('admin-login-err').style.display='flex';}
 }
-function adminLogout(){adminLoggedIn=false;showPage('booking',document.getElementById('nav-booking'));}
+function adminLogout(){adminLoggedIn=false;adminRole=null;applyAdminRole();showPage('booking',document.getElementById('nav-booking'));}
+// ปรับหน้าตั้งค่าตามบทบาท: แอดมินสำรองเห็นเฉพาะส่วนที่ไม่มี class full-only
+function applyAdminRole(){
+  const pg=document.getElementById('page-settings');
+  if(pg) pg.classList.toggle('role-backup', adminRole==='backup');
+  const t=document.getElementById('settings-title');
+  if(t) t.textContent = adminRole==='backup' ? '⚙️ ตั้งค่าระบบ ('+BACKUP_ADMIN.name+')' : '⚙️ ตั้งค่าระบบ (แอดมินหลัก)';
+}
 function showPageDirect(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
@@ -2614,7 +2630,7 @@ function submitAdminReturn(){
       if(!confirm(`⚠️ ระยะทางที่ใช้งาน: ${diff.toLocaleString('th-TH')} กิโลเมตร\n\nยืนยันระยะทางที่ใช้งานตามนี้จริงหรือไม่?`)) return;
     }
   }
-  if(pass!==db.adminPass){
+  if(!isAdminPass(pass)){
     errEl.textContent='รหัสแอดมินไม่ถูกต้อง';
     errEl.style.display='flex';return;
   }
@@ -3200,7 +3216,7 @@ function renderUcPermitList(){
           ${adminLoggedIn?`<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="adminEditPermitFuel('${p.id}')">⛽ แก้ยอดน้ำมัน</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
+          ${adminLoggedIn&&adminRole==='full'?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
         </div>
       </div>
     </div>`;
@@ -3312,7 +3328,7 @@ function adminEditMileage(id){
   if(Number(newIn) < Number(newOut)){ alert('ไมล์ขาเข้าต้องไม่น้อยกว่าไมล์ขาออก'); return; }
   const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยัน');
   if(adminPass===null) return;
-  if(adminPass !== db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+  if(!isAdminPass(adminPass)){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
 
   b.mileageOut = Number(newOut.trim());
   b.mileageIn = Number(newIn.trim());
@@ -4339,7 +4355,7 @@ function submitFcAdminReturn(){
     adminNoReason=document.getElementById('fc-admin-noreason').value.trim();
     if(!adminNoReason){errEl.textContent='กรุณาระบุเหตุผลที่ไม่ได้เติมน้ำมัน';errEl.style.display='flex';return;}
   }
-  if(pass!==db.adminPass){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
+  if(!isAdminPass(pass)){errEl.textContent='รหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=(db.fuelCardBookings||[]).find(x=>x.id===fcReturnId);
   if(!b) return;
   b.returnStep='pending';
@@ -4530,12 +4546,12 @@ function confirmFcCancel(){
   if(!b) return;
   if(!reason){errEl.textContent='กรุณากรอกเหตุผลการยกเลิก';errEl.style.display='flex';return;}
   let authorized=false;
-  if(adminPass===db.adminPass) authorized=true;
+  if(isAdminPass(adminPass)) authorized=true;
   else if(pin.length===4&&pin===b.pin) authorized=true;
   if(!authorized){errEl.textContent='PIN หรือรหัสแอดมินไม่ถูกต้อง';errEl.style.display='flex';return;}
   b.status='cancelled';
   b.cancelledAt=nowISO();
-  b.cancelledBy=adminPass===db.adminPass?'admin':'user';
+  b.cancelledBy=isAdminPass(adminPass)?'admin':'user';
   b.cancelReason=reason;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   const _now=new Date().toISOString();
@@ -5764,7 +5780,7 @@ function renderPermitList(){
           ${adminLoggedIn?`<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="adminEditPermitFuel('${p.id}')">⛽ แก้ยอดน้ำมัน</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          ${adminLoggedIn?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
+          ${adminLoggedIn&&adminRole==='full'?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
         </div>
       </div>
     </div>`;
