@@ -1016,7 +1016,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261103-001'; // Force reload version
+const APP_VERSION = '20261106-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -3993,7 +3993,10 @@ function renderFuelCards(){
       .filter(b=>b.fcId===fc.id)
       .sort((a,b)=>new Date(a.startDt)-new Date(b.startDt)); // เรียงตามเวลาจองก่อน-หลัง
     const pending = sortedBks.find(b=>b.returnStep==='pending');
-    const activeBk = sortedBks.find(b=>b.status!=='returned'&&b.status!=='cancelled');
+    const unreturnedBks = sortedBks.filter(b=>b.status!=='returned'&&b.status!=='cancelled');
+    const activeBk = unreturnedBks.find(b=>getFcBkStatus(b)==='overdue')
+                  || unreturnedBks.find(b=>getFcBkStatus(b)==='in-use')
+                  || unreturnedBks[0];
     const fcSt = getFcCardStatus(fc.id);
     let statusLabel='✅ ว่าง', statusStyle='', blocked=false;
     if(pending){ statusLabel='⏳ รอคืน'; statusStyle='opacity:0.85;'; blocked=true; }
@@ -5181,8 +5184,9 @@ function getFcCardStatus(fcId){
   const active = (db.fuelCardBookings||[]).filter(b=>
     b.fcId===fcId && b.status!=='returned' && b.status!=='cancelled'
   );
-  if(active.some(b=>getFcBkStatus(b)==='in-use')) return 'in-use';
+  // เกินกำหนด (ยังไม่คืน) ต้องมาก่อนกำลังใช้งาน — ใบที่ค้างต้องคืนก่อนเสมอ
   if(active.some(b=>getFcBkStatus(b)==='overdue')) return 'overdue';
+  if(active.some(b=>getFcBkStatus(b)==='in-use')) return 'in-use';
   if(active.some(b=>getFcBkStatus(b)==='upcoming')) return 'upcoming';
   return 'free';
 }
