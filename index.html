@@ -65,6 +65,12 @@ body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-h
 .cal-chip{font-size:9px;line-height:1.35;padding:1px 3px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid #999}
 .cal-more{font-size:9px;color:#6b7280}
 #page-settings.role-backup .full-only{display:none!important}
+.dept-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:5px}
+.dept-gbtn{padding:7px 4px;font-size:12px;line-height:1.25;border:1.5px solid var(--g200);border-radius:7px;background:#fff;color:var(--g600);cursor:pointer;font-family:inherit;text-align:center}
+.dept-gbtn.active{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700}
+.dept-picker .dept-select{margin-top:6px;font-size:13px;padding:8px}
+.dept-sum{font-size:12px;margin-top:5px;color:var(--success);font-weight:600;word-break:break-word}
+.dept-sum.warn{color:var(--g600);font-weight:400}
 @media(min-width:600px){.cal-cell{min-height:96px;padding:4px}.cal-chip{font-size:11px;padding:1px 5px}.cal-dn{font-size:12px}.cal-more{font-size:11px}}
 .container{max-width:1100px;margin:0 auto;padding:20px 14px}
 .page{display:none}.page.active{display:block}
@@ -282,7 +288,10 @@ tr:hover td{background:var(--g50)}
       <div id="conflict-list" style="display:none" class="alert alert-warning">
         <div><b>⏰ ช่วงเวลาที่มีการจองแล้ว:</b><div id="conflict-detail" style="margin-top:4px;font-size:12px"></div></div>
       </div>
-      <div class="form-row"><label>ชื่อผู้จอง *</label><input type="text" id="f-name" placeholder="ชื่อ-นามสกุล"></div>
+      <div class="form-grid-2">
+        <div class="form-row"><label>ชื่อผู้จอง *</label><input type="text" id="f-name" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="form-row"><label>แผนก *</label><div class="dept-picker" data-input="f-dept"></div></div>
+      </div>
       <div class="form-grid-2">
         <div class="form-row"><label>วันที่เริ่มใช้ *</label><input type="datetime-local" id="f-start" onchange="checkConflict()"></div>
         <div class="form-row"><label>วันที่คืนรถ *</label><input type="datetime-local" id="f-end" onchange="checkConflict()"></div>
@@ -491,7 +500,7 @@ tr:hover td{background:var(--g50)}
       <div class="card-title">📋 แบบฟอร์มขออนุมัติออกนอกสถานที่และเบิกน้ำมัน</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-row"><label>ชื่อพนักงาน *</label><input type="text" id="pf-name" placeholder="ชื่อ-นามสกุล"></div>
-        <div class="form-row"><label>แผนก *</label><input type="text" id="pf-dept" placeholder="เช่น HR, ฝ่ายผลิต"></div>
+        <div class="form-row"><label>แผนก *</label><div class="dept-picker" data-input="pf-dept"></div></div>
         <div class="form-row"><label>สถานที่ปฏิบัติงาน *</label><input type="text" id="pf-location" placeholder="เช่น ปลวกแดง"></div>
         <div class="form-row"><label>เหตุผล *</label><input type="text" id="pf-reason" placeholder="เช่น สอบ SC"></div>
       </div>
@@ -626,7 +635,7 @@ tr:hover td{background:var(--g50)}
 
       <div class="form-grid-2">
         <div class="form-row"><label>ชื่อพนักงาน *</label><input type="text" id="uc-name" placeholder="ชื่อ-นามสกุล"></div>
-        <div class="form-row"><label>แผนก *</label><input type="text" id="uc-dept" placeholder="เช่น HR, ฝ่ายผลิต"></div>
+        <div class="form-row"><label>แผนก *</label><div class="dept-picker" data-input="uc-dept"></div></div>
         <div class="form-row"><label>สถานที่ปฏิบัติงาน *</label><input type="text" id="uc-location" placeholder="เช่น ปลวกแดง"></div>
         <div class="form-row"><label>เหตุผล *</label><input type="text" id="uc-reason" placeholder="เช่น สอบ, ตรวจสาขา"></div>
       </div>
@@ -1017,7 +1026,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261106-002'; // Force reload version
+const APP_VERSION = '20261107-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1536,6 +1545,149 @@ function renderCars(){
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
 }
 
+// ---- แผนก: เลือกหมวดหลัก → ดร็อปดาวน์รายชื่อแผนก ----
+// เก็บค่าที่ input hidden (id เดิม เช่น uc-dept) เป็น "ชื่อแผนก" — โค้ดเดิมที่อ่าน/เขียน .value ใช้ได้เหมือนเดิม
+const DEPT_GROUPS=[
+  {name:'สำนักงาน', items:[
+    ['สนับสนุนงานขายประเภทรถเล็ก','SSB'],['สนับสนุนงานขายประเภทรถใหญ่','SSA'],['บัญชี','ACC'],['การเงิน','FIN'],
+    ['ทรัพยากรบุคคลและฝึกอบรม','HR & Training'],['จัดซื้อ','PUR'],['สารสนเทศ','IT'],['ลูกค้าสัมพันธ์','CRM'],
+    ['ฝ่ายสินเชื่อและประกันภัย','CREDIT'],['ธุรการส่วนกลาง','SALEADMIN'],['ธุรการสาขาระยอง','SALEBRANCH-RY'],
+    ['ธุรการสาขาปลวกแดง','SALEBRANCH-PD'],['ฝ่ายดิจิตอล','DGM'],['TM ระยอง','TM'],['โมริริน-ระยอง','MRR-RY'],['โมริริน-ปลวกแดง','MRR-PD']]},
+  {name:'ฝ่ายขาย LCV-CV', items:[
+    ['ฝ่ายขายรถเล็ก-ระยอง','SC-RY'],['ฝ่ายขายรถเล็ก-นิคมพัฒนา','SC-NK'],['ฝ่ายขายรถเล็ก-มาบตาพุด','SC-MP'],
+    ['ฝ่ายขายรถเล็ก-บ้านค่าย','SC-BK'],['ฝ่ายขายรถเล็ก-โรงงานระยอง','SC-FR'],['ฝ่ายขายรถเล็ก-ปลวกแดง','SC-PD'],
+    ['ฝ่ายขายรถเล็ก-ซีเคพลาซ่า','SC-CK'],['ฝ่ายขายรถเล็ก-โรงงานปลวกแดง','SC-FR'],['ฝ่ายขายรถเล็ก-นิคมสะพานสี่','SC-NS'],
+    ['ฝ่ายขายรถใหญ่-ระยอง','SC-CVRY'],['ฝ่ายขายรถใหญ่-ปลวกแดง','SC-CVPD']]},
+  {name:'บริการหลังการขาย', items:[
+    ['บริการหลังการขาย-ระยอง','SV-RY'],['บริการหลังการขาย-ปลวกแดง','SV-PD'],['ส่วนกลางฝ่ายบริการ','SV-Center'],
+    ['ส่วนหน้าฝ่ายบริการรถเล็ก-ระยอง','MULTI-LCVRY'],['ส่วนหน้าฝ่ายบริการรถเล็ก-ปลวกแดง','MULTI-LCVPD'],
+    ['ส่วนหน้าฝ่ายบริการรถใหญ่','MULTI-CV'],['CR-Center','CR-Center'],['เทคนิค-เคลม ระยอง','Claim'],
+    ['เทคนิค-เคลม ปลวกแดง','Claim'],['อะไหล่-ระยอง','PART-RY'],['อะไหล่-ปลวกแดง','PART-PD'],
+    ['โรงซ่อมรถเล็ก ระยอง','Mech-LCV'],['โรงซ่อมรถใหญ่ ระยอง','Mech-CV'],
+    ['โรงซ่อมรถเล็ก ปลวกแดง','Mech-LCV'],['โรงซ่อมรถใหญ่ ปลวกแดง','Mech-CV']]},
+  {name:'ศูนย์ซ่อมสีและตัวถัง', items:[
+    ['บริหารงานศูนย์ซ่อมสีและตัวถัง','BP-Center'],
+    ['บริการหลังการขาย ศูนย์ซ่อมสีและตัวถัง-ระยอง','BP-RY'],
+    ['บริการหลังการขาย ศูนย์ซ่อมสีและตัวถัง-ปลวกแดง','BP-PD']]}
+];
+
+function _deptFind(name){
+  for(const g of DEPT_GROUPS){
+    const it=g.items.find(x=>x[0]===name);
+    if(it) return {group:g, item:it};
+  }
+  return null;
+}
+function _deptLabel(it){ return (it[1] && it[1]!==it[0]) ? it[0]+' ('+it[1]+')' : it[0]; }
+
+function _deptRender(box){
+  const v=box._hid.value;
+  const found=_deptFind(v);
+  if(found) box._grp=found.group.name;
+  box._btns.forEach(b=>b.classList.toggle('active', b.dataset.g===box._grp));
+  const sel=box._sel;
+  if(box._grp){
+    const g=DEPT_GROUPS.find(x=>x.name===box._grp);
+    if(sel.dataset.g!==box._grp){
+      sel.innerHTML='';
+      const ph=document.createElement('option');
+      ph.value=''; ph.textContent='— เลือกแผนก —';
+      sel.appendChild(ph);
+      g.items.forEach(it=>{
+        const o=document.createElement('option');
+        o.value=it[0]; o.textContent=_deptLabel(it);
+        sel.appendChild(o);
+      });
+      sel.dataset.g=box._grp;
+    }
+    sel.style.display='block';
+    sel.value=(found && found.group.name===box._grp) ? v : '';
+  } else {
+    sel.style.display='none';
+    sel.dataset.g='';
+  }
+  const sum=box._sum;
+  if(found){ sum.textContent='✓ '+_deptLabel(found.item); sum.className='dept-sum'; sum.style.display='block'; }
+  else if(v){ sum.textContent='แผนก: '+v; sum.className='dept-sum warn'; sum.style.display='block'; }
+  else { sum.textContent=''; sum.style.display='none'; }
+}
+
+function initDeptPickers(){
+  const desc=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+  document.querySelectorAll('.dept-picker').forEach(box=>{
+    if(box._ready) return;
+    box._ready=true;
+    box._grp=null;
+    const hid=document.createElement('input');
+    hid.type='hidden';
+    hid.id=box.dataset.input;
+    // เมื่อโค้ดเดิมล้างฟอร์ม/เติมข้อมูลอัตโนมัติผ่าน .value ให้ปุ่มและดร็อปดาวน์อัปเดตตามเอง
+    Object.defineProperty(hid,'value',{
+      configurable:true,
+      get(){ return desc.get.call(hid); },
+      set(v){
+        desc.set.call(hid, v==null ? '' : String(v));
+        if(!hid.value) box._grp=null;
+        _deptRender(box);
+      }
+    });
+    const wrap=document.createElement('div');
+    wrap.className='dept-groups';
+    box._btns=DEPT_GROUPS.map(g=>{
+      const b=document.createElement('button');
+      b.type='button'; b.className='dept-gbtn'; b.dataset.g=g.name; b.textContent=g.name;
+      b.onclick=function(){
+        if(box._grp===g.name) return;
+        desc.set.call(hid,'');   // ล้างค่าเดิม แต่ไม่รีเซ็ตหมวดที่เพิ่งกด
+        box._grp=g.name;
+        _deptRender(box);
+      };
+      wrap.appendChild(b);
+      return b;
+    });
+    const sel=document.createElement('select');
+    sel.className='dept-select';
+    sel.style.display='none';
+    sel.onchange=function(){ desc.set.call(hid, sel.value); _deptRender(box); };
+    const sum=document.createElement('div');
+    sum.className='dept-sum';
+    sum.style.display='none';
+    box._hid=hid; box._sel=sel; box._sum=sum;
+    box.appendChild(hid); box.appendChild(wrap); box.appendChild(sel); box.appendChild(sum);
+    _deptRender(box);
+  });
+}
+// หมายเหตุ: บล็อก HTML ของ modal บางตัวอยู่ท้ายไฟล์ (หลัง script) จึงต้องรอ DOM โหลดครบก่อน
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initDeptPickers);
+else initDeptPickers();
+
+// โฟกัสช่องแรกที่ยังว่างในฟอร์มใบ PM (หลังดึงข้อมูลจากการจองมาเติมให้แล้ว)
+function ucFocusFirstMissing(){
+  const order=['uc-dept','uc-location','uc-detail','uc-car-select','uc-fuel'];
+  for(const id of order){
+    const el=document.getElementById(id);
+    if(!el) continue;
+    if(String(el.value||'').trim()!=='') continue;
+    const target = id==='uc-dept' ? document.querySelector('.dept-picker[data-input="uc-dept"]') : el;
+    if(target){
+      if(id!=='uc-dept' && target.focus) target.focus();
+      target.scrollIntoView({behavior:'smooth',block:'center'});
+    }
+    return;
+  }
+}
+
+// ช่อง datetime-local รับเฉพาะ "YYYY-MM-DDTHH:mm" — ค่า ISO ที่มี Z (จากรายการจองรถ) จะถูกทิ้งเป็นช่องว่าง
+// จึงแปลงเป็นเวลาท้องถิ่นก่อนเติมลงช่อง
+function _toLocalInput(v){
+  if(!v) return '';
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return v;
+  const d=new Date(v);
+  if(isNaN(d.getTime())) return '';
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+
 function selectCar(id){
   selectedCarId=id;
   renderCars();
@@ -1544,7 +1696,7 @@ function selectCar(id){
   document.getElementById('booking-form-card').style.display='block';
   document.getElementById('conflict-list').style.display='none';
   clearPins('pin');
-  ['f-name','f-start','f-end','f-dest','f-reason'].forEach(i=>document.getElementById(i).value='');
+  ['f-name','f-dept','f-start','f-end','f-dest','f-reason'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('booking-err').style.display='none';
   document.getElementById('booking-form-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -1578,11 +1730,13 @@ function submitBooking(){
   const end=document.getElementById('f-end').value;
   const dest=document.getElementById('f-dest').value.trim();
   const reason=document.getElementById('f-reason').value.trim();
+  const dept=document.getElementById('f-dept').value.trim();
   const pin=getPin();
   const errEl=document.getElementById('booking-err');
   errEl.style.display='none';
   const showErr=msg=>{errEl.textContent=msg;errEl.style.display='flex';};
   if(!name||!start||!end||!dest||!reason){return showErr('กรุณากรอกข้อมูลให้ครบทุกช่อง');}
+  if(!dept){return showErr('กรุณาเลือกแผนก (กดปุ่มหมวด แล้วเลือกแผนกจากรายการ)');}
   if(new Date(start)>=new Date(end)){return showErr('เวลาคืนรถต้องมาหลังเวลาเริ่มใช้');}
   if(new Date(start)<new Date()){return showErr('ไม่สามารถจองย้อนหลังได้ กรุณาเลือกวันและเวลาเริ่มใช้รถที่เป็นปัจจุบันหรืออนาคต');}
   if(pin.length!==4||!/^\d{4}$/.test(pin)){return showErr('กรุณาตั้งรหัส PIN 4 หลัก (ตัวเลขเท่านั้น)');}
@@ -1592,12 +1746,12 @@ function submitBooking(){
   if(!isCarFreeFor(selectedCarId,start,end,null)){
     return showConflictErr('⛔ ช่วงเวลานี้มีคนจองไว้แล้ว<br>กรุณาเลือกช่วงวันเวลาใหม่');
   }
-  const bk={id:genId(),carId:selectedCarId,name,startDt:new Date(start).toISOString(),endDt:new Date(end).toISOString(),dest,reason,pin,status:'booked',createdAt:nowISO()};
+  const bk={id:genId(),carId:selectedCarId,name,dept,startDt:new Date(start).toISOString(),endDt:new Date(end).toISOString(),dest,reason,pin,status:'booked',createdAt:nowISO()};
   db.bookings.unshift(bk);
   const _syncTs=new Date().toISOString(); db._lastSync=_syncTs;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}`;
+  document.getElementById('success-detail').innerHTML=`<b>${car.plate}</b> | ${name}<br>📅 ${fmt(start)} → ${fmt(end)}<br>📍 ${dest}<br>🏢 ${dept}`;
   document.getElementById('success-pin').textContent=pin;
   const _bookedCarId = selectedCarId; // บันทึกไว้ก่อน cancelBookingForm จะ reset
   cancelBookingForm();
@@ -1620,6 +1774,7 @@ function submitBooking(){
           if(latestBk){
             const afData = {
               name: latestBk.name,
+              dept: latestBk.dept,
               reason: latestBk.dest + (latestBk.reason?' - '+latestBk.reason:''),
               startDt: latestBk.startDt,
               endDt: latestBk.endDt,
@@ -1650,6 +1805,7 @@ function goToPermitFromBooking(){
   setTimeout(()=>{
     const setVal = (id, val) => { const el=document.getElementById(id); if(el) el.value=val; };
     setVal('uc-name', bk.name);
+    setVal('uc-dept', bk.dept||'');
     setVal('uc-location', bk.dest);
     setVal('uc-reason', bk.reason);
     setVal('uc-detail', bk.reason);
@@ -1671,8 +1827,7 @@ function goToPermitFromBooking(){
         }
       }
     }
-    const deptEl=document.getElementById('uc-dept');
-    if(deptEl){ deptEl.focus(); deptEl.scrollIntoView({behavior:'smooth',block:'center'}); }
+    ucFocusFirstMissing();
   }, 300);
 }
 
@@ -4050,7 +4205,7 @@ function selectFuelCard(id){
   selectedFcId = id;
   renderFuelCards();
   document.getElementById('fc-book-info').innerHTML = `<b>${fc.name}</b> | มูลค่าคงเหลือ: <b>฿${Number(fc.value||0).toLocaleString('th-TH')}</b>`;
-  ['fc-name','fc-reason','fc-start','fc-end'].forEach(x=>{document.getElementById(x).value='';});
+  ['fc-name','fc-dept','fc-reason','fc-start','fc-end'].forEach(x=>{document.getElementById(x).value='';});
   document.getElementById('fc-fuel').value='';
   document.getElementById('fc-fuel-unit').value='baht';
   document.getElementById('fc-fuel-calc').style.display='none';
@@ -4072,9 +4227,10 @@ function selectFuelCard(id){
   if(window._pendingFcAutoFill){
     const af = window._pendingFcAutoFill;
     document.getElementById('fc-name').value = af.name||'';
+    document.getElementById('fc-dept').value = af.dept||'';
     document.getElementById('fc-reason').value = af.reason||'';
-    document.getElementById('fc-start').value = af.startDt||'';
-    document.getElementById('fc-end').value = af.endDt||'';
+    document.getElementById('fc-start').value = _toLocalInput(af.startDt);
+    document.getElementById('fc-end').value = _toLocalInput(af.endDt);
     if(af.pin && af.pin.length===4){
       ['fcpin1','fcpin2','fcpin3','fcpin4'].forEach((id,i)=>{
         const el=document.getElementById(id);
@@ -4088,6 +4244,7 @@ function selectFuelCard(id){
 function submitFcBooking(){
   const name=document.getElementById('fc-name').value.trim();
   const reason=document.getElementById('fc-reason').value.trim();
+  const dept=document.getElementById('fc-dept').value.trim();
   // แปลง พ.ศ. → ค.ศ. ถ้า browser ส่งปีเป็น พ.ศ.
   const _fixBEYear = v => {
     if(!v) return v;
@@ -4103,13 +4260,14 @@ function submitFcBooking(){
   const errEl=document.getElementById('fc-book-err');
   errEl.style.display='none';
   if(!name||!reason||!start||!end||fuelRaw===''){errEl.textContent='กรุณากรอกข้อมูลให้ครบ';errEl.style.display='flex';return;}
+  if(!dept){errEl.textContent='กรุณาเลือกแผนก (กดปุ่มหมวด แล้วเลือกแผนกจากรายการ)';errEl.style.display='flex';return;}
   if(new Date(start)>=new Date(end)){errEl.textContent='เวลาคืนต้องมาหลังเวลาเริ่ม';errEl.style.display='flex';return;}
   if(pin.length!==4){errEl.textContent='กรุณาตั้ง PIN 4 หลัก';errEl.style.display='flex';return;}
   const fc=(db.fuelCards||[]).find(f=>f.id===selectedFcId);
   if(!fc){return;}
   if(fuelAmt>(Number(fc.value)||0)){errEl.textContent='ยอดเบิกมากกว่ายอดคงเหลือในการ์ด';errEl.style.display='flex';return;}
   // ไม่หักยอดตอนจอง — จะหักจริงตอนคืน
-  const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,reason,startDt:start,endDt:end,pin,
+  const bk={id:'fb'+Date.now(),fcId:selectedFcId,name,dept,reason,startDt:start,endDt:end,pin,
     fuelAmount:fuelAmt,fuelUnit:document.getElementById('fc-fuel-unit').value,
     fuelRaw:Number(fuelRaw),status:'in-use',createdAt:nowISO()};
   if(!db.fuelCardBookings) db.fuelCardBookings=[];
@@ -4128,6 +4286,7 @@ function submitFcBooking(){
   setTimeout(()=>{
     const setVal=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
     setVal('uc-name',name);
+    setVal('uc-dept',dept);
     setVal('uc-reason',reason);
     setVal('uc-empsig',name);
     setVal('uc-date',start.slice(0,10));
@@ -4148,8 +4307,7 @@ function submitFcBooking(){
       }
       window._pendingFcAutoFillCar=null;
     }
-    const deptEl=document.getElementById('uc-dept');
-    if(deptEl){deptEl.focus();deptEl.scrollIntoView({behavior:'smooth',block:'center'});}
+    ucFocusFirstMissing();
   },300);
 }
 
@@ -6937,7 +7095,10 @@ function renderPrintPage(p){
   <div class="modal">
     <div class="modal-title">💳 จองการ์ดน้ำมัน</div>
     <div id="fc-book-info" class="alert alert-info" style="margin-bottom:14px"></div>
-    <div class="form-row"><label>ชื่อผู้จอง *</label><input type="text" id="fc-name" placeholder="ชื่อ-นามสกุล"></div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>ชื่อผู้จอง *</label><input type="text" id="fc-name" placeholder="ชื่อ-นามสกุล"></div>
+      <div class="form-row"><label>แผนก *</label><div class="dept-picker" data-input="fc-dept"></div></div>
+    </div>
     <div class="form-grid-2">
       <div class="form-row"><label>วันที่เริ่มใช้ *</label><input type="datetime-local" id="fc-start"></div>
       <div class="form-row"><label>วันที่คืน *</label><input type="datetime-local" id="fc-end"></div>
