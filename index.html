@@ -1026,7 +1026,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261107-001'; // Force reload version
+const APP_VERSION = '20261107-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1661,18 +1661,17 @@ function initDeptPickers(){
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initDeptPickers);
 else initDeptPickers();
 
-// โฟกัสช่องแรกที่ยังว่างในฟอร์มใบ PM (หลังดึงข้อมูลจากการจองมาเติมให้แล้ว)
+// พาหน้าใบ PM กลับขึ้นบนสุด แล้วโฟกัสช่องแรกที่ยังว่าง (หลังดึงข้อมูลจากการจองมาเติมให้แล้ว)
+// ต้องเลื่อนขึ้นบนเอง เพราะ showPage ไม่ได้รีเซ็ตตำแหน่งสกรอลล์ หน้าจึงค้างตำแหน่งเดิมของหน้าจอง
+// ใช้ preventScroll เพื่อไม่ให้การโฟกัสดึงหน้าลงไปกลางฟอร์มหรือลงไปที่รายการใบออกด้านล่าง
 function ucFocusFirstMissing(){
+  window.scrollTo(0,0);
   const order=['uc-dept','uc-location','uc-detail','uc-car-select','uc-fuel'];
   for(const id of order){
     const el=document.getElementById(id);
     if(!el) continue;
     if(String(el.value||'').trim()!=='') continue;
-    const target = id==='uc-dept' ? document.querySelector('.dept-picker[data-input="uc-dept"]') : el;
-    if(target){
-      if(id!=='uc-dept' && target.focus) target.focus();
-      target.scrollIntoView({behavior:'smooth',block:'center'});
-    }
+    if(id!=='uc-dept' && el.focus) el.focus({preventScroll:true});
     return;
   }
 }
