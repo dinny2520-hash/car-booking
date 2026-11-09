@@ -1026,7 +1026,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261107-002'; // Force reload version
+const APP_VERSION = '20261107-003'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -3441,6 +3441,7 @@ function renderAdminBookingList(){
         <span style="font-weight:600">${car?car.plate:'?'}</span>
         <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
         <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        ${b.status==='returned'&&b.returnedBy?`<span style="font-size:12px;color:var(--g600);margin-left:6px">👤 รับคืนโดย ${_calEsc(b.returnedBy)}</span>`:''}
         ${mileInfo?`<div style="font-size:11px;color:var(--g500);margin-top:2px">${mileInfo}</div>`:''}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -5182,6 +5183,7 @@ function renderAdminBookingList(){
         <span style="font-weight:600">${car?car.plate:'?'}</span>
         <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
         <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        ${b.status==='returned'&&b.returnedBy?`<span style="font-size:12px;color:var(--g600);margin-left:6px">👤 รับคืนโดย ${_calEsc(b.returnedBy)}</span>`:''}
         ${mileInfo?`<div style="font-size:11px;color:var(--g500);margin-top:2px">${mileInfo}</div>`:''}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -5225,6 +5227,7 @@ function renderAdminCardBookingList(){
         <span style="font-weight:600">💳 ${fc?fc.name:'?'}</span>
         <span style="color:var(--g600)"> | ${b.name} | ${fmt(b.startDt)}</span>
         <span style="font-size:11px;background:${stColor};color:#fff;padding:1px 6px;border-radius:10px;margin-left:4px">${stLabel}</span>
+        ${b.status==='returned'&&b.returnedBy?`<span style="font-size:12px;color:var(--g600);margin-left:6px">👤 รับคืนโดย ${_calEsc(b.returnedBy)}</span>`:''}
         <div style="font-size:11px;color:var(--g500);margin-top:2px">⛽ ${b.fueled===false?'ไม่ได้เติม'+(b.noFuelReason?' ('+b.noFuelReason+')':''):'฿'+Number(b.fuelAmount||0).toLocaleString('th-TH')}${b.invTrace?' | 🧾 '+b.invTrace:''}</div>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
