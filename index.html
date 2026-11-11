@@ -267,20 +267,31 @@ tr:hover td{background:var(--g50)}
     <div id="overdue-banner" class="overdue-banner">⚠️ มีรถที่เกินกำหนดคืน กรุณาติดต่อผู้ใช้รถ</div>
 
     <div class="card">
-      <div class="card-title">🚘 รถใช้งาน</div>
+      <div class="card-title">🚘 รถใช้งานสาขาระยอง</div>
       <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">💡 รถที่มีสถานะ <b>กำลังใช้งาน</b> หรือ <b>ติดจอง</b> สามารถจองช่วงเวลาอื่นได้ — กดที่การ์ดรถเพื่อดูว่างหรือเลือกเวลาจอง</div>
       <div class="car-grid" id="car-grid"></div>
     </div>
 
     <div class="card" style="margin-top:4px">
-      <div class="card-title">🚗 รถทดลองขับระยอง</div>
+      <div class="card-title">🚗 รถทดลองขับสาขาระยอง</div>
       <div class="car-grid" id="car-grid-testdrive"></div>
     </div>
 
     <div class="card" id="fuel-cards-section" style="margin-top:4px">
-      <div class="card-title">💳 การ์ดน้ำมัน <span style="font-size:12px;color:var(--g500);font-weight:400">สำหรับรถทดลองขับและฝ่ายขายรถใหญ่</span></div>
+      <div class="card-title">💳 การ์ดน้ำมัน <span style="font-size:12px;color:var(--g500);font-weight:400">สำหรับรถทดลองขับสาขาระยองและฝ่ายขายรถใหญ่</span></div>
       <div style="font-size:13px;color:var(--g600);margin-bottom:12px">เลือกการ์ดที่ต้องการจอง</div>
       <div id="fuel-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px"></div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">🚘 รถใช้งานสาขาปลวกแดง</div>
+      <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">💡 รถที่มีสถานะ <b>กำลังใช้งาน</b> หรือ <b>ติดจอง</b> สามารถจองช่วงเวลาอื่นได้ — กดที่การ์ดรถเพื่อดูว่างหรือเลือกเวลาจอง</div>
+      <div class="car-grid" id="car-grid-pd"></div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">🚗 รถทดลองขับสาขาปลวกแดง</div>
+      <div class="car-grid" id="car-grid-testdrive-pd"></div>
     </div>
 
     <div class="card" id="booking-form-card" style="display:none">
@@ -737,9 +748,13 @@ tr:hover td{background:var(--g50)}
         <h3>🚗 จัดการรถ</h3>
         <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap;align-items:center">
           <input type="text" id="new-car-plate" placeholder="ทะเบียนรถ เช่น กข 1234" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <select id="new-car-branch" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+            <option value="RY">สาขาระยอง</option>
+            <option value="PD">สาขาปลวกแดง</option>
+          </select>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer">
             <input type="checkbox" id="new-car-testdrive" style="width:16px;height:16px">
-            🚗 รถทดลองขับระยอง
+            🚗 รถทดลองขับ
           </label>
           <button class="btn btn-primary btn-sm" onclick="addCar()">+ เพิ่มรถ</button>
         </div>
@@ -1026,7 +1041,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-002'; // Force reload version
+const APP_VERSION = '20261110-003'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1502,12 +1517,19 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 function openModal(id){document.getElementById(id).classList.add('open');}
 
 // ---- CARS ----
+// สาขาของรถ: 'RY' = ระยอง (ค่าเริ่มต้น ของเดิมที่ไม่มีฟิลด์นี้ถือเป็นระยอง), 'PD' = ปลวกแดง
+function carBranch(car){ return car && car.branch==='PD' ? 'PD' : 'RY'; }
+
 function renderCars(){
   renderFuelCards();
   const grid=document.getElementById('car-grid');
   const gridTD=document.getElementById('car-grid-testdrive');
+  const gridPD=document.getElementById('car-grid-pd');
+  const gridTDPD=document.getElementById('car-grid-testdrive-pd');
   grid.innerHTML='';
   if(gridTD) gridTD.innerHTML='';
+  if(gridPD) gridPD.innerHTML='';
+  if(gridTDPD) gridTDPD.innerHTML='';
   let hasOverdue=false;
   db.cars.filter(c=>c.active).forEach(car=>{
     const st=getCarStatus(car.id);
@@ -1538,9 +1560,14 @@ function renderCars(){
     const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=(car.inService!==true)?()=>selectCar(car.id):null;
-    // แยกใส่ grid ตาม flag testDrive
-    if(car.testDrive && gridTD) gridTD.appendChild(div);
-    else grid.appendChild(div);
+    // แยกใส่ grid ตามสาขา (ระยอง/ปลวกแดง) และ flag testDrive
+    const isPD = carBranch(car)==='PD';
+    const target = isPD ? (car.testDrive ? gridTDPD : gridPD) : (car.testDrive ? gridTD : grid);
+    (target||grid).appendChild(div);
+  });
+  // แถบที่ยังไม่มีรถ ให้ขึ้นข้อความบอก
+  [grid,gridTD,gridPD,gridTDPD].forEach(g=>{
+    if(g && !g.children.length) g.innerHTML='<div style="grid-column:1/-1;font-size:13px;color:var(--g400)">ยังไม่มีรถในกลุ่มนี้</div>';
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
 }
@@ -1757,7 +1784,8 @@ function submitBooking(){
   openModal('modal-success');
   // ถ้าเป็นรถทดลองขับ ถามเรื่องน้ำมัน
   const bookedCar = db.cars.find(c=>c.id===_bookedCarId);
-  if(bookedCar?.testDrive){
+  // ปลวกแดงไม่มีการ์ดน้ำมัน → รถทดลองขับสาขาปลวกแดงทำงานเหมือนรถใช้งาน (ไม่ถามเรื่องการ์ด)
+  if(bookedCar?.testDrive && carBranch(bookedCar)!=='PD'){
     setTimeout(()=>{
       const choice = confirm('🚗 รถทดลองขับ\n\nต้องการเติมน้ำมันไหม?\n\n✅ ตกลง = ไปเลือกการ์ดน้ำมัน\n❌ ยกเลิก = ไปหน้าใบขออนุมัติเลย');
       closeModal('modal-success');
@@ -2341,11 +2369,12 @@ function renderSettings(){
   updateFuelPriceDisplay();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
-      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''}</span>
+      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''} <span style="color:#2563eb;font-size:11px;font-weight:700">📍 ${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'}</span></span>
       <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
       <button class="btn btn-outline btn-sm" onclick="editCarPlate('${c.id}')">แก้ทะเบียน</button>
       <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
       <button class="btn btn-sm" style="background:${c.testDrive?'#6b7280':'#10b981'};color:#fff;border:none" onclick="toggleCarTestDrive('${c.id}')">${c.testDrive?'ยกเลิกทดลองขับ':'🚗 ตั้งเป็นทดลองขับ'}</button>
+      <button class="btn btn-outline btn-sm" onclick="toggleCarBranch('${c.id}')">📍 ย้ายไปสาขา${carBranch(c)==='PD'?'ระยอง':'ปลวกแดง'}</button>
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
@@ -2369,6 +2398,16 @@ function toggleCarTestDrive(id){
   car.testDrive=!car.testDrive;
   syncNow();
   renderSettings();
+}
+
+function toggleCarBranch(id){
+  const car=db.cars.find(x=>x.id===id);
+  if(!car)return;
+  car.branch = carBranch(car)==='PD' ? 'RY' : 'PD';
+  db._lastSync=new Date().toISOString();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
+  renderSettings();renderCars();
 }
 
 function editCarPlate(id){
@@ -2412,9 +2451,10 @@ function editCarMileage(id){
 function addCar(){
   const plate=document.getElementById('new-car-plate').value.trim();
   const isTestDrive=document.getElementById('new-car-testdrive')?.checked||false;
+  const branch=document.getElementById('new-car-branch')?.value==='PD'?'PD':'RY';
   if(!plate)return alert('กรุณาใส่ทะเบียนรถ');
   if(db.cars.find(c=>c.plate===plate&&c.active))return alert('ทะเบียนนี้มีอยู่แล้ว');
-  db.cars.push({id:'c'+Date.now(),plate,active:true,testDrive:isTestDrive});
+  db.cars.push({id:'c'+Date.now(),plate,active:true,testDrive:isTestDrive,branch});
   document.getElementById('new-car-plate').value='';
   if(document.getElementById('new-car-testdrive')) document.getElementById('new-car-testdrive').checked=false;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
@@ -3840,12 +3880,12 @@ function _getItemKey(item){
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService} = item;
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService});
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch});
 }
 
 function _getChanged(newItems, colName, idField='id'){
