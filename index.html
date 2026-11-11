@@ -1026,7 +1026,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261107-003'; // Force reload version
+const APP_VERSION = '20261110-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -6282,6 +6282,7 @@ function loadApprovalPage(permitId){
   });
 }
 
+let APPROVE_TIMEOUT_MS=20000; // รอยืนยันการบันทึกอนุมัติสูงสุดกี่มิลลิวินาที
 function submitApproval(){
   const id=window._approvePermitId;
   if(!id)return;
@@ -6309,31 +6310,45 @@ function submitApproval(){
     document.querySelector('#page-approve .btn-danger').style.display='none';
   }
 
-  function doApprove(p){
-    p.status='approved';
-    p.managerSig=sig;
-    p.approvedAt=new Date().toISOString();
-    // อัปเดต local db ด้วย
-    const idx=(db.permits||[]).findIndex(x=>x.id===id);
-    if(idx>=0) db.permits[idx]=p; else { db.permits=db.permits||[]; db.permits.unshift(p); }
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // ถือว่า "อนุมัติแล้ว" ก็ต่อเมื่อบันทึกขึ้นระบบกลางสำเร็จและอ่านกลับมายืนยันแล้วเท่านั้น
+  // (เดิมถ้าบันทึกไม่ได้ จะแจ้ง "สำเร็จ" และเครื่องนี้ขึ้นอนุมัติเอง ทั้งที่ระบบกลางยังเป็นรออนุมัติ
+  //  ทำให้ผู้ขอปริ๊นใบที่ยังไม่ได้อนุมัติจริงออกมาได้)
+  function failApprove(msg){
+    errEl.textContent=msg;
+    errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';errEl.style.display='flex';
+    document.querySelector('#page-approve .btn-success').disabled=false;
+    document.querySelector('#page-approve .btn-danger').disabled=false;
+  }
 
-    if(_fbReady){
-      Promise.all([
-        fbSetDoc('permits', p.id, {...p, updatedAt:new Date().toISOString()}),
-        fbSetDoc('signatures', id+'_mgr', {id:id+'_mgr', sig})
-      ]).then(()=>{
-        _fbDb.collection('config').doc('lastUpdate').set({
-          updatedAt:new Date().toISOString(), changedIds:{permits:[p.id]}
-        });
-        showSuccess();
-      }).catch(()=>{
-        // retry
-        syncNow(showSuccess, showSuccess);
-      });
-    } else {
-      syncNow(showSuccess, showSuccess);
+  async function doApprove(p){
+    if(!_fbReady){
+      failApprove('❌ อนุมัติยังไม่สำเร็จ — ยังเชื่อมต่อระบบกลางไม่ได้ กรุณารอสักครู่แล้วกดอนุมัติอีกครั้ง (ใบนี้ยังไม่ถือว่าอนุมัติ)');
+      return;
     }
+    const approvedAt=new Date().toISOString();
+    const next={...p, status:'approved', managerSig:sig, approvedAt};   // ยังไม่แตะข้อมูลในเครื่องจนกว่าจะบันทึกสำเร็จ
+    try{
+      const save=(async()=>{
+        await fbSetDoc('permits', p.id, {...next, updatedAt:approvedAt});
+        await fbSetDoc('signatures', id+'_mgr', {id:id+'_mgr', sig});
+        // อ่านกลับจากเซิร์ฟเวอร์ เพื่อยืนยันว่าสถานะอนุมัติถูกบันทึกจริง
+        const chk=await _fbDb.collection('permits').doc(p.id).get({source:'server'});
+        if(!chk.exists || chk.data().status!=='approved') throw new Error('verify-failed');
+      })();
+      await Promise.race([save, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), APPROVE_TIMEOUT_MS))]);
+    }catch(err){
+      console.error('approve failed:', err);
+      failApprove('❌ อนุมัติยังไม่สำเร็จ — บันทึกขึ้นระบบกลางไม่ได้ (สัญญาณขัดข้องหรือช้า) ใบนี้ยังไม่ถือว่าอนุมัติ กรุณากดอนุมัติอีกครั้ง');
+      return;
+    }
+    // บันทึกสำเร็จแล้ว จึงค่อยอัปเดตเครื่องนี้
+    const idx=(db.permits||[]).findIndex(x=>x.id===id);
+    if(idx>=0) db.permits[idx]=next; else { db.permits=db.permits||[]; db.permits.unshift(next); }
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(err){}
+    _fbDb.collection('config').doc('lastUpdate').set({
+      updatedAt:new Date().toISOString(), changedIds:{permits:[p.id]}
+    }).catch(()=>{});
+    showSuccess();
   }
 
   // หา permit ใน local ก่อน ถ้าไม่เจอดึงจาก Firebase ตรงๆ
