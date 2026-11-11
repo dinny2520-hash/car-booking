@@ -1026,7 +1026,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-001'; // Force reload version
+const APP_VERSION = '20261110-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -5998,7 +5998,7 @@ async function reprintFuelMemo(permitId){
   const cache = getSigCache();
   let gmSig = cache[gmKey] || null;
 
-  if(!gmSig && _fbReady){
+  if(!gmSig && await _waitFbReady(FB_READY_WAIT_MS)){
     try{
       const snap = await _fbDb.collection('signatures').doc(gmKey).get();
       if(snap.exists && snap.data()?.sig){
@@ -6595,7 +6595,7 @@ async function reprintMoveMemo(permitId){
   const gmKey = permitId + '_gm2';
   const cache = getSigCache();
   let gmSig = cache[gmKey] || null;
-  if(!gmSig && _fbReady){
+  if(!gmSig && await _waitFbReady(FB_READY_WAIT_MS)){
     try{
       const snap = await _fbDb.collection('signatures').doc(gmKey).get();
       if(snap.exists && snap.data()?.sig){ gmSig = snap.data().sig; cache[gmKey]=gmSig; setSigCache(cache); }
@@ -6612,12 +6612,12 @@ function loadApproveGmMemo2(permitId){
   const gmKey = permitId + '_gm2';
   const cache = getSigCache();
   const gmSig = cache[gmKey];
-  if(gmSig){
+  const showApproved=()=>{
     det.innerHTML = `<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติแล้ว</div></div>`;
     document.querySelector('#page-approve .btn-success').style.display='none';
     document.querySelector('#page-approve .btn-danger').style.display='none';
-    return;
-  }
+  };
+  const showForm=(warn)=>{
   const d = p?._moveMemoData || {};
   det.innerHTML = `<div style="padding:12px">
     <div style="font-size:15px;font-weight:700;margin-bottom:8px">🚗 Memo เคลื่อนย้ายรถ</div>
@@ -6634,19 +6634,28 @@ function loadApproveGmMemo2(permitId){
   document.getElementById('approve-err').style.display='none';
   setSigTab('draw');
   setTimeout(()=>initCanvas('canvas-manager'), 200);
+    if(warn){ const e=document.getElementById('approve-err'); e.textContent=warn; e.style.background='var(--warning-light)'; e.style.color='var(--warning)'; e.style.display='flex'; }
+  };
+  if(gmSig){
+    // มีลายเซ็นค้างในเครื่องนี้ → ตรวจกับระบบกลาง ถ้ายังไม่มีให้ส่งขึ้นไป (ไม่เชื่อแคชในเครื่องอย่างเดียว)
+    det.innerHTML='<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังตรวจสอบลายเซ็น...</div></div>';
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    _ensureGmSigSaved(gmKey, gmSig).then(showApproved).catch(err=>{
+      console.warn('GM sig not confirmed:', err);
+      showForm('⚠️ ลายเซ็นที่ค้างอยู่ในเครื่องนี้ยังไม่ถูกบันทึกขึ้นระบบกลาง กรุณาลงลายเซ็นอีกครั้งแล้วกดอนุมัติ');
+    });
+    return;
+  }
+  showForm();
 }
 
-function submitApproveGmMemo2(){
+async function submitApproveGmMemo2(){
   const permitId = window._approveMemo2Id;
   if(!permitId) return;
   const sig = getManagerSig();
   if(!sig){ document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อน'; document.getElementById('approve-err').style.display='flex'; return; }
-  const gmKey = permitId + '_gm2';
-  if(_fbReady) _fbDb.collection('signatures').doc(gmKey).set({sig, signedAt: new Date().toISOString()});
-  const c = getSigCache(); c[gmKey]=sig; setSigCache(c);
-  document.getElementById('approve-detail').innerHTML =
-    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ Memo พร้อมลายเซ็นได้แล้ว</div></div>';
-  document.querySelector('#page-approve .btn-success').style.display='none';
+  await _finishGmSign(permitId + '_gm2', sig, 'SC สามารถพิมพ์ Memo พร้อมลายเซ็นได้แล้ว');
 }
 
 function openFuelMemoModal(p){
@@ -6792,15 +6801,15 @@ function loadApproveGmMemo(permitId){
   const cache = getSigCache();
   const gmSig = cache[gmKey];
 
-  if(gmSig){
+  const showApproved=()=>{
     det.innerHTML = `<div style="text-align:center;padding:20px">
       <div style="font-size:48px;margin-bottom:12px">✅</div>
       <div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติแล้ว</div>
     </div>`;
     document.querySelector('#page-approve .btn-success').style.display='none';
     document.querySelector('#page-approve .btn-danger').style.display='none';
-    return;
-  }
+  };
+  const showForm=(warn)=>{
 
   const d = p?._memoData || {};
   det.innerHTML = `<div style="padding:12px">
@@ -6821,9 +6830,79 @@ function loadApproveGmMemo(permitId){
   // init canvas ทันทีเพื่อให้วาดลายเซ็นได้เลยโดยไม่ต้องกดปุ่มก่อน
   setSigTab('draw');
   setTimeout(()=>initCanvas('canvas-manager'), 200);
+    if(warn){ const e=document.getElementById('approve-err'); e.textContent=warn; e.style.background='var(--warning-light)'; e.style.color='var(--warning)'; e.style.display='flex'; }
+  };
+  if(gmSig){
+    // มีลายเซ็นค้างในเครื่องนี้ → ตรวจกับระบบกลาง ถ้ายังไม่มีให้ส่งขึ้นไป (ไม่เชื่อแคชในเครื่องอย่างเดียว)
+    det.innerHTML='<div style="text-align:center;padding:40px;color:var(--g600)"><div style="font-size:36px;margin-bottom:12px">⏳</div><div>กำลังตรวจสอบลายเซ็น...</div></div>';
+    document.querySelector('#page-approve .btn-success').style.display='none';
+    document.querySelector('#page-approve .btn-danger').style.display='none';
+    _ensureGmSigSaved(gmKey, gmSig).then(showApproved).catch(err=>{
+      console.warn('GM sig not confirmed:', err);
+      showForm('⚠️ ลายเซ็นที่ค้างอยู่ในเครื่องนี้ยังไม่ถูกบันทึกขึ้นระบบกลาง กรุณาลงลายเซ็นอีกครั้งแล้วกดอนุมัติ');
+    });
+    return;
+  }
+  showForm();
 }
 
-function submitApproveGmMemo(){
+// ---- ลายเซ็น GM: ถือว่าบันทึกสำเร็จก็ต่อเมื่อระบบกลางมีลายเซ็นจริง (อ่านกลับมายืนยัน) ----
+// เดิมสั่งเขียนแล้วไม่รอผล และถ้า Firebase ยังไม่พร้อมก็ข้ามการเขียนไปเลย แต่ยังแจ้ง "สำเร็จ"
+// ลายเซ็นจึงค้างอยู่แค่ในเครื่อง GM แล้ว SC ไม่มีรูปให้ดึง
+let FB_READY_WAIT_MS=4000; // รอ Firebase พร้อมสูงสุดกี่มิลลิวินาที ก่อนยอมแพ้
+function _waitFbReady(ms){
+  return new Promise(res=>{
+    const t0=Date.now();
+    (function tick(){
+      if(_fbReady) return res(true);
+      if(Date.now()-t0>=ms) return res(false);
+      setTimeout(tick,250);
+    })();
+  });
+}
+function _withTimeout(p, ms){
+  return Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms))]);
+}
+async function _saveGmSignature(gmKey, sig){
+  if(!(await _waitFbReady(FB_READY_WAIT_MS))) throw new Error('not-ready');
+  const ref=_fbDb.collection('signatures').doc(gmKey);
+  await _withTimeout((async()=>{
+    await ref.set({sig, signedAt:new Date().toISOString()});
+    const chk=await ref.get({source:'server'});
+    if(!chk.exists || chk.data().sig!==sig) throw new Error('verify-failed');
+  })(), APPROVE_TIMEOUT_MS);
+}
+// ลายเซ็นที่ค้างอยู่ในเครื่อง: ถ้าระบบกลางยังไม่มี ให้ส่งขึ้นไป (กู้ลายเซ็นที่เซ็นไปแล้วแต่ไม่เคยถูกบันทึก)
+async function _ensureGmSigSaved(gmKey, sig){
+  if(!(await _waitFbReady(FB_READY_WAIT_MS))) throw new Error('not-ready');
+  const ref=_fbDb.collection('signatures').doc(gmKey);
+  const cur=await _withTimeout(ref.get({source:'server'}), APPROVE_TIMEOUT_MS);
+  if(cur.exists && cur.data().sig) return;
+  await _saveGmSignature(gmKey, sig);
+}
+async function _finishGmSign(gmKey, sig, doneText){
+  const errEl=document.getElementById('approve-err');
+  const btn=document.querySelector('#page-approve .btn-success');
+  errEl.textContent='⏳ กำลังบันทึก กรุณารอสักครู่...';
+  errEl.style.background='var(--warning-light)';errEl.style.color='var(--warning)';errEl.style.display='flex';
+  btn.disabled=true;
+  try{
+    await _saveGmSignature(gmKey, sig);
+  }catch(err){
+    console.error('GM sign failed:', err);
+    errEl.textContent='❌ อนุมัติยังไม่สำเร็จ — บันทึกลายเซ็นขึ้นระบบกลางไม่ได้ (สัญญาณขัดข้องหรือช้า) ยังไม่ถือว่า GM อนุมัติ กรุณากดอนุมัติอีกครั้ง';
+    errEl.style.background='var(--danger-light)';errEl.style.color='var(--danger)';errEl.style.display='flex';
+    btn.disabled=false;
+    return;
+  }
+  const c=getSigCache(); c[gmKey]=sig; setSigCache(c);   // เก็บในเครื่องหลังบันทึกสำเร็จเท่านั้น
+  errEl.style.display='none';
+  document.getElementById('approve-detail').innerHTML =
+    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">'+doneText+'</div></div>';
+  btn.style.display='none'; btn.disabled=false;
+}
+
+async function submitApproveGmMemo(){
   const permitId = window._approveMemoId;
   if(!permitId) return;
   const sig = getManagerSig();
@@ -6831,13 +6910,7 @@ function submitApproveGmMemo(){
     document.getElementById('approve-err').textContent='กรุณาลงลายเซ็นก่อน';
     document.getElementById('approve-err').style.display='flex'; return;
   }
-  // บันทึก GM sig ใน Firebase
-  const gmKey = permitId + '_gm';
-  if(_fbReady) _fbDb.collection('signatures').doc(gmKey).set({sig, signedAt: new Date().toISOString()});
-  const c = getSigCache(); c[gmKey]=sig; setSigCache(c);
-  document.getElementById('approve-detail').innerHTML =
-    '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--success)">GM อนุมัติสำเร็จ!</div><div style="font-size:14px;color:var(--g600)">SC สามารถพิมพ์ใบ Memo ขอเบิกน้ำมันพร้อมลายเซ็นได้แล้ว</div></div>';
-  document.querySelector('#page-approve .btn-success').style.display='none';
+  await _finishGmSign(permitId + '_gm', sig, 'SC สามารถพิมพ์ใบ Memo ขอเบิกน้ำมันพร้อมลายเซ็นได้แล้ว');
 }
 
 function renderPrintPage(p){
