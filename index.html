@@ -1062,7 +1062,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-004'; // Force reload version
+const APP_VERSION = '20261110-005'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -2407,6 +2407,27 @@ function guardAckBadge(p){
     + '<span style="font-size:11px;color:var(--g500);margin-left:4px">'+(br?br+' · ':'')+fmt(p.guardAckAt)+'</span>';
 }
 
+// ข้อความสรุปการรับทราบของ รปภ. สำหรับรายงาน Excel: "สาขา · วันเวลา · ชื่อ(ถ้าพิมพ์ชื่อ)"
+function guardAckText(p){
+  if(!p.guardAckAt) return '';
+  const br=GUARD_BRANCH_LABEL[p.guardBranch]||'';
+  return [br, fmt(p.guardAckAt), p.guardName||''].filter(Boolean).join(' · ');
+}
+// ดึงลายเซ็น รปภ. (เก็บแยกที่ signatures/<id>_guard) มาแสดงในใบพิมพ์ — แคชในเครื่องไว้ ครั้งต่อไปไม่ต้องดึงใหม่
+function fetchGuardSig(permitId, callback){
+  const cache=getSigCache();
+  const cached=cache[permitId+'_guard'];
+  if(cached){ callback(cached); return; }
+  if(!_fbReady){ callback(null); return; }
+  _withTimeout(_fbDb.collection('signatures').doc(permitId+'_guard').get(), APPROVE_TIMEOUT_MS)
+    .then(snap=>{
+      const sig=snap.exists ? snap.data()?.sig : null;
+      if(sig){ const cc=getSigCache(); cc[permitId+'_guard']=sig; setSigCache(cc); }
+      callback(sig||null);
+    })
+    .catch(()=>callback(null));
+}
+
 // ---- PIN ของ รปภ. รายเดือน แยกสาขา (เก็บที่ config/guardPins) ----
 function _guardMonthKey(){
   const d=new Date(), p=n=>String(n).padStart(2,'0');
@@ -3271,7 +3292,7 @@ async function exportFuelReport(){
   XLSX.utils.book_append_sheet(wb, plateWs, 'สรุปตามทะเบียน');
 
   // ชีตรายละเอียดทุกรายการ
-  const detailRows = [['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
+  const detailRows = [['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน','รปภ.รับทราบ']];
   permits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
     const m = getMileage(p);
     detailRows.push([
@@ -3280,17 +3301,17 @@ async function exportFuelReport(){
       m.mileageOut, m.mileageIn, m.distance,
       p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
       p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
-      p.billReceiptNo||''
+      p.billReceiptNo||'', guardAckText(p)
     ]);
   });
   const detailWs = XLSX.utils.aoa_to_sheet(detailRows);
-  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20}];
+  detailWs['!cols'] = [{wch:12},{wch:18},{wch:20},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20},{wch:14},{wch:14},{wch:34}];
   XLSX.utils.book_append_sheet(wb, detailWs, 'รายละเอียด');
 
   // ชีตแยกตามแผนก
   Object.keys(byDept).sort().forEach(dept=>{
     const items = byDept[dept].sort((a,b)=>new Date(a.date)-new Date(b.date));
-    const rows = [['เลขที่ใบ PM','วันที่','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
+    const rows = [['เลขที่ใบ PM','วันที่','ชื่อพนักงาน','แผนก','สถานที่','เหตุผล','รายละเอียด','ทะเบียนรถ','ค่าน้ำมัน (บาท)','เลขไมล์ออก','เลขไมล์กลับ','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน','รปภ.รับทราบ']];
     let deptTotal=0, deptDist=0;
     items.forEach(p=>{
       const m = getMileage(p);
@@ -3298,14 +3319,14 @@ async function exportFuelReport(){
         Number(p.fuel)||0, m.mileageOut, m.mileageIn, m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
         p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
-        p.billReceiptNo||''
+        p.billReceiptNo||'', guardAckText(p)
       ]);
       deptTotal += Number(p.fuel)||0;
       deptDist += typeof m.distance==='number' ? m.distance : 0;
     });
     rows.push(['','','','','','รวม', '', deptTotal,'','', deptDist||'-','']);
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:12},{wch:12},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20},{wch:18}];
+    ws['!cols'] = [{wch:12},{wch:12},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20},{wch:18},{wch:34}];
     const safeName = dept.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31) || 'แผนก';
     XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
@@ -3317,32 +3338,32 @@ async function exportFuelReport(){
 
   // ชีตใบ permit แยกรถ
   if(carPermits.length){
-    const cRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
+    const cRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','ทะเบียนรถ','ค่าน้ำมัน (บาท)','ระยะทาง (กม.)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน','รปภ.รับทราบ']];
     carPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
       const m=getMileage(p);
       cRows.push([p.permitNo||'-',p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,m.distance,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
         p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
-        p.billReceiptNo||''
+        p.billReceiptNo||'', guardAckText(p)
       ]);
     });
     const cWs=XLSX.utils.aoa_to_sheet(cRows);
-    cWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:20}];
+    cWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:14},{wch:20},{wch:14},{wch:14},{wch:34}];
     XLSX.utils.book_append_sheet(wb,cWs,'ใบ permit (รถ)');
   }
 
   // ชีตใบ permit แยกการ์ดน้ำมัน
   if(cardPermits.length){
-    const dRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','การ์ด/ทะเบียน','ค่าน้ำมัน (บาท)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน']];
+    const dRows=[['เลขที่ใบ PM','วันที่','แผนก','ชื่อพนักงาน','สถานที่','เหตุผล','การ์ด/ทะเบียน','ค่าน้ำมัน (บาท)','สถานะ','หมายเหตุ','เลขที่บิลน้ำมัน','รปภ.รับทราบ']];
     cardPermits.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(p=>{
       dRows.push([p.permitNo||'-',p.date,p.dept||'-',p.name||'-',p.location||'-',p.reason||'-',p.car||'-',Number(p.fuel)||0,
         p.status==='approved'?'อนุมัติแล้ว':p.status==='rejected'?'ไม่อนุมัติ':'รออนุมัติ',
         p.billNoFuel?'ไม่ได้เติมน้ำมัน':p.billReceived===true&&p.billActualAmount!=null?('รับบิล ฿'+Number(p.billActualAmount).toLocaleString('th-TH')):'',
-        p.billReceiptNo||''
+        p.billReceiptNo||'', guardAckText(p)
       ]);
     });
     const dWs=XLSX.utils.aoa_to_sheet(dRows);
-    dWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:20}];
+    dWs['!cols']=[{wch:12},{wch:16},{wch:20},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:20},{wch:14},{wch:14},{wch:34}];
     XLSX.utils.book_append_sheet(wb,dWs,'ใบ permit (การ์ด)');
   }
 
@@ -6707,6 +6728,12 @@ function showPrintPage(permitId){
   document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
   document.getElementById('page-print').classList.add('active');
 
+  // ถ้า รปภ. รับทราบแล้ว ให้ดึงลายเซ็น รปภ. มาแสดงในช่อง "รปภ.ลงนามขาออก" ด้วย
+  const finish=()=>{
+    if(p.guardAckAt) fetchGuardSig(permitId, g=>renderPrintPage(p, g));
+    else renderPrintPage(p);
+  };
+
   // ถ้าลายเซ็นยังไม่มี หรือเป็น placeholder [sig] ให้ดึงมาก่อน
   if(!p.managerSig || p.managerSig==='[sig]'){
     document.getElementById('print-content').innerHTML =
@@ -6716,11 +6743,11 @@ function showPrintPage(permitId){
         p.managerSig = sig;
         try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
       }
-      renderPrintPage(p);
+      finish();
     });
     return;
   }
-  renderPrintPage(p);
+  finish();
 }
 
 // ---- ใบ Memo ขอเบิกน้ำมัน ----
@@ -7196,7 +7223,7 @@ async function submitApproveGmMemo(){
   await _finishGmSign(permitId + '_gm', sig, 'SC สามารถพิมพ์ใบ Memo ขอเบิกน้ำมันพร้อมลายเซ็นได้แล้ว');
 }
 
-function renderPrintPage(p){
+function renderPrintPage(p, guardSig){
   const logoSrc='data:image/png;base64,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';
   const managerSigHtml = p.managerSig
     ? (p.managerSig.startsWith('data:') 
@@ -7204,15 +7231,30 @@ function renderPrintPage(p){
         : '<div style="font-size:12pt;color:#111;text-align:center;padding:4px">' + p.managerSig + '</div>')
     : '';
   // ใบที่ค่าน้ำมัน 0 บาท: แนบ QR ให้ รปภ. สแกนรับทราบตอนออกนอกบริษัท (ช่อง "รปภ.ลงนามขาออก")
-  const guardQr = needsGuardQr(p) ? guardQrSvg(p.id) : '';
+  const guardAcked = !!p.guardAckAt;
+  const guardQr = (!guardAcked && needsGuardQr(p)) ? guardQrSvg(p.id) : '';   // รับทราบแล้วไม่ต้องมี QR อีก
   const sigH = guardQr ? '26mm' : '22mm';   // ใบ 0 บาทไม่มีบรรทัดหมายเหตุบิล จึงเอาความสูงมาเพิ่มช่องนี้ ไม่ดันใบล้นหน้า
+  // รับทราบแล้ว: แสดงลายเซ็น รปภ. + สาขา/วันที่ ในช่อง และเวลาในช่อง "เวลา :"
+  const _gd = guardAcked ? new Date(p.guardAckAt) : null;
+  const guardTime = _gd ? String(_gd.getHours()).padStart(2,'0')+':'+String(_gd.getMinutes()).padStart(2,'0') : '';
+  const guardSigVal = guardSig || p.guardName || '';
+  const guardSigHtml = guardAcked && guardSigVal
+    ? (guardSigVal.startsWith('data:')
+        ? '<img src="'+guardSigVal+'" style="max-height:13mm;max-width:90%;display:block;margin:0 auto 1px;mix-blend-mode:multiply">'
+        : '<div style="font-size:11pt;color:#111;text-align:center;padding-bottom:1px">'+_calEsc(guardSigVal)+'</div>')
+    : '';
+  const guardCaption = guardAcked
+    ? '<div style="font-size:6.5pt;color:#333;text-align:center;line-height:1.2">รปภ.รับทราบ'+(GUARD_BRANCH_LABEL[p.guardBranch]?' · '+GUARD_BRANCH_LABEL[p.guardBranch]:'')+' · '+_gd.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</div>'
+    : '';
   const guardCell = guardQr
     ? '<td style="border:1.5px solid #333;height:'+sigH+';vertical-align:bottom;padding:3px 6px">'
       +'<table style="border-collapse:collapse;width:100%"><tr>'
       +'<td style="width:22mm;padding:0;vertical-align:bottom"><div style="width:22mm;height:22mm">'+guardQr+'</div></td>'
       +'<td style="padding:0 0 0 1.5mm;vertical-align:bottom;font-size:6.5pt;line-height:1.25;color:#333;text-align:left">สแกนเพื่อ<br>บันทึกการรับทราบ<br>ออกนอกสถานที่<br>(รปภ.)</td>'
       +'</tr></table><div style="border-top:1px solid #666">&nbsp;</div></td>'
-    : '<td style="border:1.5px solid #333;height:'+sigH+';vertical-align:bottom;padding:3px 6px"><div style="border-top:1px solid #666">&nbsp;</div></td>';
+    : guardAcked
+      ? '<td style="border:1.5px solid #333;height:'+sigH+';vertical-align:bottom;padding:3px 6px;overflow:hidden">'+guardSigHtml+guardCaption+'<div style="border-top:1px solid #666">&nbsp;</div></td>'
+      : '<td style="border:1.5px solid #333;height:'+sigH+';vertical-align:bottom;padding:3px 6px"><div style="border-top:1px solid #666">&nbsp;</div></td>';
   // QR ขนาดใหญ่สำหรับ "แคปหน้าจอ" — แสดงเฉพาะบนจอ (no-print) ไม่ติดไปตอนพิมพ์/PDF
   // (QR ในใบที่พิมพ์ขนาดเล็ก ถ้าแคปทั้งหน้าบนมือถือจะเล็กเกินไปจนสแกนยาก)
   const guardScreenBlock = guardQr
@@ -7245,7 +7287,7 @@ function renderPrintPage(p){
     +'<td style="border:1.5px solid #333;height:'+sigH+';vertical-align:bottom;padding:3px 6px"><div style="border-top:1px solid #666">&nbsp;</div></td>'
     +guardCell
     +'</tr>'
-    +'<tr><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">พนักงาน</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">ผู้จัดการแผนก/หัวหน้าแผนก</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เจ้าหน้าที่</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เวลา : <span style="border-bottom:1px solid #333;display:inline-block;width:20mm">&nbsp;</span></td></tr>'
+    +'<tr><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">พนักงาน</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">ผู้จัดการแผนก/หัวหน้าแผนก</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เจ้าหน้าที่</td><td style="border:1.5px solid #333;padding:4px 6px;text-align:center">เวลา : <span style="border-bottom:1px solid #333;display:inline-block;width:20mm">'+(guardTime||'&nbsp;')+'</span></td></tr>'
     +'</table>'
     +'<div style="text-align:right;font-size:9pt;margin-top:3mm;color:#555">'+footer+'</div>'
     +'</div>';
