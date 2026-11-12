@@ -781,7 +781,11 @@ tr:hover td{background:var(--g50)}
           <input type="text" id="new-staff-name" placeholder="ชื่อเจ้าหน้าที่" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
           <input type="text" id="new-staff-code" placeholder="รหัสยืนยัน (ตัวเลข)" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
         </div>
-        <button class="btn btn-primary btn-sm" onclick="addStaff()">+ เพิ่มเจ้าหน้าที่</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="addStaff()">+ เพิ่มเจ้าหน้าที่</button>
+          <button class="btn btn-outline btn-sm" onclick="publishStaffNow()">📤 ส่งรายชื่อขึ้นระบบกลางตอนนี้</button>
+        </div>
+        <div id="staff-sync-status" style="margin-top:8px;font-size:13px"></div>
         <div id="staff-list" style="margin-top:12px"></div>
       </div>
 
@@ -1062,7 +1066,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-006'; // Force reload version
+const APP_VERSION = '20261110-007'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -2740,6 +2744,37 @@ function removeCar(id){
 // เจ้าหน้าที่ส่งขึ้นระบบกลางเฉพาะตอนแอดมินเพิ่ม/ลบจากหน้าตั้งค่า (ไม่ส่งอัตโนมัติจากทุกเครื่อง
 // กันเครื่องอื่นเอารายชื่อตั้งต้นตัวอย่างของตัวเองไปทับรายชื่อจริง)
 let _staffDirty=false;
+let _lastPushError=null;                    // สาเหตุล่าสุดที่ส่งขึ้นระบบกลางไม่สำเร็จ (ไว้แจ้งผู้ใช้)
+let STAFF_VERIFY_WAITS=[1500,4500,8000];    // รอตรวจผลกี่มิลลิวินาที (ตรวจสูงสุด 3 รอบ)
+function _setStaffStatus(html){ const el=document.getElementById('staff-sync-status'); if(el) el.innerHTML=html; }
+
+// ตรวจว่ารายชื่อเจ้าหน้าที่ในระบบกลางตรงกับเครื่องนี้จริง แล้วแจ้งผลใต้ฟอร์ม
+// (เดิมกดเพิ่มแล้วดูเหมือนสำเร็จเสมอ แม้ไม่ถึงระบบกลาง จึงไม่รู้ว่าทำไมเครื่องอื่นไม่เห็นชื่อ)
+async function reportStaffSync(){
+  _setStaffStatus('<span style="color:var(--warning)">⏳ กำลังส่งรายชื่อขึ้นระบบกลาง...</span>');
+  let lastErr=null;
+  for(const wait of STAFF_VERIFY_WAITS){
+    await new Promise(r=>setTimeout(r,wait));
+    if(!_fbReady) continue;
+    try{
+      const snap=await _withTimeout(_fbDb.collection('staff').get(), 4000);
+      const remote=new Set(snap.docs.map(d=>d.id||(d.data&&d.data()&&d.data().id)));
+      const local=(db.staff||[]).map(s=>s.id);
+      const missing=local.filter(id=>!remote.has(id));
+      const stale=(db.deletedStaffIds||[]).filter(id=>remote.has(id) && !local.includes(id));
+      if(!missing.length && !stale.length){
+        _setStaffStatus('<span style="color:var(--success)">✅ ระบบกลางมีรายชื่อเจ้าหน้าที่ตรงกับเครื่องนี้แล้ว ('+remote.size+' คน) — เครื่องอื่นจะเห็นภายในไม่กี่วินาที</span>');
+        return true;
+      }
+    }catch(e){ lastErr=e; }
+  }
+  const reason=_lastPushError || (lastErr&&(lastErr.code||lastErr.message)) || '';
+  const why = reason ? ' สาเหตุ: <b>'+_calEsc(reason)+'</b>' : (_fbReady ? '' : ' (ยังเชื่อมต่อระบบกลางไม่ได้)');
+  _setStaffStatus('<span style="color:var(--danger)">❌ ยังส่งรายชื่อขึ้นระบบกลางไม่สำเร็จ —'+why+' เครื่องอื่นจะยังไม่เห็นชื่อ ระบบจะลองส่งซ้ำเองทุก 10 วินาที</span>');
+  return false;
+}
+// ส่งรายชื่อเจ้าหน้าที่ในเครื่องนี้ขึ้นระบบกลางทันที (ใช้กับรายชื่อที่เพิ่มไว้ก่อนแก้ ที่ยังไม่เคยถูกส่ง)
+function publishStaffNow(){ _staffDirty=true; syncNow(); reportStaffSync(); }
 function addStaff(){
   const name=document.getElementById('new-staff-name').value.trim();
   const code=document.getElementById('new-staff-code').value.trim();
@@ -2752,6 +2787,7 @@ function addStaff(){
   _staffDirty=true;
   syncNow();
   renderSettings();
+  reportStaffSync();
 }
 function removeStaff(id){
   if(!confirm('ยืนยันการลบเจ้าหน้าที่?'))return;
@@ -2762,6 +2798,7 @@ function removeStaff(id){
   _staffDirty=true;
   syncNow();
   renderSettings();
+  reportStaffSync();
 }
 function changeAdminPass(){
   const np=document.getElementById('new-admin-pass').value;
@@ -4280,9 +4317,11 @@ function _pushToFirebase(){
       changedIds
     });
   }).then(()=>{
+    _lastPushError=null;
     updateSync(false, true);
   }).catch(err=>{
     console.error('Firebase push error:', err);
+    _lastPushError=(err&&(err.code||err.message))||String(err);
     setTimeout(_pushToFirebase, 10000);
   });
 }
