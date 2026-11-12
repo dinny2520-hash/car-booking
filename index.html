@@ -1066,7 +1066,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-007'; // Force reload version
+const APP_VERSION = '20261110-008'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1341,7 +1341,7 @@ async function _smartPull(sinceTs){
       if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
       if(fbFc.length) db.fuelCards = fbFc;
       if(fbCars && fbCars.length) db.cars = fbCars;
-      if(fbStaff && fbStaff.length) db.staff = fbStaff;
+      _mergeStaffFromFirebase(fbStaff, false);
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
@@ -1385,7 +1385,7 @@ async function _smartPull(sinceTs){
         fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
         db.cars = Object.values(localCarMap);
       }
-      if(staffChanged || (fbStaff && fbStaff.length)) db.staff = fbStaff;   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง)
+      _mergeStaffFromFirebase(fbStaff, staffChanged);   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง) แต่ไม่ทับรายการที่ยังไม่ได้ส่ง
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
@@ -1408,6 +1408,8 @@ async function _smartPull(sinceTs){
       // เจ้าหน้าที่: บันทึกตามที่ "ระบบกลางมีจริง" เท่านั้น — ถ้าระบบกลางยังไม่มี รายชื่อในเครื่องจะถูกส่งขึ้นไปตอนแอดมินเพิ่ม/ลบครั้งแรก
       _updateLastPushed(fbStaff||[], 'staff');
       _lastPushed['_initialized'] = true;
+      // มีเจ้าหน้าที่ที่เพิ่ม/ลบไว้แต่ยังไม่ได้ส่ง (เช่นรีเฟรชก่อนส่งเสร็จ) → ส่งให้เลยหลังเปิดหน้า
+      if(db._staffPending) setTimeout(()=>{ try{ _pushToFirebase(); }catch(e){} }, 300);
       console.log('✅ _lastPushed initialized');
     }
 
@@ -2653,6 +2655,7 @@ function renderSettings(){
   renderAdminPendingFcReturnList();
   renderAdminBillPendingList();
   renderGuardPins();
+  if(db._staffPending) reportStaffSync();   // ยังมีเจ้าหน้าที่ที่เพิ่ม/ลบไว้แต่ยังไม่ได้ส่ง → แจ้งสถานะ
   // เฉพาะครั้งแรกที่เปิดหน้าตั้งค่า ให้เริ่มที่แท็บรถ
   const cardTabVisible = document.getElementById('admin-card-booking-list')?.style.display === 'block';
   if(!cardTabVisible) switchAdminHistoryTab('car');
@@ -2744,17 +2747,34 @@ function removeCar(id){
 // เจ้าหน้าที่ส่งขึ้นระบบกลางเฉพาะตอนแอดมินเพิ่ม/ลบจากหน้าตั้งค่า (ไม่ส่งอัตโนมัติจากทุกเครื่อง
 // กันเครื่องอื่นเอารายชื่อตั้งต้นตัวอย่างของตัวเองไปทับรายชื่อจริง)
 let _staffDirty=false;
+// รวมรายชื่อเจ้าหน้าที่จากระบบกลางเข้าเครื่อง: ระบบกลางเป็นหลัก แต่ถ้ามีการเพิ่ม/ลบที่ "ยังไม่ได้ส่งขึ้นไป" (db._staffPending)
+// ต้องไม่ทับรายการเหล่านั้น — ไม่งั้นเพิ่มชื่อแล้วรีเฟรชก่อนส่งเสร็จ (หรือส่งไม่ผ่าน/ออฟไลน์) ชื่อจะหาย และชื่อที่ลบไว้จะกลับมา
+function _mergeStaffFromFirebase(fbStaff, accept){
+  if(!accept && !(fbStaff && fbStaff.length)) return;
+  if(db._staffPending){
+    const del=new Set(db.deletedStaffIds||[]);
+    const map={};
+    (fbStaff||[]).forEach(s=>{ if(!del.has(s.id)) map[s.id]=s; });
+    (db.staff||[]).forEach(s=>{ if(!del.has(s.id) && !map[s.id]) map[s.id]=s; });   // มีเฉพาะในเครื่อง → จะถูกส่งขึ้นไป
+    db.staff=Object.values(map);
+  } else {
+    db.staff=fbStaff||[];
+  }
+}
 let _lastPushError=null;                    // สาเหตุล่าสุดที่ส่งขึ้นระบบกลางไม่สำเร็จ (ไว้แจ้งผู้ใช้)
+let _staffReportSeq=0;
 let STAFF_VERIFY_WAITS=[1500,4500,8000];    // รอตรวจผลกี่มิลลิวินาที (ตรวจสูงสุด 3 รอบ)
 function _setStaffStatus(html){ const el=document.getElementById('staff-sync-status'); if(el) el.innerHTML=html; }
 
 // ตรวจว่ารายชื่อเจ้าหน้าที่ในระบบกลางตรงกับเครื่องนี้จริง แล้วแจ้งผลใต้ฟอร์ม
 // (เดิมกดเพิ่มแล้วดูเหมือนสำเร็จเสมอ แม้ไม่ถึงระบบกลาง จึงไม่รู้ว่าทำไมเครื่องอื่นไม่เห็นชื่อ)
 async function reportStaffSync(){
+  const mySeq=++_staffReportSeq;
   _setStaffStatus('<span style="color:var(--warning)">⏳ กำลังส่งรายชื่อขึ้นระบบกลาง...</span>');
   let lastErr=null;
   for(const wait of STAFF_VERIFY_WAITS){
     await new Promise(r=>setTimeout(r,wait));
+    if(mySeq!==_staffReportSeq) return false;   // มีรอบใหม่แล้ว ให้รอบใหม่แจ้งผลแทน
     if(!_fbReady) continue;
     try{
       const snap=await _withTimeout(_fbDb.collection('staff').get(), 4000);
@@ -2774,7 +2794,7 @@ async function reportStaffSync(){
   return false;
 }
 // ส่งรายชื่อเจ้าหน้าที่ในเครื่องนี้ขึ้นระบบกลางทันที (ใช้กับรายชื่อที่เพิ่มไว้ก่อนแก้ ที่ยังไม่เคยถูกส่ง)
-function publishStaffNow(){ _staffDirty=true; syncNow(); reportStaffSync(); }
+function publishStaffNow(){ _staffDirty=true; db._staffPending=true; try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} syncNow(); reportStaffSync(); }
 function addStaff(){
   const name=document.getElementById('new-staff-name').value.trim();
   const code=document.getElementById('new-staff-code').value.trim();
@@ -2785,6 +2805,8 @@ function addStaff(){
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   _staffDirty=true;
+  db._staffPending=true;   // ยังไม่ได้ส่งขึ้นระบบกลาง — จำไว้แม้รีเฟรช/ออฟไลน์/ส่งไม่ผ่าน
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   syncNow();
   renderSettings();
   reportStaffSync();
@@ -2796,6 +2818,8 @@ function removeStaff(id){
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   _staffDirty=true;
+  db._staffPending=true;   // ยังไม่ได้ส่งขึ้นระบบกลาง — จำไว้แม้รีเฟรช/ออฟไลน์/ส่งไม่ผ่าน
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   syncNow();
   renderSettings();
   reportStaffSync();
@@ -4228,7 +4252,7 @@ function _pushToFirebase(){
   const changedFc = _getChanged(db.fuelCards||[], 'fuelCards');
   const changedCars = _getChanged(db.cars||[], 'cars');
   // เจ้าหน้าที่: ทำเฉพาะเมื่อมีการเพิ่ม/ลบจากหน้าตั้งค่า (_staffDirty)
-  const staffNow = _staffDirty;
+  const staffNow = _staffDirty || !!db._staffPending;
   const changedStaff = staffNow ? _getChanged(db.staff||[], 'staff') : [];
   const staffKnown = _lastPushed['staff'] || {};
   // ลบออกจากระบบกลางเฉพาะรหัสที่ระบบกลางมีอยู่จริง (รู้จากตอนดึงข้อมูล) และไม่อยู่ในรายชื่อแล้ว
@@ -4282,7 +4306,7 @@ function _pushToFirebase(){
   if(ops.length === 0 && 
      configStr === _lastPushed['config'] && 
      delStr === _lastPushed['deletedIds']){ 
-    if(staffNow) _staffDirty=false;
+    if(staffNow){ _staffDirty=false; db._staffPending=false; try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
     updateSync(false, true); 
     return; 
   }
@@ -4303,6 +4327,8 @@ function _pushToFirebase(){
       _updateLastPushed(db.staff||[], 'staff');
       staffToDelete.forEach(id=>{ if(_lastPushed['staff']) delete _lastPushed['staff'][id]; });
       _staffDirty=false;
+      db._staffPending=false;   // ส่งสำเร็จแล้ว
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     }
     // เขียน lastUpdate พร้อม changedIds — เครื่องอื่นจะดึงแค่ doc ที่เปลี่ยน
     const changedIds = {};
