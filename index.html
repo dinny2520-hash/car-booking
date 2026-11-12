@@ -1062,7 +1062,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-005'; // Force reload version
+const APP_VERSION = '20261110-006'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1269,6 +1269,7 @@ async function _smartPull(sinceTs){
     const doFull = isFirstPull || (tabActive && (now - _lastFullPullTime > FULL_PULL_INTERVAL));
     
     let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff, fbConfig;
+    let staffChanged = false;   // มีการเพิ่ม/ลบเจ้าหน้าที่ (จาก changedIds)
 
     if(doFull){
       // Full pull — ดึงทั้ง collection รวม config/app เพื่อ sync adminPass, fuelPrice, staffPins
@@ -1304,7 +1305,10 @@ async function _smartPull(sinceTs){
           fetchDocs('fuelCards', cids.fuelCards),
           fetchDocs('cars', cids.cars)
         ]);
-        fbStaff = []; fbConfig = null;
+        // เจ้าหน้าที่: ถ้ามีการเปลี่ยน ดึงรายชื่อทั้งหมด (collection เล็กมาก) เพื่อให้เห็นทั้งการเพิ่มและการลบ
+        staffChanged = !!(cids.staff && cids.staff.length);
+        fbStaff = staffChanged ? await _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data())) : [];
+        fbConfig = null;
         console.log(`📥 changedIds pull: ${JSON.stringify(Object.fromEntries(Object.entries(cids).map(([k,v])=>[k,v.length])))}`);
       } else {
         // Fallback: ไม่มี changedIds (เช่น polling) — ข้าม WHERE query เพราะกิน reads มาก
@@ -1377,7 +1381,7 @@ async function _smartPull(sinceTs){
         fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
         db.cars = Object.values(localCarMap);
       }
-      if(fbStaff && fbStaff.length) db.staff = fbStaff;
+      if(staffChanged || (fbStaff && fbStaff.length)) db.staff = fbStaff;   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง)
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
@@ -1397,6 +1401,8 @@ async function _smartPull(sinceTs){
       _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
       _updateLastPushed(db.fuelCards||[], 'fuelCards');
       _updateLastPushed(db.cars||[], 'cars');
+      // เจ้าหน้าที่: บันทึกตามที่ "ระบบกลางมีจริง" เท่านั้น — ถ้าระบบกลางยังไม่มี รายชื่อในเครื่องจะถูกส่งขึ้นไปตอนแอดมินเพิ่ม/ลบครั้งแรก
+      _updateLastPushed(fbStaff||[], 'staff');
       _lastPushed['_initialized'] = true;
       console.log('✅ _lastPushed initialized');
     }
@@ -2731,6 +2737,9 @@ function removeCar(id){
   syncNow();
   renderSettings();renderCars();
 }
+// เจ้าหน้าที่ส่งขึ้นระบบกลางเฉพาะตอนแอดมินเพิ่ม/ลบจากหน้าตั้งค่า (ไม่ส่งอัตโนมัติจากทุกเครื่อง
+// กันเครื่องอื่นเอารายชื่อตั้งต้นตัวอย่างของตัวเองไปทับรายชื่อจริง)
+let _staffDirty=false;
 function addStaff(){
   const name=document.getElementById('new-staff-name').value.trim();
   const code=document.getElementById('new-staff-code').value.trim();
@@ -2740,6 +2749,7 @@ function addStaff(){
   document.getElementById('new-staff-code').value='';
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  _staffDirty=true;
   syncNow();
   renderSettings();
 }
@@ -2749,6 +2759,7 @@ function removeStaff(id){
   markDeleted('deletedStaffIds', id);
   const _ts=new Date().toISOString(); db._lastSync=_ts;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  _staffDirty=true;
   syncNow();
   renderSettings();
 }
@@ -4140,12 +4151,12 @@ function _getItemKey(item){
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, testDrive, branch} = item;
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, testDrive, branch});
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code});
 }
 
 function _getChanged(newItems, colName, idField='id'){
@@ -4179,6 +4190,12 @@ function _pushToFirebase(){
   const changedFcBk = _getChanged(db.fuelCardBookings||[], 'fuelCardBookings');
   const changedFc = _getChanged(db.fuelCards||[], 'fuelCards');
   const changedCars = _getChanged(db.cars||[], 'cars');
+  // เจ้าหน้าที่: ทำเฉพาะเมื่อมีการเพิ่ม/ลบจากหน้าตั้งค่า (_staffDirty)
+  const staffNow = _staffDirty;
+  const changedStaff = staffNow ? _getChanged(db.staff||[], 'staff') : [];
+  const staffKnown = _lastPushed['staff'] || {};
+  // ลบออกจากระบบกลางเฉพาะรหัสที่ระบบกลางมีอยู่จริง (รู้จากตอนดึงข้อมูล) และไม่อยู่ในรายชื่อแล้ว
+  const staffToDelete = staffNow ? (db.deletedStaffIds||[]).filter(id=>staffKnown[id] && !(db.staff||[]).some(s=>s.id===id)) : [];
 
   // ลบ deleted items ออกจาก Firebase — เฉพาะที่ยังไม่เคยลบ (กัน delete ซ้ำทุกรอบ)
   if(!_lastPushed['_deletedPermits']) _lastPushed['_deletedPermits'] = new Set();
@@ -4204,6 +4221,8 @@ function _pushToFirebase(){
   changedFcBk.forEach(b=>ops.push(fbSetDoc('fuelCardBookings', b.id, b)));
   changedFc.forEach(f=>ops.push(fbSetDoc('fuelCards', f.id, f)));
   changedCars.forEach(c=>ops.push(fbSetDoc('cars', c.id, c)));
+  changedStaff.forEach(s=>ops.push(fbSetDoc('staff', s.id, s)));
+  staffToDelete.forEach(id=>ops.push(fbDeleteDoc('staff', id)));
 
   // config เฉพาะถ้า adminPass หรือ fuelPrice เปลี่ยน
   const configStr = JSON.stringify({fuelPrice:db.fuelPrice||0, adminPass:db.adminPass});
@@ -4226,6 +4245,7 @@ function _pushToFirebase(){
   if(ops.length === 0 && 
      configStr === _lastPushed['config'] && 
      delStr === _lastPushed['deletedIds']){ 
+    if(staffNow) _staffDirty=false;
     updateSync(false, true); 
     return; 
   }
@@ -4242,6 +4262,11 @@ function _pushToFirebase(){
     _markPushed(changedFcBk);
     _markPushed(changedFc);
     _markPushed(changedCars);
+    if(staffNow){
+      _updateLastPushed(db.staff||[], 'staff');
+      staffToDelete.forEach(id=>{ if(_lastPushed['staff']) delete _lastPushed['staff'][id]; });
+      _staffDirty=false;
+    }
     // เขียน lastUpdate พร้อม changedIds — เครื่องอื่นจะดึงแค่ doc ที่เปลี่ยน
     const changedIds = {};
     if(changedBookings.length) changedIds.bookings = changedBookings.map(x=>x.id);
@@ -4249,6 +4274,7 @@ function _pushToFirebase(){
     if(changedFcBk.length) changedIds.fuelCardBookings = changedFcBk.map(x=>x.id);
     if(changedFc.length) changedIds.fuelCards = changedFc.map(x=>x.id);
     if(changedCars.length) changedIds.cars = changedCars.map(x=>x.id);
+    if(changedStaff.length || staffToDelete.length) changedIds.staff = [...changedStaff.map(x=>x.id), ...staffToDelete];
     return _fbDb.collection('config').doc('lastUpdate').set({
       updatedAt: new Date().toISOString(),
       changedIds
