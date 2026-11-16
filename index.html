@@ -293,6 +293,16 @@ tr:hover td{background:var(--g50)}
       <div class="car-grid" id="car-grid-testdrive-pd"></div>
     </div>
 
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">🎨 รถศูนย์บริการซ่อมสีและตัวถัง สาขาระยอง</div>
+      <div class="car-grid" id="car-grid-bp-ry"></div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">🎨 รถศูนย์บริการซ่อมสีและตัวถัง สาขาปลวกแดง</div>
+      <div class="car-grid" id="car-grid-bp-pd"></div>
+    </div>
+
     <div class="card" id="booking-form-card" style="display:none">
       <div class="card-title">📋 ข้อมูลการจอง — <span id="form-car-plate" style="color:var(--primary-mid)"></span></div>
       <div id="conflict-list" style="display:none" class="alert alert-warning">
@@ -765,6 +775,8 @@ tr:hover td{background:var(--g50)}
           <select id="new-car-branch" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
             <option value="RY">สาขาระยอง</option>
             <option value="PD">สาขาปลวกแดง</option>
+            <option value="BP-RY">ศูนย์ซ่อมสีและตัวถัง ระยอง</option>
+            <option value="BP-PD">ศูนย์ซ่อมสีและตัวถัง ปลวกแดง</option>
           </select>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer">
             <input type="checkbox" id="new-car-testdrive" style="width:16px;height:16px">
@@ -1092,7 +1104,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-004'; // Force reload version
+const APP_VERSION = '20261116-006'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1646,6 +1658,8 @@ function renderCars(){
   const gridTD=document.getElementById('car-grid-testdrive');
   const gridPD=document.getElementById('car-grid-pd');
   const gridTDPD=document.getElementById('car-grid-testdrive-pd');
+  const gridBPRY=document.getElementById('car-grid-bp-ry');
+  const gridBPPD=document.getElementById('car-grid-bp-pd');
   grid.innerHTML='';
   if(gridTD) gridTD.innerHTML='';
   if(gridPD) gridPD.innerHTML='';
@@ -1682,11 +1696,11 @@ function renderCars(){
     div.onclick=(!carBlocked(car))?()=>selectCar(car.id):null;
     // แยกใส่ grid ตามสาขา (ระยอง/ปลวกแดง) และ flag testDrive
     const isPD = carBranch(car)==='PD';
-    const target = isPD ? (car.testDrive ? gridTDPD : gridPD) : (car.testDrive ? gridTD : grid);
+    const target = car.bodyShop===true ? (isPD ? gridBPPD : gridBPRY) : isPD ? (car.testDrive ? gridTDPD : gridPD) : (car.testDrive ? gridTD : grid);
     (target||grid).appendChild(div);
   });
   // แถบที่ยังไม่มีรถ ให้ขึ้นข้อความบอก
-  [grid,gridTD,gridPD,gridTDPD].forEach(g=>{
+  [grid,gridTD,gridPD,gridTDPD,gridBPRY,gridBPPD].forEach(g=>{
     if(g && !g.children.length) g.innerHTML='<div style="grid-column:1/-1;font-size:13px;color:var(--g400)">ยังไม่มีรถในกลุ่มนี้</div>';
   });
   document.getElementById('overdue-banner').style.display=hasOverdue?'block':'none';
@@ -1906,7 +1920,7 @@ function submitBooking(){
   // ถ้าเป็นรถทดลองขับ ถามเรื่องน้ำมัน
   const bookedCar = db.cars.find(c=>c.id===_bookedCarId);
   // ปลวกแดงไม่มีการ์ดน้ำมัน → รถทดลองขับสาขาปลวกแดงทำงานเหมือนรถใช้งาน (ไม่ถามเรื่องการ์ด)
-  if(bookedCar?.testDrive && carBranch(bookedCar)!=='PD'){
+  if(bookedCar?.testDrive && !bookedCar.bodyShop && carBranch(bookedCar)!=='PD'){
     setTimeout(()=>{
       const choice = confirm('🚗 รถทดลองขับ\n\nต้องการเติมน้ำมันไหม?\n\n✅ ตกลง = ไปเลือกการ์ดน้ำมัน\n❌ ยกเลิก = ไปหน้าใบขออนุมัติเลย');
       closeModal('modal-success');
@@ -2039,6 +2053,20 @@ function openCancelModal(bkId){
   openModal('modal-cancel-user');
 }
 
+// รีเฟรชทุกหน้าจอที่แสดงรายการจอง หลังยกเลิก/เปลี่ยนสถานะ — กันบางหน้าไม่อัปเดตจนต้องรีเฟรชเอง
+function _refreshBookingViews(){
+  [renderHistory,renderCars,renderFuelCards,renderCarSchedule,renderAdminBookingList].forEach(fn=>{
+    try{ if(typeof fn==='function') fn(); }catch(e){ console.warn('refresh view failed', e); }
+  });
+}
+function showMsgToast(text){
+  const old=document.getElementById('msg-toast'); if(old) old.remove();
+  const t=document.createElement('div'); t.id='msg-toast';
+  t.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:12px 22px;border-radius:20px;font-size:14px;font-weight:700;z-index:10000;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .5s;max-width:90vw;text-align:center';
+  t.textContent=text; document.body.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),500); },3500);
+}
+
 function confirmCancelUser(){
   const pin=getModalPin('cpin');
   const b=db.bookings.find(x=>x.id===cancelBookingId);
@@ -2049,7 +2077,8 @@ function confirmCancelUser(){
   // ยกเลิกการ์ดน้ำมันที่ผูกอยู่ด้วย
   _cancelLinkedFcBookings(b.id);
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  closeModal('modal-cancel-user');renderHistory();renderCars();renderFuelCards();
+  closeModal('modal-cancel-user');_refreshBookingViews();
+  showMsgToast('✅ ยกเลิกการจองสำเร็จ');
   alert('✅ ยกเลิกการจองสำเร็จ');
 }
 
@@ -2070,7 +2099,8 @@ function confirmCancelAdmin(){
     _cancelLinkedFcBookings(b.id);
   }
   syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  closeModal('modal-cancel-admin');renderHistory();renderCars();renderFuelCards();
+  closeModal('modal-cancel-admin');_refreshBookingViews();
+  showMsgToast('✅ แอดมินยกเลิกการจองสำเร็จ');
   alert('✅ แอดมินยกเลิกการจองสำเร็จ');
 }
 
@@ -2728,11 +2758,12 @@ function renderSettings(){
   updateFuelPriceDisplay();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.accident?'background:#fef2f2;border:1.5px solid #ef4444;border-radius:8px;padding:8px 10px;':c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
-      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.accident?' <span style="color:#dc2626;font-size:11px;font-weight:700">💥 รถเกิดอุบัติเหตุ</span>':carHasOpenAccident(c)?' <span style="color:#dc2626;font-size:11px;font-weight:700">💥 มีบันทึกอุบัติเหตุ</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''} <span style="color:#2563eb;font-size:11px;font-weight:700">📍 ${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'}</span></span>
+      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.accident?' <span style="color:#dc2626;font-size:11px;font-weight:700">💥 รถเกิดอุบัติเหตุ</span>':carHasOpenAccident(c)?' <span style="color:#dc2626;font-size:11px;font-weight:700">💥 มีบันทึกอุบัติเหตุ</span>':''}${c.bodyShop?' <span style="color:#7c3aed;font-size:11px;font-weight:700">🎨 ศูนย์ซ่อมสีและตัวถัง</span>':''}${c.testDrive&&!c.bodyShop?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''} <span style="color:#2563eb;font-size:11px;font-weight:700">📍 ${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'}</span></span>
       <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
       <button class="btn btn-outline btn-sm" onclick="editCarPlate('${c.id}')">แก้ทะเบียน</button>
       <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
-      <button class="btn btn-sm" style="background:${c.testDrive?'#6b7280':'#10b981'};color:#fff;border:none" onclick="toggleCarTestDrive('${c.id}')">${c.testDrive?'ยกเลิกทดลองขับ':'🚗 ตั้งเป็นทดลองขับ'}</button>
+      ${c.bodyShop?'':`<button class="btn btn-sm" style="background:${c.testDrive?'#6b7280':'#10b981'};color:#fff;border:none" onclick="toggleCarTestDrive('${c.id}')">${c.testDrive?'ยกเลิกทดลองขับ':'🚗 ตั้งเป็นทดลองขับ'}</button>`}
+      <button class="btn btn-sm" style="background:${c.bodyShop?'#6b7280':'#7c3aed'};color:#fff;border:none" onclick="toggleCarBodyShop('${c.id}')">${c.bodyShop?'ยกเลิกศูนย์ซ่อมสี':'🎨 ตั้งเป็นศูนย์ซ่อมสีและตัวถัง'}</button>
       <button class="btn btn-outline btn-sm" onclick="toggleCarBranch('${c.id}')">📍 ย้ายไปสาขา${carBranch(c)==='PD'?'ระยอง':'ปลวกแดง'}</button>
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
       <button class="btn btn-sm" style="background:${c.accident?'#10b981':'#dc2626'};color:#fff;border:none" onclick="toggleCarAccident('${c.id}')">${c.accident?'✅ คืนสู่ระบบ (ซ่อมเสร็จ)':'💥 รถเกิดอุบัติเหตุ'}</button>
@@ -2762,6 +2793,17 @@ function toggleCarTestDrive(id){
   car.testDrive=!car.testDrive;
   syncNow();
   renderSettings();
+}
+
+function toggleCarBodyShop(id){
+  const car=db.cars.find(c=>c.id===id);
+  if(!car)return;
+  car.bodyShop=!car.bodyShop;
+  if(car.bodyShop) car.testDrive=false;   // รถศูนย์ซ่อมสีไม่เป็นรถทดลองขับ
+  db._lastSync=new Date().toISOString();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
+  renderSettings();renderCars();
 }
 
 function toggleCarBranch(id){
@@ -2815,10 +2857,12 @@ function editCarMileage(id){
 function addCar(){
   const plate=document.getElementById('new-car-plate').value.trim();
   const isTestDrive=document.getElementById('new-car-testdrive')?.checked||false;
-  const branch=document.getElementById('new-car-branch')?.value==='PD'?'PD':'RY';
+  const _bv=document.getElementById('new-car-branch')?.value||'RY';
+  const branch=(_bv==='PD'||_bv==='BP-PD')?'PD':'RY';
+  const bodyShop=_bv.startsWith('BP-');
   if(!plate)return alert('กรุณาใส่ทะเบียนรถ');
   if(db.cars.find(c=>c.plate===plate&&c.active))return alert('ทะเบียนนี้มีอยู่แล้ว');
-  db.cars.push({id:'c'+Date.now(),plate,active:true,testDrive:isTestDrive,branch});
+  db.cars.push({id:'c'+Date.now(),plate,active:true,testDrive:bodyShop?false:isTestDrive,branch,bodyShop});
   document.getElementById('new-car-plate').value='';
   if(document.getElementById('new-car-testdrive')) document.getElementById('new-car-testdrive').checked=false;
   const _ts=new Date().toISOString(); db._lastSync=_ts;
@@ -4437,12 +4481,12 @@ function _getItemKey(item){
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, accident, testDrive, branch, code, accidents} = item;
+    billReceived, billReceivedAt, permitNo, inService, accident, testDrive, branch, bodyShop, code, accidents} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, accident, testDrive, branch, code, accidents});
+    billReceived, billReceivedAt, permitNo, inService, accident, testDrive, branch, bodyShop, code, accidents});
 }
 
 function _getChanged(newItems, colName, idField='id'){
