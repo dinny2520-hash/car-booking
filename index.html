@@ -65,6 +65,7 @@ body{font-family:'Sarabun',sans-serif;background:#f0f4fa;color:var(--g800);min-h
 .cal-chip{font-size:9px;line-height:1.35;padding:1px 3px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid #999}
 .cal-more{font-size:9px;color:#6b7280}
 #page-settings.role-backup .full-only{display:none!important}
+#page-settings.role-notmaster .master-only{display:none!important}
 .dept-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:5px}
 .dept-gbtn{padding:7px 4px;font-size:12px;line-height:1.25;border:1.5px solid var(--g200);border-radius:7px;background:#fff;color:var(--g600);cursor:pointer;font-family:inherit;text-align:center}
 .dept-gbtn.active{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700}
@@ -952,7 +953,23 @@ tr:hover td{background:var(--g50)}
         <span id="sig-cache-size" style="font-size:12px;color:var(--g600);margin-left:10px"></span>
       </div>
 
-      <div class="settings-section full-only">
+      <div class="settings-section full-only master-only" id="admin-mgmt-section">
+        <h3>👥 จัดการแอดมิน (มาสเตอร์แอดมินเท่านั้น)</h3>
+        <p style="font-size:12px;color:var(--g600);margin-bottom:8px">คุณคือมาสเตอร์แอดมิน — รหัสของคุณอยู่ที่ "เปลี่ยนรหัสแอดมินหลัก" ลบหรือเปลี่ยนสิทธิ์โดยแอดมินคนอื่นไม่ได้ คนที่ใส่รหัสด้านล่างจะเห็นหน้าตั้งค่าตามระดับที่มอบหมาย: <b>แอดมินหลัก</b> (เห็นเหมือนแอดมินหลักเดิม ยกเว้นส่วนนี้และการเปลี่ยนรหัสมาสเตอร์) / <b>แอดมินรอง</b> (เห็นเฉพาะบางส่วน)</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <input type="text" id="new-adm-name" placeholder="ชื่อแอดมิน" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <input type="text" id="new-adm-pin" placeholder="รหัส PIN (อย่างน้อย 4 ตัว)" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <select id="new-adm-role" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px;grid-column:1/3">
+            <option value="backup">แอดมินรอง</option>
+            <option value="full">แอดมินหลัก</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addAdmin()">+ เพิ่มแอดมิน</button>
+        <div id="admin-list" style="margin-top:10px"></div>
+        <div id="admin-mgmt-status" style="margin-top:6px;font-size:13px"></div>
+      </div>
+
+      <div class="settings-section full-only master-only">
         <h3>🔐 เปลี่ยนรหัสแอดมินหลัก</h3>
         <div class="form-grid-2">
           <div class="form-row"><label>รหัสใหม่</label><input type="password" id="new-admin-pass" placeholder="รหัสใหม่"></div>
@@ -1104,7 +1121,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-007'; // Force reload version
+const APP_VERSION = '20261116-008'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1255,6 +1272,13 @@ function startRealtimeSync(){
     }
   });
   _fbListeners.push(unsubDel);
+
+  // รายชื่อแอดมินที่มาสเตอร์มอบหมาย (doc เดียว เล็กมาก)
+  const unsubAdm = _fbDb.collection('config').doc('admins').onSnapshot(snap=>{
+    if(!snap.exists) return;
+    _applyAdminsFromServer((snap.data()||{}).list);
+  });
+  _fbListeners.push(unsubAdm);
 
   // ฟัง config/lastUpdate — timestamp เล็กมาก ใช้ read น้อย
   // debounce: กัน trigger smartPull ถี่เกินไปถ้า Firebase ส่ง snapshot หลายรอบติดกัน
@@ -1555,10 +1579,18 @@ _staffLog('เปิดหน้า', 'เวอร์ชัน '+APP_VERSION+' 
 
 let selectedCarId=null, adminLoggedIn=false, cancelBookingId=null, hFilter='all';
 // แอดมินสำรอง: 'full' = แอดมินหลัก, 'backup' = แอดมินสำรอง (เห็นตั้งค่าเฉพาะบางส่วน + ไม่เห็นปุ่มลบใบ PM)
-let adminRole=null;
-const BACKUP_ADMIN={name:'Adminปลวกแดง', pass:'8535'};
+let adminRole=null, adminName='', adminId=null;
+// รายชื่อแอดมินที่มาสเตอร์มอบหมาย: role 'full' = แอดมินหลัก, 'backup' = แอดมินรอง
+// มาสเตอร์แอดมิน = db.adminPass (ไม่อยู่ในรายการนี้ จึงลบ/เปลี่ยนสิทธิ์ไม่ได้ และเห็นส่วนจัดการแอดมินคนเดียว)
+// ค่าเริ่มต้น: แอดมินรองเดิม (ใช้จนกว่ามาสเตอร์จะแก้รายการและบันทึกขึ้นระบบกลาง)
+const DEFAULT_ADMINS=[{id:'adm_default_pd',name:'Adminปลวกแดง',pin:'8535',role:'backup',active:true}];
+function getAdmins(){ return Array.isArray(db.admins) ? db.admins : DEFAULT_ADMINS; }
+function findAdminByPin(p){ return p ? getAdmins().find(a=>a.active!==false && a.pin===p) : null; }
 // ใช้กับช่องกรอกรหัสแอดมินทั่วไป (ยกเลิกแทน/รับคืนแทน/แก้ไมล์) — รับทั้งแอดมินหลักและสำรอง
-function isAdminPass(p){ return !!p && (p===db.adminPass || p===BACKUP_ADMIN.pass); }
+function isAdminPass(p){ return !!p && (p===db.adminPass || !!findAdminByPin(p)); }
+// รหัสที่มีสิทธิ์ระดับแอดมินหลักขึ้นไป (ใช้กับการลบถาวร ฯลฯ) — มาสเตอร์ + แอดมินหลักที่มอบหมาย
+function isFullAdminPass(p){ if(!p) return false; if(p===db.adminPass) return true; const a=findAdminByPin(p); return !!(a && a.role==='full'); }
+function isFullRole(){ return adminRole==='master' || adminRole==='full'; }
 
 // ---- UTILS ----
 function genId(){return 'b'+Date.now()+Math.random().toString(36).slice(2,5);}
@@ -2495,19 +2527,21 @@ function showAdminLogin(){
 }
 function doAdminLogin(){
   const pass=document.getElementById('admin-pass-input').value;
-  let role=null;
-  if(pass===db.adminPass) role='full';
-  else if(pass===BACKUP_ADMIN.pass) role='backup';
+  let role=null; adminName=''; adminId=null;
+  if(pass===db.adminPass) role='master';
+  else { const a=findAdminByPin(pass); if(a){ role=(a.role==='full'?'full':'backup'); adminName=a.name||''; adminId=a.id; } }
   if(role){closeModal('modal-admin-login');adminLoggedIn=true;adminRole=role;applyAdminRole();showPageDirect('settings');renderPermitList();}
   else{document.getElementById('admin-login-err').style.display='flex';}
 }
-function adminLogout(){adminLoggedIn=false;adminRole=null;applyAdminRole();showPage('booking',document.getElementById('nav-booking'));}
+function adminLogout(){adminLoggedIn=false;adminRole=null;adminName='';adminId=null;applyAdminRole();showPage('booking',document.getElementById('nav-booking'));}
 // ปรับหน้าตั้งค่าตามบทบาท: แอดมินสำรองเห็นเฉพาะส่วนที่ไม่มี class full-only
 function applyAdminRole(){
   const pg=document.getElementById('page-settings');
-  if(pg) pg.classList.toggle('role-backup', adminRole==='backup');
+  if(pg){ pg.classList.toggle('role-backup', adminRole==='backup'); pg.classList.toggle('role-notmaster', adminRole!=='master'); }
   const t=document.getElementById('settings-title');
-  if(t) t.textContent = adminRole==='backup' ? '⚙️ ตั้งค่าระบบ ('+BACKUP_ADMIN.name+')' : '⚙️ ตั้งค่าระบบ (แอดมินหลัก)';
+  if(t) t.textContent = adminRole==='master' ? '⚙️ ตั้งค่าระบบ (มาสเตอร์แอดมิน)'
+    : adminRole==='backup' ? '⚙️ ตั้งค่าระบบ ('+(adminName||'แอดมินรอง')+')'
+    : '⚙️ ตั้งค่าระบบ (แอดมินหลัก'+(adminName?' — '+adminName:'')+')';
 }
 function showPageDirect(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -2772,6 +2806,7 @@ function renderSettings(){
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAccidents();
+  renderAdmins();
   renderAdminBookingList();
   renderFcSettings();
   renderAdminPendingReturnList();
@@ -3087,11 +3122,93 @@ async function publishStaffNow(silentRetry){
 }
 
 
+function _admEsc(v){return String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function _admStatus(msg,ok){ const el=document.getElementById('admin-mgmt-status'); if(el){ el.textContent=msg; el.style.color=ok?'#059669':'#dc2626'; } }
+function renderAdmins(){
+  const box=document.getElementById('admin-list'); if(!box) return;
+  box.innerHTML=getAdmins().map(a=>`<div class="staff-item" style="${a.active===false?'opacity:.55;':''}">
+    <span class="staff-name">👤 ${_admEsc(a.name)} <span style="font-size:11px;font-weight:700;color:${a.role==='full'?'#2563eb':'#d97706'}">${a.role==='full'?'แอดมินหลัก':'แอดมินรอง'}</span>${a.active===false?' <span style="font-size:11px;color:#6b7280">(ปิดใช้งาน)</span>':''}</span>
+    <span style="font-size:12px;color:var(--g600)">PIN: ${_admEsc(a.pin)}</span>
+    <button class="btn btn-outline btn-sm" onclick="editAdminPin('${_admEsc(a.id)}')">เปลี่ยน PIN</button>
+    <button class="btn btn-outline btn-sm" onclick="toggleAdminRole('${_admEsc(a.id)}')">เป็น${a.role==='full'?'แอดมินรอง':'แอดมินหลัก'}</button>
+    <button class="btn btn-sm" style="background:${a.active===false?'#10b981':'#6b7280'};color:#fff;border:none" onclick="toggleAdminActive('${_admEsc(a.id)}')">${a.active===false?'เปิดใช้งาน':'ปิดใช้งาน'}</button>
+    <button class="btn btn-danger btn-sm" onclick="removeAdmin('${_admEsc(a.id)}')">ลบ</button>
+  </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีแอดมินที่มอบหมาย (มีเฉพาะมาสเตอร์แอดมิน)</p>';
+}
+function _admPinError(pin, exceptId){
+  if(!pin || pin.length<4) return 'PIN ต้องมีอย่างน้อย 4 ตัว';
+  if(pin===db.adminPass) return 'PIN นี้ซ้ำกับรหัสมาสเตอร์แอดมิน';
+  if(getAdmins().some(a=>a.id!==exceptId && a.pin===pin)) return 'PIN นี้ถูกใช้กับแอดมินคนอื่นแล้ว';
+  if(_guardPinsCache && (pin===_guardPinsCache.RY || pin===_guardPinsCache.PD)) return 'PIN นี้ซ้ำกับ PIN รปภ. ของเดือนนี้';
+  return '';
+}
+// บันทึกรายชื่อแอดมินแบบยืนยัน: เขียนขึ้นระบบกลางแล้วอ่านกลับ สำเร็จจริงถึงเปลี่ยนในเครื่อง
+let _admBusy=false;
+async function _saveAdmins(list){
+  if(adminRole!=='master'){ _admStatus('❌ เฉพาะมาสเตอร์แอดมินเท่านั้น',false); return false; }
+  if(_admBusy){ _admStatus('⏳ กำลังบันทึกอยู่ กรุณารอสักครู่',false); return false; }
+  _admBusy=true; _admStatus('⏳ กำลังบันทึก...',true);
+  try{
+    if(!(await _waitFbReady(FB_READY_WAIT_MS))) throw new Error('ยังเชื่อมต่อระบบกลางไม่ได้');
+    const ref=_fbDb.collection('config').doc('admins');
+    const clean=JSON.parse(JSON.stringify(list));
+    await _withTimeout(ref.set({list:clean, updatedAt:new Date().toISOString()}), APPROVE_TIMEOUT_MS);
+    const back=await _withTimeout(ref.get(), APPROVE_TIMEOUT_MS);
+    if(!back.exists || JSON.stringify((back.data()||{}).list)!==JSON.stringify(clean)) throw new Error('ตรวจสอบหลังบันทึกไม่ตรงกัน');
+    db.admins=clean; saveDB(); renderAdmins(); _admStatus('✅ บันทึกสำเร็จ',true);
+    return true;
+  }catch(err){
+    console.error('save admins failed',err);
+    _admStatus('❌ บันทึกไม่สำเร็จ ('+(err&&err.message||err)+') ยังไม่มีการเปลี่ยนแปลง กรุณาลองใหม่',false);
+    return false;
+  }finally{ _admBusy=false; }
+}
+async function addAdmin(){
+  const name=document.getElementById('new-adm-name').value.trim();
+  const pin=document.getElementById('new-adm-pin').value.trim();
+  const role=document.getElementById('new-adm-role').value==='full'?'full':'backup';
+  if(!name){ _admStatus('❌ กรุณาใส่ชื่อแอดมิน',false); return; }
+  const e=_admPinError(pin); if(e){ _admStatus('❌ '+e,false); return; }
+  const ok=await _saveAdmins(getAdmins().concat([{id:'adm'+Date.now()+Math.random().toString(36).slice(2,5),name,pin,role,active:true}]));
+  if(ok){ document.getElementById('new-adm-name').value=''; document.getElementById('new-adm-pin').value=''; }
+}
+async function editAdminPin(id){
+  const a=getAdmins().find(x=>x.id===id); if(!a) return;
+  const pin=(prompt('PIN ใหม่ของ '+a.name+' (อย่างน้อย 4 ตัว)')||'').trim(); if(!pin) return;
+  const e=_admPinError(pin,id); if(e){ _admStatus('❌ '+e,false); return; }
+  await _saveAdmins(getAdmins().map(x=>x.id===id?{...x,pin}:x));
+}
+async function toggleAdminRole(id){
+  await _saveAdmins(getAdmins().map(x=>x.id===id?{...x,role:x.role==='full'?'backup':'full'}:x));
+}
+async function toggleAdminActive(id){
+  await _saveAdmins(getAdmins().map(x=>x.id===id?{...x,active:x.active===false}:x));
+}
+async function removeAdmin(id){
+  const a=getAdmins().find(x=>x.id===id); if(!a) return;
+  if(!confirm('ยืนยันการลบแอดมิน '+a.name+' ?')) return;
+  await _saveAdmins(getAdmins().filter(x=>x.id!==id));
+}
+// รับรายชื่อแอดมินที่เปลี่ยนจากระบบกลาง (เครื่องอื่น/มาสเตอร์แก้) และเด้งออกถ้าคนที่ล็อกอินอยู่ถูกลบ/ปิด/ลดสิทธิ์
+function _applyAdminsFromServer(list){
+  if(!Array.isArray(list)) return;
+  db.admins=list; try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  if(adminLoggedIn && adminRole!=='master' && adminId){
+    const me=list.find(a=>a.id===adminId);
+    if(!me || me.active===false){ adminLogout(); alert('สิทธิ์แอดมินของคุณถูกปิดหรือลบโดยมาสเตอร์แอดมิน'); return; }
+    const nr=me.role==='full'?'full':'backup';
+    if(nr!==adminRole){ adminRole=nr; applyAdminRole(); }
+  }
+  renderAdmins();
+}
+
 function changeAdminPass(){
   const np=document.getElementById('new-admin-pass').value;
   const cp=document.getElementById('confirm-admin-pass').value;
   if(!np)return alert('กรุณาใส่รหัสใหม่');
   if(np!==cp)return alert('รหัสไม่ตรงกัน');
+  if(adminRole!=='master')return alert('เฉพาะมาสเตอร์แอดมินเท่านั้นที่เปลี่ยนรหัสนี้ได้');
+  if(getAdmins().some(a=>a.pin===np))return alert('รหัสนี้ซ้ำกับรหัสของแอดมินที่มอบหมายไว้ กรุณาใช้รหัสอื่น');
   db.adminPass=np;saveDB();
   alert('✅ เปลี่ยนรหัสสำเร็จ!');
   document.getElementById('new-admin-pass').value='';
@@ -4008,7 +4125,7 @@ function renderUcPermitList(){
           ${adminLoggedIn?`<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="adminEditPermitFuel('${p.id}')">⛽ แก้ยอดน้ำมัน</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          ${adminLoggedIn&&adminRole==='full'?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
+          ${adminLoggedIn&&isFullRole()?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
         </div>
       </div>
     </div>`;
@@ -4252,7 +4369,7 @@ async function confirmPermanentDeleteBooking(){
   const errEl = document.getElementById('pdb-err');
   const adminPass = document.getElementById('pdb-admin-pass').value.trim();
   errEl.style.display='none';
-  if(!adminPass||adminPass!==db.adminPass){ errEl.textContent='รหัสแอดมินไม่ถูกต้อง'; errEl.style.display='flex'; return; }
+  if(!isFullAdminPass(adminPass)){ errEl.textContent='รหัสแอดมินไม่ถูกต้อง'; errEl.style.display='flex'; return; }
   const b = _bookingArchiveCache.find(x=>x.id===_permanentDeleteBookingId);
   if(!b) return;
   try{
@@ -4268,7 +4385,7 @@ async function permanentDeleteAllBookingArchiveInMonth(){
   if(!monthVal||!_bookingArchiveCache.length){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
   const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยันการลบถาวรทั้งหมด ('+_bookingArchiveCache.length+' รายการ)');
   if(adminPass===null) return;
-  if(adminPass!==db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+  if(!isFullAdminPass(adminPass)){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
   if(!confirm('ยืนยันลบถาวร '+_bookingArchiveCache.length+' รายการ? ไม่สามารถกู้คืนได้')) return;
   document.getElementById('booking-archive-list').innerHTML='<div class="empty-state">⏳ กำลังลบ...</div>';
   try{
@@ -4321,7 +4438,7 @@ function confirmDeletePermit(){
   // ถ้ามี booking ที่เกี่ยวข้อง ให้ใช้ pin ของ booking นั้น
   let authorized = false;
 
-  if(adminPass && adminPass === db.adminPass){
+  if(adminPass && isFullAdminPass(adminPass)){
     authorized = true;
   } else if(pin.length === 4){
     // หา booking ที่ตรงกับ permit นี้ (same car, same date)
@@ -6690,7 +6807,7 @@ function renderPermitList(){
           ${adminLoggedIn?`<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="adminEditPermitFuel('${p.id}')">⛽ แก้ยอดน้ำมัน</button>`:''}
           ${p._memoData?`<button class="btn btn-outline btn-sm" style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32" onclick="reprintFuelMemo('${p.id}')">📄 Memo ขอเบิกน้ำมัน</button>`:''}
           ${p._moveMemoData?`<button class="btn btn-outline btn-sm" style="background:#e3f2fd;border-color:#1976d2;color:#1565c0" onclick="reprintMoveMemo('${p.id}')">🚗 Memo เคลื่อนย้ายรถ</button>`:''}
-          ${adminLoggedIn&&adminRole==='full'?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
+          ${adminLoggedIn&&isFullRole()?`<button class="btn btn-danger btn-sm" onclick="openDeletePermitModal('${p.id}')">ลบ</button>`:''}
         </div>
       </div>
     </div>`;
@@ -6947,7 +7064,7 @@ async function confirmPermanentDeletePermit(){
   const adminPass = document.getElementById('pdp-admin-pass').value.trim();
   errEl.style.display = 'none';
 
-  if(!adminPass || adminPass !== db.adminPass){
+  if(!isFullAdminPass(adminPass)){
     errEl.textContent = 'รหัสแอดมินไม่ถูกต้อง';
     errEl.style.display = 'flex';
     return;
@@ -6974,7 +7091,7 @@ async function permanentDeleteAllArchivedInMonth(){
   if(!_permitArchiveCache.length){ alert('ไม่พบใบที่ถูกลบในเดือนนี้'); return; }
   const adminPass = prompt('ใส่รหัสแอดมินเพื่อยืนยันการลบถาวรทั้งหมด ('+_permitArchiveCache.length+' รายการ)');
   if(adminPass === null) return;
-  if(adminPass !== db.adminPass){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
+  if(!isFullAdminPass(adminPass)){ alert('รหัสแอดมินไม่ถูกต้อง'); return; }
   if(!confirm('ยืนยันลบถาวร '+_permitArchiveCache.length+' รายการ? การลบนี้ไม่สามารถกู้คืนได้')) return;
 
   const listEl = document.getElementById('permit-archive-list');
