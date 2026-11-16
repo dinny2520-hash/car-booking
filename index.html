@@ -776,6 +776,30 @@ tr:hover td{background:var(--g50)}
         <div id="car-list-settings"></div>
       </div>
 
+      <div class="settings-section full-only" id="accident-section">
+        <h3>💥 รถเกิดอุบัติเหตุ</h3>
+        <p style="font-size:12px;color:var(--g600);margin-bottom:8px">บันทึกกรณีรถประสบอุบัติเหตุ (ไม่ใช่การเข้าเช็คระยะ/ซ่อมปกติ) ใช้ตรวจสอบย้อนหลังได้</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <select id="acc-car" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px"></select>
+          <input type="datetime-local" id="acc-dt" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <input type="text" id="acc-driver" placeholder="ผู้ขับขี่ขณะเกิดเหตุ" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <input type="text" id="acc-place" placeholder="สถานที่เกิดเหตุ" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <select id="acc-level" style="padding:8px 10px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+            <option value="เล็กน้อย">ความเสียหาย: เล็กน้อย</option>
+            <option value="ปานกลาง">ความเสียหาย: ปานกลาง</option>
+            <option value="รุนแรง">ความเสียหาย: รุนแรง</option>
+          </select>
+          <input type="number" id="acc-cost" min="0" placeholder="ค่าซ่อมโดยประมาณ (บาท)" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
+          <input type="text" id="acc-ins" placeholder="ประกัน / เลขเคลม (ถ้ามี)" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px;grid-column:1/3">
+          <textarea id="acc-desc" rows="2" placeholder="รายละเอียดเหตุการณ์ / ส่วนที่เสียหาย" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px;grid-column:1/3"></textarea>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="acc-block" checked style="width:16px;height:16px"> งดจองรถคันนี้จนกว่าจะซ่อมเสร็จ
+        </label>
+        <button class="btn btn-primary btn-sm" onclick="addAccident()">+ บันทึกอุบัติเหตุ</button>
+        <div id="accident-list" style="margin-top:12px"></div>
+      </div>
+
       <div class="settings-section full-only">
         <h3>👤 จัดการเจ้าหน้าที่รับคืนรถ</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
@@ -1069,7 +1093,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-001'; // Force reload version
+const APP_VERSION = '20261116-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1630,7 +1654,7 @@ function renderCars(){
           : '';
     }
     const mileageInfo=car.mileage!=null?`<div style="font-size:12px;color:var(--g600);margin-top:4px">🛣️ เลขไมล์ล่าสุด: ${Number(car.mileage).toLocaleString('th-TH')} กม.</div>`:'';
-    const serviceBadge=car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'';
+    const serviceBadge=carHasOpenAccident(car)?`<div class="car-service-badge" style="background:#fee2e2;color:#b91c1c">💥 รถเกิดอุบัติเหตุ${car.inService===true?' (งดจอง)':''}</div>`:(car.inService===true?`<div class="car-service-badge">🔧 รถเข้าเช็คระยะ/ซ่อม</div>`:'');
     div.innerHTML=`<div class="car-icon">🚗</div><div class="car-plate">${car.plate}</div><span class="car-status ${stClass(st)}">${stLabel(st)}</span>${serviceBadge}${mileageInfo}${bkInfo}<div style="font-size:11px;color:var(--g400);margin-top:6px">กดเพื่อจอง</div>`;
     div.onclick=(car.inService!==true)?()=>selectCar(car.id):null;
     // แยกใส่ grid ตามสาขา (ระยอง/ปลวกแดง) และ flag testDrive
@@ -2680,7 +2704,7 @@ function renderSettings(){
   updateFuelPriceDisplay();
   document.getElementById('car-list-settings').innerHTML=db.cars.filter(c=>c.active).map(c=>`
     <div class="staff-item" style="${c.inService?'background:#fff8e1;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 10px;':''}">
-      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''} <span style="color:#2563eb;font-size:11px;font-weight:700">📍 ${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'}</span></span>
+      <span class="staff-name">🚗 ${c.plate}${c.inService?' <span style="color:#d97706;font-size:11px;font-weight:700">🔧 เช็คระยะ/ซ่อม</span>':''}${carHasOpenAccident(c)?' <span style="color:#dc2626;font-size:11px;font-weight:700">💥 อุบัติเหตุ</span>':''}${c.testDrive?' <span style="color:#10b981;font-size:11px;font-weight:700">🚗 ทดลองขับ</span>':''} <span style="color:#2563eb;font-size:11px;font-weight:700">📍 ${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'}</span></span>
       <span style="font-size:12px;color:var(--g600)">ไมล์: ${c.mileage!=null?Number(c.mileage).toLocaleString('th-TH'):'-'} กม.</span>
       <button class="btn btn-outline btn-sm" onclick="editCarPlate('${c.id}')">แก้ทะเบียน</button>
       <button class="btn btn-outline btn-sm" onclick="editCarMileage('${c.id}')">แก้ไมล์</button>
@@ -2689,6 +2713,7 @@ function renderSettings(){
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
+  renderAccidents();
   renderAdminBookingList();
   renderFcSettings();
   renderAdminPendingReturnList();
@@ -4384,12 +4409,12 @@ function _getItemKey(item){
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, fuelCards, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code} = item;
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code, accidents} = item;
   return JSON.stringify({id, status, returnStep, mileageIn, mileageOut, mileage, returnedBy,
     fueled, actualAmount, invTrace, noFuelReason, valueBeforeDeduct, valueAfterDeduct,
     managerSig, empSig, approvedAt, name, startDt, endDt, dest, reason, carId,
     fcId, fuelAmount, active, plate, value, pin, createdAt, _memoData,
-    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code});
+    billReceived, billReceivedAt, permitNo, inService, testDrive, branch, code, accidents});
 }
 
 function _getChanged(newItems, colName, idField='id'){
@@ -4678,6 +4703,78 @@ function deleteSigFromSheet(permitId){
   setSigCache(cache);
 }
 
+
+function _accEsc(v){return String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function carHasOpenAccident(car){return !!(car&&Array.isArray(car.accidents)&&car.accidents.some(a=>a.status!=='repaired'));}
+function _accNowLocal(){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}
+function renderAccidents(){
+  const sel=document.getElementById('acc-car'), box=document.getElementById('accident-list');
+  if(!sel||!box)return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">-- เลือกรถ --</option>'+db.cars.filter(c=>c.active).map(c=>`<option value="${_accEsc(c.id)}">${_accEsc(c.plate)} (${carBranch(c)==='PD'?'ปลวกแดง':'ระยอง'})</option>`).join('');
+  if(prev) sel.value=prev;
+  const dt=document.getElementById('acc-dt'); if(dt&&!dt.value) dt.value=_accNowLocal();
+  const rows=[];
+  db.cars.forEach(c=>(c.accidents||[]).forEach(a=>rows.push({car:c,a})));
+  rows.sort((x,y)=>new Date(y.a.date||0)-new Date(x.a.date||0));
+  box.innerHTML=rows.map(({car,a})=>{
+    const open=a.status!=='repaired';
+    return `<div class="staff-item acc-item" style="display:block;border:1.5px solid ${open?'#ef4444':'var(--g200)'};background:${open?'#fef2f2':'#fff'};border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap"><b>🚗 ${_accEsc(car.plate)}</b>
+        <span style="font-size:11px;font-weight:700;color:${open?'#dc2626':'#059669'}">${open?'💥 ยังไม่ซ่อมเสร็จ':'✅ ซ่อมเสร็จแล้ว'+(a.repairedAt?' '+fmt(a.repairedAt):'')}</span></div>
+      <div style="font-size:13px;color:var(--g600);margin-top:3px">📅 เกิดเหตุ ${fmt(a.date)} | ระดับ: ${_accEsc(a.level||'-')}${a.cost?' | ประมาณ '+Number(a.cost).toLocaleString('th-TH')+' บาท':''}</div>
+      ${a.driver?`<div style="font-size:13px">👤 ผู้ขับ: ${_accEsc(a.driver)}</div>`:''}
+      ${a.place?`<div style="font-size:13px">📍 ${_accEsc(a.place)}</div>`:''}
+      ${a.desc?`<div style="font-size:13px">📝 ${_accEsc(a.desc)}</div>`:''}
+      ${a.insurance?`<div style="font-size:13px">🛡️ ${_accEsc(a.insurance)}</div>`:''}
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        ${open?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none" onclick="markAccidentRepaired('${_accEsc(car.id)}','${_accEsc(a.id)}')">✅ ซ่อมเสร็จ</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="removeAccident('${_accEsc(car.id)}','${_accEsc(a.id)}')">ลบ</button>
+      </div></div>`;
+  }).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีบันทึกอุบัติเหตุ</p>';
+}
+function _saveCarsNow(){
+  db._lastSync=new Date().toISOString();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
+  renderSettings();renderCars();
+}
+function addAccident(){
+  const carId=document.getElementById('acc-car').value;
+  const car=db.cars.find(c=>c.id===carId);
+  if(!car)return alert('กรุณาเลือกรถ');
+  const dtv=document.getElementById('acc-dt').value;
+  const desc=document.getElementById('acc-desc').value.trim();
+  if(!dtv)return alert('กรุณาระบุวัน-เวลาที่เกิดเหตุ');
+  if(!desc)return alert('กรุณาใส่รายละเอียดเหตุการณ์');
+  const block=document.getElementById('acc-block').checked;
+  const a={id:'acc'+Date.now()+Math.random().toString(36).slice(2,5),date:new Date(dtv).toISOString(),
+    driver:document.getElementById('acc-driver').value.trim(),place:document.getElementById('acc-place').value.trim(),
+    level:document.getElementById('acc-level').value,cost:Number(document.getElementById('acc-cost').value)||0,
+    insurance:document.getElementById('acc-ins').value.trim(),desc,status:'open',blocked:block,createdAt:nowISO()};
+  car.accidents=(car.accidents||[]).concat([a]);
+  if(block) car.inService=true;
+  ['acc-driver','acc-place','acc-cost','acc-ins','acc-desc'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('acc-dt').value='';
+  _saveCarsNow();
+}
+function markAccidentRepaired(carId,accId){
+  const car=db.cars.find(c=>c.id===carId); if(!car)return;
+  const a=(car.accidents||[]).find(x=>x.id===accId); if(!a)return;
+  if(!confirm('ยืนยัน: รถคันนี้ซ่อมเสร็จแล้ว?'))return;
+  a.status='repaired'; a.repairedAt=nowISO();
+  // ปลดล็อกการจองเมื่อไม่เหลืออุบัติเหตุค้างที่ล็อกรถไว้
+  if(a.blocked && !car.accidents.some(x=>x.status!=='repaired'&&x.blocked)) car.inService=false;
+  _saveCarsNow();
+}
+function removeAccident(carId,accId){
+  const car=db.cars.find(c=>c.id===carId); if(!car)return;
+  if(!confirm('ยืนยันการลบบันทึกอุบัติเหตุนี้?'))return;
+  const a=(car.accidents||[]).find(x=>x.id===accId);
+  car.accidents=(car.accidents||[]).filter(x=>x.id!==accId);
+  if(a&&a.status!=='repaired'&&a.blocked&&!car.accidents.some(x=>x.status!=='repaired'&&x.blocked)) car.inService=false;
+  _saveCarsNow();
+}
 
 function toggleCarService(id){
   const car=db.cars.find(c=>c.id===id);
