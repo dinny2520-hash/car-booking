@@ -223,7 +223,6 @@ tr:hover td{background:var(--g50)}
 }
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -1093,7 +1092,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-003'; // Force reload version
+const APP_VERSION = '20261116-004'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1126,6 +1125,28 @@ const DB_KEY = 'cbsys_v2';
       }
     }).catch(()=>{});
 })();
+
+// ---- โหลดไลบรารี Excel แบบ lazy (ไม่บล็อกการแสดงหน้าแรก) ----
+let _xlsxPromise=null;
+function ensureXLSX(){
+  if(window.XLSX) return Promise.resolve(true);
+  if(_xlsxPromise) return _xlsxPromise;
+  _xlsxPromise=new Promise(res=>{
+    const sc=document.createElement('script');
+    sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload=()=>res(!!window.XLSX);
+    sc.onerror=()=>{ _xlsxPromise=null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _xlsxPromise;
+}
+async function requireXLSX(){
+  if(await ensureXLSX()) return true;
+  alert('❌ โหลดตัวสร้างไฟล์ Excel ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+  return false;
+}
+// โหลดเตรียมไว้ตอนว่าง (หลังหน้าแรกขึ้นและเริ่มซิงค์แล้ว) ให้กดส่งออกครั้งแรกไม่ต้องรอ
+window.addEventListener('load', ()=>{ setTimeout(()=>{ try{ ensureXLSX(); }catch(e){} }, 8000); });
 
 // ---- Firebase Init ----
 const FIREBASE_CONFIG = {
@@ -3370,6 +3391,7 @@ function submitAdminReturn(){
 // ---- USE CAR PAGE ----
 // ---- รายงานสรุปค่าน้ำมัน (Excel) ----
 async function exportCarUsageReport(){
+  if(!(await requireXLSX())) return;
   const fromEl = document.getElementById('fuel-report-from');
   const toEl = document.getElementById('fuel-report-to');
   const fromVal = fromEl.value;
@@ -3439,6 +3461,7 @@ async function exportCarUsageReport(){
 }
 
 async function exportFuelReport(){
+  if(!(await requireXLSX())) return;
   const fromEl = document.getElementById('fuel-report-from');
   const toEl = document.getElementById('fuel-report-to');
   const fromVal = fromEl.value;
@@ -4113,7 +4136,8 @@ async function loadBookingArchive(){
   }
 }
 
-function exportBookingArchiveReport(){
+async function exportBookingArchiveReport(){
+  if(!(await requireXLSX())) return;
   const monthVal = document.getElementById('booking-archive-month').value;
   const type = document.getElementById('booking-archive-type').value;
   if(!monthVal){ alert('กรุณาเลือกเดือนก่อน'); return; }
@@ -5721,7 +5745,8 @@ function setFcFueled(fueled){
 
 
 // ---- รายงานการใช้การ์ดน้ำมัน ----
-function exportCardReport(){
+async function exportCardReport(){
+  if(!(await requireXLSX())) return;
   const fromEl=document.getElementById('fuel-report-from');
   const toEl=document.getElementById('fuel-report-to');
   const fromVal=fromEl?.value;
@@ -6834,7 +6859,8 @@ async function restorePermitFromArchive(permitId){
   }
 }
 
-function exportPermitArchiveReport(){
+async function exportPermitArchiveReport(){
+  if(!(await requireXLSX())) return;
   const monthVal = document.getElementById('permit-archive-month').value;
   if(!monthVal){ alert('กรุณาเลือกเดือนและกด "ดูรายการ" ก่อน'); return; }
   if(!_permitArchiveCache.length){ alert('ไม่พบข้อมูลใบที่ถูกลบในเดือนนี้ กรุณากด "ดูรายการ" ก่อน'); return; }
