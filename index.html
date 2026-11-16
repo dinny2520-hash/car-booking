@@ -1104,7 +1104,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-006'; // Force reload version
+const APP_VERSION = '20261116-007'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1664,6 +1664,8 @@ function renderCars(){
   if(gridTD) gridTD.innerHTML='';
   if(gridPD) gridPD.innerHTML='';
   if(gridTDPD) gridTDPD.innerHTML='';
+  if(gridBPRY) gridBPRY.innerHTML='';
+  if(gridBPPD) gridBPPD.innerHTML='';
   let hasOverdue=false;
   db.cars.filter(c=>c.active).forEach(car=>{
     const st=getCarStatus(car.id);
