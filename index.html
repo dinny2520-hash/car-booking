@@ -719,6 +719,7 @@ tr:hover td{background:var(--g50)}
   <div class="container">
     <div class="card">
       <div class="card-title" id="settings-title">⚙️ ตั้งค่าระบบ (แอดมินหลัก)</div>
+      <div style="font-size:11px;color:var(--g400);margin:-6px 0 10px">เวอร์ชันแอปที่ใช้อยู่: <b id="app-version-text"></b></div>
 
       <div class="settings-section full-only">
         <h3>🔑 Google Sheet Integration</h3>
@@ -784,8 +785,10 @@ tr:hover td{background:var(--g50)}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="addStaff()">+ เพิ่มเจ้าหน้าที่</button>
           <button class="btn btn-outline btn-sm" onclick="publishStaffNow()">📤 ส่งรายชื่อขึ้นระบบกลางตอนนี้</button>
+          <button class="btn btn-outline btn-sm" onclick="diagnoseStaff()">🔍 ตรวจสอบระบบ</button>
         </div>
         <div id="staff-sync-status" style="margin-top:8px;font-size:13px"></div>
+        <div id="staff-diag" style="margin-top:8px;font-size:12px"></div>
         <div id="staff-list" style="margin-top:12px"></div>
       </div>
 
@@ -1066,7 +1069,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261110-008'; // Force reload version
+const APP_VERSION = '20261116-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1079,6 +1082,7 @@ const DB_KEY = 'cbsys_v2';
         console.log('🔄 พบข้อมูลเก่า — ล้าง cache แล้ว reload');
         localStorage.clear();
         sessionStorage.clear();
+        try{ const d=new Date(),p=n=>String(n).padStart(2,'0'); sessionStorage.setItem('cbsys_stafflog', JSON.stringify([p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+' [ล้างข้อมูลในเครื่อง] พบข้อมูลเก่า (มี gsUrl หรือไม่มี _firebaseVersion) — ล้าง localStorage ทั้งหมดแล้วรีโหลด'])); }catch(e){}
         location.reload(true);
         return;
       }
@@ -1092,6 +1096,7 @@ const DB_KEY = 'cbsys_v2';
       const m = html.match(/APP_VERSION = '([^']+)'/);
       if(m && m[1] !== APP_VERSION){
         console.log('🔄 พบเวอร์ชันใหม่ — reload');
+        try{ const d=new Date(),p=n=>String(n).padStart(2,'0'),a=JSON.parse(sessionStorage.getItem('cbsys_stafflog')||'[]'); a.push(p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+' [ล้างข้อมูลในเครื่อง] หน้านี้เป็นเวอร์ชัน '+APP_VERSION+' แต่เซิร์ฟเวอร์เป็น '+m[1]+' — ล้าง localStorage ทั้งหมดแล้วรีโหลด'); sessionStorage.setItem('cbsys_stafflog', JSON.stringify(a.slice(-60))); }catch(e){}
         localStorage.clear();
         location.reload(true);
       }
@@ -1341,7 +1346,7 @@ async function _smartPull(sinceTs){
       if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
       if(fbFc.length) db.fuelCards = fbFc;
       if(fbCars && fbCars.length) db.cars = fbCars;
-      _mergeStaffFromFirebase(fbStaff, false);
+      _mergeStaffFromFirebase(fbStaff, false, 'ทั้งหมด');
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
@@ -1385,7 +1390,7 @@ async function _smartPull(sinceTs){
         fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
         db.cars = Object.values(localCarMap);
       }
-      _mergeStaffFromFirebase(fbStaff, staffChanged);   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง) แต่ไม่ทับรายการที่ยังไม่ได้ส่ง
+      _mergeStaffFromFirebase(fbStaff, staffChanged, 'ตามแจ้งเตือน');   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง) แต่ไม่ทับรายการที่ยังไม่ได้ส่ง
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
         if(fbConfig.fuelPrice !== undefined) db.fuelPrice = fbConfig.fuelPrice;
@@ -1409,7 +1414,7 @@ async function _smartPull(sinceTs){
       _updateLastPushed(fbStaff||[], 'staff');
       _lastPushed['_initialized'] = true;
       // มีเจ้าหน้าที่ที่เพิ่ม/ลบไว้แต่ยังไม่ได้ส่ง (เช่นรีเฟรชก่อนส่งเสร็จ) → ส่งให้เลยหลังเปิดหน้า
-      if(db._staffPending) setTimeout(()=>{ try{ _pushToFirebase(); }catch(e){} }, 300);
+      if(db._staffPending) setTimeout(()=>{ try{ publishStaffNow(true); }catch(e){} }, 300);
       console.log('✅ _lastPushed initialized');
     }
 
@@ -1448,6 +1453,38 @@ let db = {
   bookings: []
 };
 
+// บันทึกเหตุการณ์ของรายชื่อเจ้าหน้าที่ (ไว้ไล่หาสาเหตุเมื่อชื่อหาย) — เก็บใน sessionStorage: รอดการรีเฟรช/รีโหลดในแท็บเดียวกัน
+function _staffLog(type, msg){
+  try{
+    const d=new Date(), p=n=>String(n).padStart(2,'0');
+    const line=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+' ['+type+'] '+msg;
+    const arr=JSON.parse(sessionStorage.getItem('cbsys_stafflog')||'[]');
+    arr.push(line); while(arr.length>60) arr.shift();
+    sessionStorage.setItem('cbsys_stafflog', JSON.stringify(arr));
+  }catch(e){}
+}
+function _staffNames(list){ return '['+(list||[]).map(s=>s.name).join(', ')+']'; }
+
+// เจ้าหน้าที่ที่ค้างส่ง เก็บแยกคีย์เล็กๆ (ไม่ปนกับข้อมูลก้อนใหญ่ที่อาจเกินพื้นที่ localStorage แล้วบันทึกไม่ได้เงียบๆ)
+function _saveStaffLocal(){
+  try{
+    localStorage.setItem('cbsys_staff_v1', JSON.stringify({staff:db.staff||[], deleted:db.deletedStaffIds||[], pending:!!db._staffPending, t:Date.now()}));
+    return true;
+  }catch(e){ return false; }
+}
+function _restoreStaffPending(){
+  try{
+    const raw=localStorage.getItem('cbsys_staff_v1'); if(!raw) return;
+    const s=JSON.parse(raw);
+    if(s && s.pending && Array.isArray(s.staff)){
+      db.staff=s.staff;
+      db.deletedStaffIds=[...new Set([...(db.deletedStaffIds||[]), ...(s.deleted||[])])];
+      db._staffPending=true;
+      _staffLog('กู้รายการค้างส่ง', 'จากที่เก็บเจ้าหน้าที่แยก: '+_staffNames(db.staff));
+      if(typeof applyDeletedFilters==='function') applyDeletedFilters();
+    }
+  }catch(e){}
+}
 function loadDB(){
   try{const d=localStorage.getItem(DB_KEY);if(d)db=JSON.parse(d);}catch(e){}
   // อัปเดต URL เป็น DEFAULT_GS_URL เสมอ เพื่อให้ทุกเครื่องใช้ URL เดียวกัน
@@ -1456,6 +1493,8 @@ function loadDB(){
 }
 function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
 loadDB();
+_restoreStaffPending();
+_staffLog('เปิดหน้า', 'เวอร์ชัน '+APP_VERSION+' | รายชื่อในเครื่อง '+_staffNames(db.staff)+' | ค้างส่ง='+(!!db._staffPending));   // เจ้าหน้าที่ที่เพิ่ม/ลบไว้แต่ยังไม่ได้ส่งขึ้นระบบกลาง (เก็บแยก จึงรอดแม้ที่เก็บข้อมูลหลักในเครื่องเต็ม/บันทึกไม่ได้)
 
 let selectedCarId=null, adminLoggedIn=false, cancelBookingId=null, hFilter='all';
 // แอดมินสำรอง: 'full' = แอดมินหลัก, 'backup' = แอดมินสำรอง (เห็นตั้งค่าเฉพาะบางส่วน + ไม่เห็นปุ่มลบใบ PM)
@@ -1466,6 +1505,7 @@ function isAdminPass(p){ return !!p && (p===db.adminPass || p===BACKUP_ADMIN.pas
 
 // ---- UTILS ----
 function genId(){return 'b'+Date.now()+Math.random().toString(36).slice(2,5);}
+function fmtKeyed(p){if(!p||!p.createdAt)return'';const d=new Date(p.createdAt);if(isNaN(d))return'';return '🕒 คีย์ใบเมื่อ '+fmt(p.createdAt);}
 function fmt(dt){if(!dt)return'-';const d=new Date(dt);return d.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'})+' '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}
 
 // แปลง datetime-local value เป็น dd/mm/yyyy สำหรับ display
@@ -2655,6 +2695,7 @@ function renderSettings(){
   renderAdminPendingFcReturnList();
   renderAdminBillPendingList();
   renderGuardPins();
+  const _vt=document.getElementById('app-version-text'); if(_vt) _vt.textContent=APP_VERSION;
   if(db._staffPending) reportStaffSync();   // ยังมีเจ้าหน้าที่ที่เพิ่ม/ลบไว้แต่ยังไม่ได้ส่ง → แจ้งสถานะ
   // เฉพาะครั้งแรกที่เปิดหน้าตั้งค่า ให้เริ่มที่แท็บรถ
   const cardTabVisible = document.getElementById('admin-card-booking-list')?.style.display === 'block';
@@ -2749,8 +2790,10 @@ function removeCar(id){
 let _staffDirty=false;
 // รวมรายชื่อเจ้าหน้าที่จากระบบกลางเข้าเครื่อง: ระบบกลางเป็นหลัก แต่ถ้ามีการเพิ่ม/ลบที่ "ยังไม่ได้ส่งขึ้นไป" (db._staffPending)
 // ต้องไม่ทับรายการเหล่านั้น — ไม่งั้นเพิ่มชื่อแล้วรีเฟรชก่อนส่งเสร็จ (หรือส่งไม่ผ่าน/ออฟไลน์) ชื่อจะหาย และชื่อที่ลบไว้จะกลับมา
-function _mergeStaffFromFirebase(fbStaff, accept){
+function _mergeStaffFromFirebase(fbStaff, accept, src){
   if(!accept && !(fbStaff && fbStaff.length)) return;
+  const before=(db.staff||[]).map(s=>s.id).join(',');
+  const beforeList=(db.staff||[]).slice();
   if(db._staffPending){
     const del=new Set(db.deletedStaffIds||[]);
     const map={};
@@ -2759,6 +2802,9 @@ function _mergeStaffFromFirebase(fbStaff, accept){
     db.staff=Object.values(map);
   } else {
     db.staff=fbStaff||[];
+  }
+  if((db.staff||[]).map(s=>s.id).join(',')!==before){
+    _staffLog('ดึงข้อมูล('+(src||'?')+')', 'รายชื่อเปลี่ยน: เดิม '+_staffNames(beforeList)+' → ใหม่ '+_staffNames(db.staff)+' | ระบบกลางมี '+_staffNames(fbStaff)+' | ค้างส่ง='+(!!db._staffPending));
   }
 }
 let _lastPushError=null;                    // สาเหตุล่าสุดที่ส่งขึ้นระบบกลางไม่สำเร็จ (ไว้แจ้งผู้ใช้)
@@ -2794,36 +2840,157 @@ async function reportStaffSync(){
   return false;
 }
 // ส่งรายชื่อเจ้าหน้าที่ในเครื่องนี้ขึ้นระบบกลางทันที (ใช้กับรายชื่อที่เพิ่มไว้ก่อนแก้ ที่ยังไม่เคยถูกส่ง)
-function publishStaffNow(){ _staffDirty=true; db._staffPending=true; try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} syncNow(); reportStaffSync(); }
-function addStaff(){
+
+async function diagnoseStaff(){
+  const box=document.getElementById('staff-diag'); if(!box) return;
+  box.innerHTML='<span style="color:var(--warning)">⏳ กำลังตรวจสอบ...</span>';
+  const rows=[]; const add=(k,v,ok)=>rows.push([k,v,ok]);
+  add('เวอร์ชันแอป', APP_VERSION, true);
+  add('เชื่อมต่อ Firebase', _fbReady?'พร้อม':'ยังไม่พร้อม', !!_fbReady);
+  add('รายชื่อในเครื่องนี้', (db.staff||[]).length+' คน: '+((db.staff||[]).map(s=>s.name).join(', ')||'-'), true);
+  add('มีรายการค้างส่งขึ้นระบบกลาง', db._staffPending?'ใช่':'ไม่มี', !db._staffPending);
+  add('ข้อผิดพลาดล่าสุดของการส่ง', _lastPushError||'ไม่มี', !_lastPushError);
+  if(_fbReady){
+    try{
+      const snap=await _withTimeout(_fbDb.collection('staff').get({source:'server'}), 8000);
+      const names=snap.docs.map(d=>d.data().name);
+      add('รายชื่อในระบบกลาง', names.length+' คน: '+(names.join(', ')||'-'), true);
+      const loc=new Set((db.staff||[]).map(s=>s.id)), rem=new Set(snap.docs.map(d=>d.id));
+      const onlyLocal=(db.staff||[]).filter(s=>!rem.has(s.id)).map(s=>s.name);
+      add('มีในเครื่องแต่ไม่มีในระบบกลาง', onlyLocal.length?onlyLocal.join(', '):'ไม่มี', !onlyLocal.length);
+    }catch(e){ add('รายชื่อในระบบกลาง','อ่านไม่ได้: '+(e.code||e.message), false); }
+    try{
+      const r=_fbDb.collection('staff').doc('__ping');
+      await _withTimeout(r.set({id:'__ping',name:'__ping',t:Date.now()}), 8000);
+      await _withTimeout(r.delete(), 8000);
+      add('ทดสอบเขียน/ลบคอลเลกชัน staff','ทำได้', true);
+    }catch(e){ add('ทดสอบเขียน/ลบคอลเลกชัน staff','ทำไม่ได้: '+(e.code||e.message), false); }
+  }
+  try{
+    const s=JSON.stringify(db);
+    localStorage.setItem(DB_KEY,s);
+    const total=Object.keys(localStorage).reduce((n,k)=>n+(localStorage.getItem(k)||'').length,0);
+    add('ที่เก็บข้อมูลในเครื่อง','บันทึกได้ (ข้อมูลหลัก '+(s.length/1024).toFixed(0)+' KB, ใช้ทั้งหมด '+(total/1024).toFixed(0)+' KB)', true);
+  }catch(e){
+    add('ที่เก็บข้อมูลในเครื่อง','บันทึกไม่ได้ ('+e.name+') พื้นที่เต็ม — ข้อมูลที่ยังไม่ส่งขึ้นระบบกลางอาจหายเมื่อรีเฟรช', false);
+  }
+  let log=[]; try{ log=JSON.parse(sessionStorage.getItem('cbsys_stafflog')||'[]'); }catch(e){}
+  box.innerHTML='<div style="border:1.5px solid var(--g200);border-radius:8px;padding:8px 10px;background:#fff">'
+    + rows.map(r=>'<div style="padding:2px 0;color:'+(r[2]?'var(--g700)':'var(--danger)')+'">'+(r[2]?'✅':'❌')+' <b>'+_calEsc(r[0])+':</b> '+_calEsc(r[1])+'</div>').join('')
+    + '<div style="margin-top:8px;font-weight:700">📜 บันทึกเหตุการณ์ของรายชื่อ (ล่าสุด '+Math.min(log.length,40)+' รายการ — เก่าไปใหม่)</div>'
+    + '<div style="font-family:monospace;font-size:11px;white-space:pre-wrap;max-height:300px;overflow:auto;background:#f8f9fa;border-radius:6px;padding:6px;margin-top:4px">'+(log.slice(-40).map(_calEsc).join('\n')||'(ยังไม่มีบันทึก)')+'</div>'
+    + '</div>';
+}
+
+let STAFF_RECHECK_MS=20000;
+// ตรวจซ้ำหลังส่งสำเร็จ: ชื่อที่ส่งไปแล้วต้องยังอยู่ในระบบกลาง (จับกรณีมีเครื่อง/โปรแกรมอื่นมาลบทีหลัง)
+async function _recheckStaff(upsertIds, deleteIds){
+  try{
+    if(!_fbReady) return;
+    const snap=await _withTimeout(_fbDb.collection('staff').get({source:'server'}), 8000);
+    const remote=new Set(snap.docs.map(d=>d.id));
+    const gone=(upsertIds||[]).filter(id=>!remote.has(id));
+    const back=(deleteIds||[]).filter(id=>remote.has(id));
+    if(gone.length||back.length){
+      const nm=gone.map(id=>((db.staff||[]).find(s=>s.id===id)||{}).name||id);
+      _staffLog('ตรวจซ้ำ ❌', 'หลังส่งสำเร็จไปแล้ว ระบบกลาง'+(gone.length?'ไม่มีชื่อ: '+nm.join(', ')+' (ถูกลบโดยอย่างอื่น)':'')+(back.length?' | รายการที่ลบไปกลับมา '+back.length+' รายการ':''));
+      _setStaffStatus('<span style="color:var(--danger)">❌ หลังส่งสำเร็จ ชื่อ'+(gone.length?' '+_calEsc(nm.join(', '))+' ':'')+'หายจากระบบกลางภายหลัง — มีเครื่องหรือโปรแกรมอื่นลบออก (ดูบันทึกเหตุการณ์ในปุ่ม "ตรวจสอบระบบ")</span>');
+    } else {
+      _staffLog('ตรวจซ้ำ ✅', 'ชื่อที่ส่งไว้ยังอยู่ในระบบกลางครบ ('+remote.size+' คน)');
+    }
+  }catch(e){ _staffLog('ตรวจซ้ำ', 'อ่านไม่ได้: '+((e&&(e.code||e.message))||e)); }
+}
+
+let STAFF_WRITE_TIMEOUT_MS=15000;
+let _staffInFlight=0, _staffRetryN=0, _staffRetryTimer=null;
+// เขียนรายชื่อเจ้าหน้าที่ขึ้น Firebase "โดยตรง" (ไม่ผ่านตัวตรวจการเปลี่ยนแปลงทั่วไป) แล้วอ่านกลับจากระบบกลางเพื่อยืนยัน
+// สำเร็จ → เคลียร์สถานะค้างส่ง + แจ้งเครื่องอื่น / ไม่สำเร็จ → แจ้งสาเหตุบนหน้าจอ เก็บของไว้ในเครื่อง และลองใหม่เอง
+async function _publishStaffDirect(upserts, deletes){
+  const mySeq=++_staffReportSeq;
+  _staffInFlight++;
+  _staffLog('ส่ง', 'เขียน '+(upserts||[]).length+' ลบ '+(deletes||[]).length+' | '+_staffNames(upserts));
+  _setStaffStatus('<span style="color:var(--warning)">⏳ กำลังส่งรายชื่อขึ้นระบบกลาง...</span>');
+  try{
+    if(!(await _waitFbReady(FB_READY_WAIT_MS))) throw new Error('ยังเชื่อมต่อระบบกลางไม่ได้');
+    const now=new Date().toISOString();
+    await _withTimeout(Promise.all([
+      ...(upserts||[]).map(s=>_fbDb.collection('staff').doc(s.id).set({...s, updatedAt:now})),
+      ...(deletes||[]).map(id=>_fbDb.collection('staff').doc(id).delete())
+    ]), STAFF_WRITE_TIMEOUT_MS);
+    const snap=await _withTimeout(_fbDb.collection('staff').get({source:'server'}), STAFF_WRITE_TIMEOUT_MS);
+    const remote=new Set(snap.docs.map(d=>d.id||(d.data&&d.data()&&d.data().id)));
+    const missing=(db.staff||[]).filter(s=>!remote.has(s.id));   // ทุกชื่อในเครื่องต้องมีในระบบกลาง
+    const stale=(deletes||[]).filter(id=>remote.has(id));
+    if(missing.length||stale.length) throw new Error('verify-failed: ระบบกลางยังไม่มี '+missing.map(s=>s.name).join(', ')+(stale.length?' / ยังมีรายการที่ลบ '+stale.length:''));
+    // สำเร็จ: ให้ตัวส่งทั่วไปรู้ว่าส่งแล้ว (ไม่ส่งซ้ำ)
+    _updateLastPushed(upserts||[], 'staff');
+    (deletes||[]).forEach(id=>{ if(_lastPushed['staff']) delete _lastPushed['staff'][id]; });
+    if(_staffInFlight===1){ _staffDirty=false; db._staffPending=false; }
+    _lastPushError=null; _staffRetryN=0;
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    _saveStaffLocal();
+    const ids=[...(upserts||[]).map(s=>s.id), ...(deletes||[])];
+    if(ids.length){ try{ await _withTimeout(_fbDb.collection('config').doc('lastUpdate').set({updatedAt:new Date().toISOString(), changedIds:{staff:ids}}), STAFF_WRITE_TIMEOUT_MS); }catch(e){} }
+    _staffLog('ส่งสำเร็จ', 'ระบบกลางมี '+remote.size+' คน — ตรวจซ้ำอีกครั้งใน '+Math.round(STAFF_RECHECK_MS/1000)+' วินาที');
+    if(ids.length) setTimeout(()=>_recheckStaff((upserts||[]).map(s=>s.id), deletes||[]), STAFF_RECHECK_MS);
+    if(mySeq===_staffReportSeq) _setStaffStatus('<span style="color:var(--success)">✅ ระบบกลางมีรายชื่อเจ้าหน้าที่ตรงกับเครื่องนี้แล้ว ('+remote.size+' คน) — เครื่องอื่นจะเห็นภายในไม่กี่วินาที</span>');
+    return true;
+  }catch(err){
+    console.error('staff publish failed', err);
+    _lastPushError=(err&&(err.code||err.message))||String(err);
+    _staffLog('ส่งไม่สำเร็จ', _lastPushError);
+    if(mySeq===_staffReportSeq) _setStaffStatus('<span style="color:var(--danger)">❌ ยังส่งรายชื่อขึ้นระบบกลางไม่สำเร็จ — สาเหตุ: <b>'+_calEsc(_lastPushError)+'</b> ชื่อที่เพิ่ม/ลบไว้ยังเก็บอยู่ในเครื่องนี้ (ไม่หาย) ระบบจะลองส่งใหม่เอง เครื่องอื่นจะยังไม่เห็นจนกว่าจะส่งสำเร็จ'+(_saveStaffLocal()?'':' ⚠️ และพื้นที่เก็บข้อมูลในเครื่องเต็ม ห้ามปิด/รีเฟรชหน้านี้')+'</span>');
+    // ลองใหม่เอง ห่างขึ้นเรื่อยๆ (สูงสุด 6 ครั้ง)
+    if(_staffRetryN<6){ clearTimeout(_staffRetryTimer); _staffRetryTimer=setTimeout(()=>{ if(db._staffPending) publishStaffNow(true); }, 10000*Math.pow(2,_staffRetryN)); _staffRetryN++; }
+    return false;
+  } finally { _staffInFlight--; }
+}
+
+async function addStaff(){
   const name=document.getElementById('new-staff-name').value.trim();
   const code=document.getElementById('new-staff-code').value.trim();
   if(!name||!code)return alert('กรุณากรอกชื่อและรหัสเจ้าหน้าที่');
-  db.staff.push({id:'s'+Date.now(),name,code});
+  const s={id:'s'+Date.now(),name,code};
+  db.staff.push(s);
+  _staffLog('เพิ่ม', name+' ('+s.id+')');
   document.getElementById('new-staff-name').value='';
   document.getElementById('new-staff-code').value='';
-  const _ts=new Date().toISOString(); db._lastSync=_ts;
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  db._lastSync=new Date().toISOString();
   _staffDirty=true;
   db._staffPending=true;   // ยังไม่ได้ส่งขึ้นระบบกลาง — จำไว้แม้รีเฟรช/ออฟไลน์/ส่งไม่ผ่าน
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  syncNow();
+  _saveStaffLocal();
   renderSettings();
-  reportStaffSync();
+  // ระบบกลางยังไม่เคยมีรายชื่อ (ไม่รู้จักรหัสใดเลย) → ส่งทั้งรายชื่อครั้งแรก ไม่งั้นส่งเฉพาะคนใหม่
+  const known=_lastPushed['staff']||{};
+  await _publishStaffDirect(Object.keys(known).length ? [s] : (db.staff||[]), []);
 }
-function removeStaff(id){
+
+async function removeStaff(id){
   if(!confirm('ยืนยันการลบเจ้าหน้าที่?'))return;
+  _staffLog('ลบ', id);
   db.staff=db.staff.filter(s=>s.id!==id);
   markDeleted('deletedStaffIds', id);
-  const _ts=new Date().toISOString(); db._lastSync=_ts;
-  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  db._lastSync=new Date().toISOString();
   _staffDirty=true;
-  db._staffPending=true;   // ยังไม่ได้ส่งขึ้นระบบกลาง — จำไว้แม้รีเฟรช/ออฟไลน์/ส่งไม่ผ่าน
+  db._staffPending=true;
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
-  syncNow();
+  _saveStaffLocal();
   renderSettings();
-  reportStaffSync();
+  await _publishStaffDirect([], [id]);
 }
+
+// ส่งรายชื่อเจ้าหน้าที่ในเครื่องนี้ขึ้นระบบกลางทันที (ใช้กับรายชื่อที่เพิ่มไว้ก่อนแก้ ที่ยังไม่เคยถูกส่ง)
+async function publishStaffNow(silentRetry){
+  _staffDirty=true; db._staffPending=true;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  _saveStaffLocal();
+  const known=_lastPushed['staff']||{};
+  const dels=(db.deletedStaffIds||[]).filter(id=>known[id] && !(db.staff||[]).some(s=>s.id===id));
+  return _publishStaffDirect(_getChanged(db.staff||[], 'staff'), dels);
+}
+
+
 function changeAdminPass(){
   const np=document.getElementById('new-admin-pass').value;
   const cp=document.getElementById('confirm-admin-pass').value;
@@ -3688,7 +3855,7 @@ function renderAdminBillPendingList(){
     return `<div class="staff-item" style="flex-wrap:wrap;gap:6px;${urgent?'background:#fef2f2;border:1px solid var(--danger);border-radius:8px;padding:8px 10px;':''}">
       <div style="flex:1;font-size:13px;min-width:200px">
         <span style="font-weight:600">ใบที่ ${p.permitNo||'-'}</span>
-        <span style="color:var(--g600)"> | ${p.name} | ${p.date}</span>
+        <span style="color:var(--g600)"> | ${p.name} | ใช้วันที่ ${p.date}${fmtKeyed(p)?' | '+fmtKeyed(p):''}</span>
         <div style="font-size:12px;color:var(--g600)">⛽ ${Number(p.fuel).toLocaleString('th-TH')} บาท | 📍 ${p.location}</div>
         ${urgent?`<div style="font-size:12px;color:var(--danger);font-weight:600">⚠️ ค้างมา ${daysSince} วัน</div>`:''}
       </div>
@@ -3732,7 +3899,8 @@ function renderUcPermitList(){
       <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div style="flex:1">
           <div style="font-weight:700">${permitNoLabel}${p.name} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px">${stLabel}</span>${billBadge}${guardAckBadge(p)}</div>
-          <div style="font-size:13px;color:var(--g600);margin-top:4px">📅 ${p.date} | 🚗 ${p.car} | ⛽ ${p.fuel} บาท</div>
+          <div style="font-size:13px;color:var(--g600);margin-top:4px">📅 ใช้วันที่ ${p.date} | 🚗 ${p.car} | ⛽ ${p.fuel} บาท</div>
+          ${fmtKeyed(p)?`<div class="keyed-at" style="font-size:12px;color:#7c3aed;margin-top:2px">${fmtKeyed(p)}</div>`:''}
           <div style="font-size:13px;color:var(--g600)">📍 ${p.location} | 📝 ${p.detail}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
@@ -4108,7 +4276,11 @@ function applyDeletedFilters(){
   const delCars = new Set(db.deletedCarIds||[]);
   const delBookings = new Set(db.deletedBookingIds||[]);
   const delPermits = new Set(db.deletedPermitIds||[]);
-  if(delStaff.size) db.staff = (db.staff||[]).filter(s=>!delStaff.has(s.id));
+  if(delStaff.size){
+    const removed=(db.staff||[]).filter(s=>delStaff.has(s.id));
+    db.staff = (db.staff||[]).filter(s=>!delStaff.has(s.id));
+    if(removed.length && typeof _staffLog==='function') _staffLog('ตัวกรองรายการลบ', 'ตัดออกเพราะอยู่ในรายการที่เคยลบ: '+_staffNames(removed));
+  }
   if(delCars.size) db.cars = (db.cars||[]).filter(c=>!delCars.has(c.id));
   if(delBookings.size) db.bookings = (db.bookings||[]).filter(b=>!delBookings.has(b.id));
   if(delPermits.size) db.permits = (db.permits||[]).filter(p=>!delPermits.has(p.id));
@@ -6003,6 +6175,7 @@ function checkAppVersion(){
         console.log('🔄 พบเวอร์ชันใหม่ '+match[1]+' — กำลัง reload...');
         // set timestamp ก่อน reload กัน full pull ทันทีหลัง reload
         try{ localStorage.setItem('_lastFullPull', Date.now().toString()); }catch(e){}
+        _staffLog('รีโหลด', 'พบเวอร์ชันใหม่ '+match[1]+' (กำลังใช้ '+APP_VERSION+')');
         location.reload(true);
       }
     }).catch(()=>{});
@@ -6324,7 +6497,8 @@ function renderPermitList(){
         <div style="flex:1;min-width:200px">
           <div style="font-weight:700;font-size:15px">${permitNoLabel}${p.name} <span style="font-size:12px;background:${stColor};color:#fff;padding:2px 8px;border-radius:20px;font-weight:600">${stLabel}</span>${billBadge}${guardAckBadge(p)}</div>
           <div style="font-size:13px;color:var(--g600);margin-top:4px">
-            <div>📅 ${p.date} &nbsp;|&nbsp; 🚗 ${p.car} &nbsp;|&nbsp; ⛽ ${p.fuel} บาท</div>
+            <div>📅 ใช้วันที่ ${p.date} &nbsp;|&nbsp; 🚗 ${p.car} &nbsp;|&nbsp; ⛽ ${p.fuel} บาท</div>
+            ${fmtKeyed(p)?`<div class="keyed-at" style="font-size:12px;color:#7c3aed">${fmtKeyed(p)}</div>`:''}
             <div>📍 ${p.location} &nbsp;|&nbsp; 📝 ${p.detail}</div>
           </div>
         </div>
