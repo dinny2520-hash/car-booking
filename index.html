@@ -953,6 +953,13 @@ tr:hover td{background:var(--g50)}
         <span id="sig-cache-size" style="font-size:12px;color:var(--g600);margin-left:10px"></span>
       </div>
 
+      <div class="settings-section full-only" id="perf-section">
+        <h3>⏱️ ความเร็วการโหลดข้อมูล</h3>
+        <p style="font-size:12px;color:var(--g600);margin-bottom:6px">เวลาของแต่ละขั้นตอนตอนเปิดแอปรอบนี้ (วินาทีนับจากเริ่มโหลดหน้า) ถ้ารู้สึกช้า ให้รีเฟรชแล้วเข้ามาดูหน้านี้ แล้วส่งภาพให้ผมดู</p>
+        <pre id="perf-report" style="background:var(--g100,#f3f4f6);padding:10px;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto"></pre>
+        <button class="btn btn-outline btn-sm" onclick="renderPerfReport()">🔄 อัปเดตรายงาน</button>
+      </div>
+
       <div class="settings-section full-only master-only" id="admin-mgmt-section">
         <h3>👥 จัดการแอดมิน (มาสเตอร์แอดมินเท่านั้น)</h3>
         <p style="font-size:12px;color:var(--g600);margin-bottom:8px">คุณคือมาสเตอร์แอดมิน — รหัสของคุณอยู่ที่ "เปลี่ยนรหัสแอดมินหลัก" ลบหรือเปลี่ยนสิทธิ์โดยแอดมินคนอื่นไม่ได้ คนที่ใส่รหัสด้านล่างจะเห็นหน้าตั้งค่าตามระดับที่มอบหมาย: <b>แอดมินหลัก</b> (เห็นเหมือนแอดมินหลักเดิม ยกเว้นส่วนนี้และการเปลี่ยนรหัสมาสเตอร์) / <b>แอดมินรอง</b> (เห็นเฉพาะบางส่วน)</p>
@@ -1121,7 +1128,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-008'; // Force reload version
+const APP_VERSION = '20261116-009'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1177,6 +1184,22 @@ async function requireXLSX(){
 // โหลดเตรียมไว้ตอนว่าง (หลังหน้าแรกขึ้นและเริ่มซิงค์แล้ว) ให้กดส่งออกครั้งแรกไม่ต้องรอ
 window.addEventListener('load', ()=>{ setTimeout(()=>{ try{ ensureXLSX(); }catch(e){} }, 8000); });
 
+// ---- ตัวจับเวลาโหลดข้อมูล (ดูได้ที่ตั้งค่า > ความเร็วการโหลด) ----
+const _perfLog=[];
+function _perfMark(name, dur){
+  const e={name, t:Math.round(performance.now()), dur:(dur==null?null:Math.round(dur))};
+  _perfLog.push(e);
+  try{ console.log('⏱️', e.t+'ms', name+(e.dur!=null?' (ใช้ '+e.dur+'ms)':'')); }catch(_){}
+  try{ const el=document.getElementById('perf-report'); if(el) renderPerfReport(); }catch(_){}
+}
+function renderPerfReport(){
+  const el=document.getElementById('perf-report'); if(!el) return;
+  el.textContent = _perfLog.length ? _perfLog.map(e=>String((e.t/1000).toFixed(2)).padStart(6)+' วิ  '+e.name+(e.dur!=null?'  [ใช้ '+(e.dur/1000).toFixed(2)+' วิ]':'')).join('\n') : '(ยังไม่มีข้อมูล)';
+}
+_perfMark('เริ่มรันสคริปต์แอป');
+document.addEventListener('DOMContentLoaded',()=>_perfMark('หน้าเว็บพร้อม (DOMContentLoaded)'));
+window.addEventListener('load',()=>_perfMark('โหลดทรัพยากรครบ (load)'));
+
 // ---- Firebase Init ----
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAk_TCB0EFz0aZQm1KL0RAmy_6B9KqdqD8",
@@ -1203,6 +1226,7 @@ async function initFirebase(){
     try { firebase.initializeApp(FIREBASE_CONFIG); } catch(e) {} // ถ้า init ซ้ำข้ามไป
     _fbDb = firebase.firestore();
     _fbReady = true;
+    _perfMark('เชื่อมต่อ Firebase พร้อม');
     db._firebaseVersion = true;
     db.gsUrl = null;
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
@@ -1270,6 +1294,16 @@ function startRealtimeSync(){
       renderCars();
       renderHistory();
     }
+    if(data.deletedCarIds){
+      db.deletedCarIds = [...new Set([...(db.deletedCarIds||[]), ...data.deletedCarIds])];
+      const before=(db.cars||[]).length;
+      db.cars = (db.cars||[]).filter(c=>!db.deletedCarIds.includes(c.id));
+      if(db.cars.length!==before){
+        try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+        renderCars();
+        try{ if(adminLoggedIn) renderSettings(); }catch(e){}
+      }
+    }
   });
   _fbListeners.push(unsubDel);
 
@@ -1288,6 +1322,7 @@ function startRealtimeSync(){
     if(snap.metadata && snap.metadata.fromCache) return;
     const data = snap.data();
     const serverTs = data?.updatedAt;
+    if(!_perfLog.some(e=>e.name.startsWith('ได้รับ config/lastUpdate'))) _perfMark('ได้รับ config/lastUpdate ครั้งแรก');
     if(serverTs && serverTs !== _lastServerTs){
       const prevTs = _lastServerTs;
       _lastServerTs = serverTs;
@@ -1299,6 +1334,7 @@ function startRealtimeSync(){
   _fbListeners.push(unsubTs);
 
   console.log('✅ Real-time sync started (lightweight mode)');
+  _perfMark('เริ่มฟังการเปลี่ยนแปลงแบบ real-time');
 
   // ---- Polling fallback ทุก 30 วิ ----
   if(window._pollInterval) clearInterval(window._pollInterval);
@@ -1364,14 +1400,18 @@ async function _smartPull(sinceTs){
     if(doFull){
       // Full pull — ดึงทั้ง collection รวม config/app เพื่อ sync adminPass, fuelPrice, staffPins
       _lastFullPullTime = now;
+      _perfMark('เริ่มดึงข้อมูลทั้งหมด (full pull)');
+      const _pullT0=performance.now();
+      const _tm=(label,p)=>{ const st=performance.now(); return p.then(r=>{ let kb=0; try{kb=Math.round(JSON.stringify(r).length/1024);}catch(_){} _perfMark('ดึง '+label+': '+r.length+' รายการ ~'+kb+' KB', performance.now()-st); return r; }); };
       [fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff] = await Promise.all([
-        _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id))),
-        _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id))),
-        _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data())),
-        _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data())),
-        _fbDb.collection('cars').get().then(s=>s.docs.map(d=>d.data())),
-        _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data()))
+        _tm('การจองรถ', _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id)))),
+        _tm('ใบ PM', _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id)))),
+        _tm('จองการ์ด', _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data()))),
+        _tm('การ์ดน้ำมัน', _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))),
+        _tm('รถ', _fbDb.collection('cars').get().then(s=>s.docs.map(d=>d.data()))),
+        _tm('เจ้าหน้าที่', _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data())))
       ]);
+      _perfMark('ดึงข้อมูลทั้งหมดเสร็จ', performance.now()-_pullT0);
       // ดึง config/app แยก (doc เดียว = 1 read)
       const cfgSnap = await _fbDb.collection('config').doc('app').get();
       fbConfig = cfgSnap.exists ? cfgSnap.data() : null;
@@ -1426,7 +1466,7 @@ async function _smartPull(sinceTs){
       }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
       if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
       if(fbFc.length) db.fuelCards = fbFc;
-      if(fbCars && fbCars.length) db.cars = fbCars;
+      if(fbCars && fbCars.length) db.cars = fbCars.filter(c=>!(db.deletedCarIds||[]).includes(c.id));
       _mergeStaffFromFirebase(fbStaff, false, 'ทั้งหมด');
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
@@ -1468,7 +1508,7 @@ async function _smartPull(sinceTs){
       if(fbCars && fbCars.length){
         const localCarMap = {};
         (db.cars||[]).forEach(c=>{ localCarMap[c.id]=c; });
-        fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id)) localCarMap[c.id]=c; });
+        fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id) && !(db.deletedCarIds||[]).includes(c.id)) localCarMap[c.id]=c; });
         db.cars = Object.values(localCarMap);
       }
       _mergeStaffFromFirebase(fbStaff, staffChanged, 'ตามแจ้งเตือน');   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง) แต่ไม่ทับรายการที่ยังไม่ได้ส่ง
@@ -1508,6 +1548,7 @@ async function _smartPull(sinceTs){
     renderUcPermitList(); renderPermitList();
     renderReturnList();
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
+    _perfMark('แสดงข้อมูลล่าสุดบนหน้าจอเสร็จ ('+(doFull?'ดึงทั้งหมด':'ดึงเฉพาะที่เปลี่ยน')+')');
   } catch(e){
     console.error('Smart pull error:', e);
   }
@@ -2807,6 +2848,7 @@ function renderSettings(){
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
   renderAccidents();
   renderAdmins();
+  renderPerfReport();
   renderAdminBookingList();
   renderFcSettings();
   renderAdminPendingReturnList();
@@ -4467,6 +4509,7 @@ function confirmDeletePermit(){
   fbSetDoc('config','deletedIds',{
     deletedPermitIds: db.deletedPermitIds||[],
     deletedBookingIds: db.deletedBookingIds||[],
+    deletedCarIds: db.deletedCarIds||[],
     updatedAt: new Date().toISOString()
   });
   const _ts = new Date().toISOString();
@@ -4638,7 +4681,7 @@ function _pushToFirebase(){
   const changedPermits = _getChanged(permitsToSync, 'permits');
   const changedFcBk = _getChanged(db.fuelCardBookings||[], 'fuelCardBookings');
   const changedFc = _getChanged(db.fuelCards||[], 'fuelCards');
-  const changedCars = _getChanged(db.cars||[], 'cars');
+  const changedCars = _getChanged((db.cars||[]).filter(c=>!(db.deletedCarIds||[]).includes(c.id)), 'cars');
   // เจ้าหน้าที่: ทำเฉพาะเมื่อมีการเพิ่ม/ลบจากหน้าตั้งค่า (_staffDirty)
   const staffNow = _staffDirty || !!db._staffPending;
   const changedStaff = staffNow ? _getChanged(db.staff||[], 'staff') : [];
@@ -4649,6 +4692,16 @@ function _pushToFirebase(){
   // ลบ deleted items ออกจาก Firebase — เฉพาะที่ยังไม่เคยลบ (กัน delete ซ้ำทุกรอบ)
   if(!_lastPushed['_deletedPermits']) _lastPushed['_deletedPermits'] = new Set();
   if(!_lastPushed['_deletedBookings']) _lastPushed['_deletedBookings'] = new Set();
+  if(!_lastPushed['_deletedCars']) _lastPushed['_deletedCars'] = new Set();
+  const deletedCars = new Set(db.deletedCarIds||[]);
+  // ลบรถออกจาก Firebase จริง (เดิมลบแค่ในเครื่อง รถจึงกลับมาจากระบบกลาง)
+  deletedCars.forEach(id=>{
+    if(!_lastPushed['_deletedCars'].has(id)){
+      fbDeleteDoc('cars', id).catch(e=>{ console.warn('delete car failed',id,e); _lastPushed['_deletedCars'].delete(id); });
+      _lastPushed['_deletedCars'].add(id);
+      if(_lastPushed['cars']) delete _lastPushed['cars'][id];
+    }
+  });
   deletedPermits.forEach(id=>{
     if(!_lastPushed['_deletedPermits'].has(id)){
       fbDeleteDoc('permits', id);
@@ -4681,11 +4734,12 @@ function _pushToFirebase(){
   }
 
   // deletedIds
-  const delStr = JSON.stringify({p:[...deletedPermits], b:[...deletedBookings]});
+  const delStr = JSON.stringify({p:[...deletedPermits], b:[...deletedBookings], c:[...deletedCars]});
   if(delStr !== _lastPushed['deletedIds']){
     ops.push(fbSetDoc('config','deletedIds',{
       deletedPermitIds:[...deletedPermits],
       deletedBookingIds:[...deletedBookings],
+      deletedCarIds:[...deletedCars],
       updatedAt:new Date().toISOString()
     }));
     _lastPushed['deletedIds'] = delStr;
@@ -6983,6 +7037,7 @@ async function restorePermitFromArchive(permitId){
     _fbDb.collection('config').doc('deletedIds').set({
       deletedPermitIds: db.deletedPermitIds||[],
       deletedBookingIds: db.deletedBookingIds||[],
+      deletedCarIds: db.deletedCarIds||[],
       updatedAt: new Date().toISOString()
     });
     // mark ใบนี้กัน pull ทับ 30 วินาที
