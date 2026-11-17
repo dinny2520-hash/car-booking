@@ -1129,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261117-001'; // Force reload version
+const APP_VERSION = '20261117-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1315,6 +1315,23 @@ function startRealtimeSync(){
   });
   _fbListeners.push(unsubAdm);
 
+  // ฟัง "ใบ PM ที่รออนุมัติ" โดยตรง (ใบรอมีไม่กี่ใบ) — ใบไหนถูกอนุมัติ/ไม่อนุมัติ/แก้ไข เครื่องที่เปิดค้างอยู่จะรู้ทันที
+  // ไม่พึ่ง config/lastUpdate อย่างเดียว (ซึ่งถูกเขียนทับ/ตกหล่นได้)
+  try{
+    const unsubPend = _fbDb.collection('permits').where('status','==','pending').onSnapshot(snap=>{
+      if(snap.metadata && snap.metadata.fromCache) return;
+      const changes = snap.docChanges();
+      let changed = false; const removed = [];
+      changes.forEach(ch=>{
+        if(ch.type==='removed') removed.push(ch.doc.id);
+        else if(_mergePermitDoc(ch.doc.data())) changed = true;
+      });
+      if(changed) _afterPermitMerge();
+      if(removed.length) _fetchAndMergePermits(removed);   // หลุดจาก pending = อนุมัติ/ปฏิเสธ/ลบ → ดึงตัวล่าสุดมาแสดง
+    }, err=>console.warn('pending watcher error', err));
+    _fbListeners.push(unsubPend);
+  }catch(e){ console.warn('pending watcher failed to start', e); }
+
   // ฟัง config/lastUpdate — timestamp เล็กมาก ใช้ read น้อย
   // debounce: กัน trigger smartPull ถี่เกินไปถ้า Firebase ส่ง snapshot หลายรอบติดกัน
   let _snapDebounceTimer = null;
@@ -1327,7 +1344,7 @@ function startRealtimeSync(){
     if(serverTs && serverTs !== _lastServerTs){
       const prevTs = _lastServerTs;
       _lastServerTs = serverTs;
-      _lastChangedIds = data?.changedIds || {}; // เก็บ changedIds ให้ _smartPull ใช้
+      _accumulateIds(data?.changedIds); // สะสม changedIds ทุกการแจ้ง (ไม่เขียนทับ) ให้ _smartPull ใช้
       clearTimeout(_snapDebounceTimer);
       _snapDebounceTimer = setTimeout(()=>_smartPull(prevTs), 300);
     }
@@ -1350,15 +1367,103 @@ function startRealtimeSync(){
         const prevTs = _lastServerTs;
         _lastServerTs = serverTs;
         // ใช้ changedIds จาก lastUpdate ถ้ามี กัน pull ทั้ง collection
-        _lastChangedIds = data?.changedIds || {};
+        _accumulateIds(data?.changedIds);
         _smartPull(prevTs);
       }
+      _recheckPendingPermits(false);   // ตัวสำรอง: ใบรออนุมัติที่ตกหล่น
     }catch(e){}
   }, 30000);
+  window.addEventListener('online', ()=>{ setTimeout(()=>{ _smartPull(_lastServerTs); _recheckPendingPermits(true); }, 1200); });
+}
+
+// ---- ใบ PM: merge ตัวล่าสุดจากระบบกลางเข้าเครื่อง (ใช้โดย pending watcher / recheck) ----
+function _mergePermitDoc(p){
+  if(!p || !p.id) return false;
+  if((db.deletedPermitIds||[]).includes(p.id)) return false;
+  if(_isRecentlyPushed(p.id) || _restoredPermitIds.has(p.id)) return false;
+  db.permits = db.permits || [];
+  const i = db.permits.findIndex(x=>x.id===p.id);
+  if(i>=0){
+    if(JSON.stringify(db.permits[i])===JSON.stringify(p)) return false;
+    db.permits[i] = p;
+  } else db.permits.unshift(p);
+  try{ _updateLastPushed([p],'permits'); }catch(e){}
+  return true;
+}
+function _afterPermitMerge(){
+  db.permits.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }catch(e){}
+  try{ renderUcPermitList(); renderPermitList(); }catch(e){}
+  try{ if(typeof renderAdminBillPendingList==='function' && adminLoggedIn) renderAdminBillPendingList(); }catch(e){}
+  updateSync(false, true);
+}
+async function _fetchAndMergePermits(ids){
+  try{
+    const snaps = await Promise.all(ids.map(id=>_fbDb.collection('permits').doc(id).get()));
+    let changed=false;
+    snaps.forEach(s=>{ if(s.exists && _mergePermitDoc(s.data())) changed=true; });
+    if(changed) _afterPermitMerge();
+  }catch(e){ console.warn('fetch permits failed', e); }
+}
+// ตัวสำรอง: เช็กใบที่ "รออนุมัติ" ในเครื่อง เทียบกับระบบกลาง — ใบไหนไม่ pending แล้วให้ดึงมาแทน
+let _lastPendingRecheck = 0, _recheckBusy = false;
+async function _recheckPendingPermits(force){
+  if(!_fbReady || _recheckBusy) return;
+  const now = Date.now();
+  if(!force && now - _lastPendingRecheck < 85000) return;
+  if(document.visibilityState && document.visibilityState!=='visible') return;
+  const localPending = (db.permits||[]).filter(p=>p.status==='pending').map(p=>p.id);
+  if(!localPending.length) { _lastPendingRecheck = now; return; }
+  _recheckBusy = true; _lastPendingRecheck = now;
+  try{
+    const snap = await _fbDb.collection('permits').where('status','==','pending').get();
+    const stillPending = new Set(snap.docs.map(d=>d.id));
+    const moved = localPending.filter(id=>!stillPending.has(id));
+    if(moved.length) await _fetchAndMergePermits(moved);
+  }catch(e){ console.warn('recheck pending failed', e); }
+  finally{ _recheckBusy = false; }
+}
+// แจ้งเครื่องอื่นแบบไม่ตกหล่น: รวม ids ที่เพิ่งแจ้งไว้ภายใน 10 วิ (กันสองคนเขียนทับกัน) และลองใหม่ถ้าพลาด
+async function _notifyChanged(changedIds){
+  const ref = _fbDb.collection('config').doc('lastUpdate');
+  if(typeof _fbDb.runTransaction!=='function'){
+    try{ await ref.set({updatedAt:new Date().toISOString(), changedIds}); return true; }catch(e){ return false; }
+  }
+  for(let attempt=0; attempt<3; attempt++){
+    try{
+      await _fbDb.runTransaction(async tx=>{
+        const cur = await tx.get(ref);
+        const d = cur.exists ? cur.data() : null;
+        let merged = {...changedIds};
+        if(d && d.changedIds && d.updatedAt && Date.now()-Date.parse(d.updatedAt) < 10000){
+          merged = {};
+          const cols = new Set([...Object.keys(d.changedIds), ...Object.keys(changedIds)]);
+          cols.forEach(c=>{ merged[c] = [...new Set([...(d.changedIds[c]||[]), ...(changedIds[c]||[])])]; });
+        }
+        tx.set(ref, {updatedAt:new Date().toISOString(), changedIds:merged});
+      });
+      return true;
+    }catch(e){
+      console.warn('notifyChanged attempt', attempt+1, 'failed', e);
+      await new Promise(r=>setTimeout(r, 800*(attempt+1)));
+    }
+  }
+  try{ await ref.set({updatedAt:new Date().toISOString(), changedIds}); return true; }catch(e){ return false; }
 }
 
 let _lastServerTs = null;
-let _lastChangedIds = {}; // เก็บ changedIds จาก lastUpdate ล่าสุด
+let _lastChangedIds = {}; // (เลิกใช้ — ใช้ _accIds)
+let _accIds = {};          // changedIds ที่สะสมจากหลายการแจ้ง รอดึง
+let _pullAgain = false;    // มีการแจ้งเข้ามาระหว่างดึง → ดึงต่อทันทีหลังรอบนี้จบ
+let _pullStartedAt = 0, _pullSeq = 0, _pullTimer = null, _pullRetries = 0;
+const PULL_WATCHDOG_MS = 45000; // ถ้ารอบดึงค้างเกินนี้ ถือว่าค้าง ปลดล็อกให้ดึงใหม่ได้
+function _accumulateIds(ids){
+  if(!ids) return;
+  for(const [col,arr] of Object.entries(ids)){
+    if(!Array.isArray(arr)) continue;
+    _accIds[col] = [...new Set([...(_accIds[col]||[]), ...arr])];
+  }
+}
 let _isPulling = false;
 let _lastPullTime = 0;
 let _lastFullPullTime = 0;
@@ -1376,12 +1481,24 @@ const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาท�
 
 async function _smartPull(sinceTs){
   const now = Date.now();
-  if(_isPulling) return;
-  if(now - _lastPullTime < MIN_PULL_INTERVAL) return;
-  // Page Visibility guard — ถ้าแท็บ hidden อยู่ ข้าม pull (ประหยัด reads)
-  // incremental ยังทำได้ แต่ full pull รอให้แท็บ active ก่อน
+  // เดิม: ถ้ากำลังดึงอยู่/ถี่เกิน 1 วิ จะ "ทิ้ง" การแจ้งนั้นไปเลย → ใบที่อนุมัติไม่ถูกดึงจนรีเฟรช
+  // ใหม่: เข้าคิวไว้ดึงหลังรอบนี้จบ และถ้ารอบดึงค้างเกิน PULL_WATCHDOG_MS ให้ปลดล็อก
+  if(_isPulling){
+    if(now - _pullStartedAt > PULL_WATCHDOG_MS){ console.warn('⚠️ รอบดึงข้อมูลค้างเกินกำหนด — ปลดล็อก'); _isPulling = false; }
+    else { _pullAgain = true; return; }
+  }
+  if(now - _lastPullTime < MIN_PULL_INTERVAL){
+    if(!_pullTimer) _pullTimer = setTimeout(()=>{ _pullTimer=null; _smartPull(sinceTs); }, MIN_PULL_INTERVAL-(now-_lastPullTime)+50);
+    return;
+  }
+  const _mySeq = ++_pullSeq;
   _isPulling = true;
+  _pullStartedAt = now;
   _lastPullTime = now;
+  _pullAgain = false;
+  const _consumed = _accIds; _accIds = {};     // ids ที่รอบนี้รับผิดชอบ (ถ้าพลาดจะคืนเข้าคิว)
+  const _prevFullTime = _lastFullPullTime;
+  let _triedFull = false;
 
   try {
     const deletedPermits = new Set(db.deletedPermitIds||[]);
@@ -1394,6 +1511,7 @@ async function _smartPull(sinceTs){
     const isFirstPull = _lastFullPullTime === 0;
     const tabActive = document.visibilityState === 'visible';
     const doFull = isFirstPull || (tabActive && (now - _lastFullPullTime > FULL_PULL_INTERVAL));
+    _triedFull = doFull;
     
     let fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff, fbConfig;
     let staffChanged = false;   // มีการเพิ่ม/ลบเจ้าหน้าที่ (จาก changedIds)
@@ -1419,7 +1537,7 @@ async function _smartPull(sinceTs){
     } else {
       // Incremental pull — ใช้ changedIds ถ้ามี (ประหยัด reads มาก)
       // ถ้าไม่มี changedIds → fallback เป็น WHERE query แบบเดิม
-      const cids = _lastChangedIds || {};
+      const cids = _consumed || {};
       const hasChangedIds = Object.keys(cids).length > 0;
 
       if(hasChangedIds){
@@ -1550,10 +1668,18 @@ async function _smartPull(sinceTs){
     renderReturnList();
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
     _perfMark('แสดงข้อมูลล่าสุดบนหน้าจอเสร็จ ('+(doFull?'ดึงทั้งหมด':'ดึงเฉพาะที่เปลี่ยน')+')');
+    _pullRetries = 0;
   } catch(e){
     console.error('Smart pull error:', e);
+    // พลาด: คืน ids เข้าคิว (และคืนเวลา full pull ถ้ารอบนั้นเป็น full) แล้วลองใหม่ ไม่ปล่อยให้ข้อมูลตกหล่น
+    _accumulateIds(_consumed);
+    if(_triedFull) _lastFullPullTime = _prevFullTime;
+    if(_pullRetries++ < 4) setTimeout(()=>_smartPull(), 5000);
   }
-  _isPulling = false;
+  if(_mySeq === _pullSeq){            // ถ้ามีรอบใหม่เข้ามาแทนหลังปลดล็อก ไม่ไปแตะล็อกของรอบนั้น
+    _isPulling = false;
+    if(_pullAgain){ _pullAgain = false; setTimeout(()=>_smartPull(), 300); }
+  }
 }
 
 // ---- Replace syncNow with Firebase ----
@@ -4788,10 +4914,7 @@ function _pushToFirebase(){
     if(changedFc.length) changedIds.fuelCards = changedFc.map(x=>x.id);
     if(changedCars.length) changedIds.cars = changedCars.map(x=>x.id);
     if(changedStaff.length || staffToDelete.length) changedIds.staff = [...changedStaff.map(x=>x.id), ...staffToDelete];
-    return _fbDb.collection('config').doc('lastUpdate').set({
-      updatedAt: new Date().toISOString(),
-      changedIds
-    });
+    return _notifyChanged(changedIds);
   }).then(()=>{
     _lastPushError=null;
     updateSync(false, true);
@@ -6536,10 +6659,33 @@ function checkAppVersion(){
         console.log('🔄 พบเวอร์ชันใหม่ '+match[1]+' — กำลัง reload...');
         // set timestamp ก่อน reload กัน full pull ทันทีหลัง reload
         try{ localStorage.setItem('_lastFullPull', Date.now().toString()); }catch(e){}
+        if(_isUserBusy()){ _showUpdateBanner(match[1]); return; }   // กำลังกรอก/วาดลายเซ็น ห้ามรีโหลดทับงาน
         _staffLog('รีโหลด', 'พบเวอร์ชันใหม่ '+match[1]+' (กำลังใช้ '+APP_VERSION+')');
         location.reload(true);
       }
     }).catch(()=>{});
+}
+// กำลังกรอกฟอร์ม หรือเพิ่งวาดลายเซ็นอยู่หรือไม่ (ถ้าใช่ จะไม่รีโหลดอัตโนมัติ)
+function _isUserBusy(){
+  try{
+    const a=document.activeElement;
+    if(a&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'||a.tagName==='SELECT'))return true;
+    const cs=document.querySelectorAll('canvas');
+    for(const c of cs){
+      if(!c.id||!c.offsetWidth)continue;
+      if(!isCanvasEmpty(c.id))return true;
+    }
+  }catch(e){}
+  return false;
+}
+function _showUpdateBanner(v){
+  if(document.getElementById('update-banner'))return;
+  const b=document.createElement('div');
+  b.id='update-banner';
+  b.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#1a56db;color:#fff;padding:12px 14px;border-radius:10px;font-size:14px;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+  b.innerHTML='มีเวอร์ชันใหม่ — ทำงานที่ค้างอยู่ให้เสร็จก่อน แล้ว <b style="text-decoration:underline;cursor:pointer" id="update-banner-btn">แตะที่นี่เพื่ออัปเดต</b>';
+  document.body.appendChild(b);
+  document.getElementById('update-banner-btn').onclick=()=>{try{localStorage.setItem('_lastFullPull',Date.now().toString());}catch(e){}location.reload(true);};
 }
 setInterval(checkAppVersion, 5*60*1000);
 setTimeout(checkAppVersion, 10*1000);
@@ -6593,7 +6739,7 @@ document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     clearTimeout(_visibilityPullTimer);
     // ส่ง _lastServerTs เพื่อให้เป็น incremental pull เสมอ ไม่ตก full pull
-    _visibilityPullTimer = setTimeout(()=>_smartPull(_lastServerTs), 1500);
+    _visibilityPullTimer = setTimeout(()=>{ _smartPull(_lastServerTs); _recheckPendingPermits(true); }, 1500);
   }
 });
 // focus debounce 30 วิ — กัน trigger ทุกครั้งที่คลิก
@@ -6604,7 +6750,7 @@ window.addEventListener('focus', ()=>{
   if(now - _lastFocusPull < 30000) return;
   _lastFocusPull = now;
   clearTimeout(_focusPullTimer);
-  _focusPullTimer = setTimeout(()=>_smartPull(_lastServerTs), 1500);
+  _focusPullTimer = setTimeout(()=>{ _smartPull(_lastServerTs); _recheckPendingPermits(true); }, 1500);
 });
 setTimeout(maybeRunCleanup, 3000);
 
@@ -6705,28 +6851,56 @@ function initCanvas(id){
   const canvas=document.getElementById(id);
   if(!canvas||canvas._init)return;
   canvas._init=true;
-  let drawing=false,lastX=0,lastY=0;
+  // กันเบราว์เซอร์/โหมดมืดบังหรือกลืนเส้น: พื้นขาวบังคับ + ปิดการเลื่อนหน้าบนกล่องลายเซ็น
+  canvas.style.touchAction='none';
+  canvas.style.background='#fff';
+  canvas.style.colorScheme='light';
+  canvas.style.webkitUserSelect='none';canvas.style.userSelect='none';
+  let drawing=false,lastX=0,lastY=0,pid=null;
   const ctx=canvas.getContext('2d');
-  ctx.strokeStyle='#000';ctx.lineWidth=3.5;ctx.lineCap='round';ctx.lineJoin='round';
+  function setup(){ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;ctx.strokeStyle='#000';ctx.fillStyle='#000';ctx.lineWidth=3.5;ctx.lineCap='round';ctx.lineJoin='round';}
+  setup();
   function getPos(e){
     const r=canvas.getBoundingClientRect();
-    const scaleX=canvas.width/r.width,scaleY=canvas.height/r.height;
-    if(e.touches){return{x:(e.touches[0].clientX-r.left)*scaleX,y:(e.touches[0].clientY-r.top)*scaleY};}
-    return{x:(e.clientX-r.left)*scaleX,y:(e.clientY-r.top)*scaleY};
+    if(!r.width||!r.height)return null;
+    const src=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e;
+    return{x:(src.clientX-r.left)*canvas.width/r.width,y:(src.clientY-r.top)*canvas.height/r.height};
   }
-  function start(e){e.preventDefault();drawing=true;const p=getPos(e);lastX=p.x;lastY=p.y;}
+  function start(e){
+    if(e.pointerType==='mouse'&&e.button!==undefined&&e.button!==0)return;
+    const p=getPos(e);if(!p)return;
+    e.preventDefault();setup();
+    drawing=true;lastX=p.x;lastY=p.y;
+    if(e.pointerId!==undefined){pid=e.pointerId;try{canvas.setPointerCapture(pid);}catch(_){}}
+    // แตะครั้งเดียว/ขีดสั้นมาก ให้เห็นเป็นจุด
+    ctx.beginPath();ctx.arc(p.x,p.y,ctx.lineWidth/2,0,Math.PI*2);ctx.fill();
+  }
   function draw(e){
-    if(!drawing)return;e.preventDefault();
-    const p=getPos(e);
+    if(!drawing)return;
+    if(pid!==null&&e.pointerId!==undefined&&e.pointerId!==pid)return;
+    const p=getPos(e);if(!p)return;e.preventDefault();
     ctx.beginPath();ctx.moveTo(lastX,lastY);ctx.lineTo(p.x,p.y);ctx.stroke();
     lastX=p.x;lastY=p.y;
   }
-  function stop(){drawing=false;}
-  canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',draw);
-  canvas.addEventListener('mouseup',stop);canvas.addEventListener('mouseleave',stop);
-  canvas.addEventListener('touchstart',start,{passive:false});
-  canvas.addEventListener('touchmove',draw,{passive:false});
-  canvas.addEventListener('touchend',stop);
+  function stop(e){
+    if(e&&pid!==null&&e.pointerId!==undefined&&e.pointerId!==pid)return;
+    drawing=false;
+    if(pid!==null){try{canvas.releasePointerCapture(pid);}catch(_){}pid=null;}
+  }
+  if(window.PointerEvent){
+    canvas.addEventListener('pointerdown',start);
+    canvas.addEventListener('pointermove',draw);
+    canvas.addEventListener('pointerup',stop);
+    canvas.addEventListener('pointercancel',stop);
+    canvas.addEventListener('lostpointercapture',stop);
+  }else{
+    canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',draw);
+    canvas.addEventListener('mouseup',stop);canvas.addEventListener('mouseleave',stop);
+    canvas.addEventListener('touchstart',start,{passive:false});
+    canvas.addEventListener('touchmove',draw,{passive:false});
+    canvas.addEventListener('touchend',stop);canvas.addEventListener('touchcancel',stop);
+  }
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
 function clearCanvas(id){
@@ -7277,9 +7451,7 @@ function submitApproval(){
     const idx=(db.permits||[]).findIndex(x=>x.id===id);
     if(idx>=0) db.permits[idx]=next; else { db.permits=db.permits||[]; db.permits.unshift(next); }
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(err){}
-    _fbDb.collection('config').doc('lastUpdate').set({
-      updatedAt:new Date().toISOString(), changedIds:{permits:[p.id]}
-    }).catch(()=>{});
+    _notifyChanged({permits:[p.id]});
     showSuccess();
   }
 
@@ -7321,11 +7493,7 @@ function submitReject(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   // Force push ขึ้น Firebase ทันที
   if(_fbReady && p){
-    fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()});
-    _fbDb.collection('config').doc('lastUpdate').set({
-      updatedAt: new Date().toISOString(),
-      changedIds: {permits: [p.id]}
-    });
+    fbSetDoc('permits', p.id, {...p, updatedAt: new Date().toISOString()}).then(()=>_notifyChanged({permits:[p.id]}));
   } else {
     syncNow();
   }
