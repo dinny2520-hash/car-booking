@@ -379,6 +379,7 @@ tr:hover td{background:var(--g50)}
               <th>วันที่เริ่ม</th>
               <th>วันที่คืน</th>
               <th>จำนวน</th>
+              <th>คีย์จองเมื่อ</th>
               <th>สถานที่</th>
               <th>เหตุผล</th>
               <th>สถานะ</th>
@@ -1128,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261116-009'; // Force reload version
+const APP_VERSION = '20261117-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1636,6 +1637,12 @@ function isFullRole(){ return adminRole==='master' || adminRole==='full'; }
 // ---- UTILS ----
 function genId(){return 'b'+Date.now()+Math.random().toString(36).slice(2,5);}
 function fmtKeyed(p){if(!p||!p.createdAt)return'';const d=new Date(p.createdAt);if(isNaN(d))return'';return '🕒 คีย์ใบเมื่อ '+fmt(p.createdAt);}
+// วัน-เวลาที่คีย์จอง แบบมีวินาที (ใช้ตัดสินกรณีจองชนกัน)
+function fmtKeyedSec(dt){
+  if(!dt) return '';
+  const d=new Date(dt); if(isNaN(d)) return '';
+  return d.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'})+' '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+}
 function fmt(dt){if(!dt)return'-';const d=new Date(dt);return d.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'})+' '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}
 
 // แปลง datetime-local value เป็น dd/mm/yyyy สำหรับ display
@@ -3391,7 +3398,7 @@ function renderCarSchedule(){
   // Table
   const tbody=document.getElementById('cs-tbody');
   if(!bks.length){
-    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูลการจอง</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;color:var(--g400);padding:28px">ไม่มีข้อมูลการจอง</td></tr>`;
     return;
   }
   tbody.innerHTML=bks.map((b,i)=>{
@@ -3407,6 +3414,7 @@ function renderCarSchedule(){
       <td style="white-space:nowrap;${st==='overdue'?'color:var(--danger);font-weight:600':''}">${fmt(b.startDt)}</td>
       <td style="white-space:nowrap;${st==='overdue'?'color:var(--danger);font-weight:600':''}">${fmt(b.endDt)}</td>
       <td style="white-space:nowrap;font-size:13px;color:var(--g600)">${dur}</td>
+      <td class="keyed-at" style="white-space:nowrap;font-size:12px;color:#7c3aed">${fmtKeyedSec(b.createdAt)||'-'}</td>
       <td>${b.dest}</td>
       <td style="font-size:12px;color:var(--g600)">${b.reason}</td>
       <td><span class="car-status ${stClass(st)}" style="font-size:11px">${stLabel(st)}</span></td>
@@ -5913,6 +5921,7 @@ function renderFcSchedule(){
             <div style="font-size:13px;font-weight:600">👤 ${b.name}</div>
             <div style="font-size:12px;color:var(--g600)">📅 ${fmt(b.startDt)} → ${fmt(b.endDt)}</div>
             <div style="font-size:12px;color:var(--g600)">📝 ${b.reason} | ⛽ ฿${Number(b.fuelAmount||0).toLocaleString('th-TH')}</div>
+            ${fmtKeyedSec(b.createdAt)?`<div class="keyed-at" style="font-size:12px;color:#7c3aed">🕒 คีย์จองเมื่อ ${fmtKeyedSec(b.createdAt)}</div>`:''}
           </div>
           ${isUpcoming?`<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);white-space:nowrap;flex-shrink:0" onclick="cancelFcBooking('${b.id}')">ยกเลิก</button>`:''}
         </div>`;
