@@ -1129,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261117-002'; // Force reload version
+const APP_VERSION = '20261118-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1380,7 +1380,7 @@ function startRealtimeSync(){
 function _mergePermitDoc(p){
   if(!p || !p.id) return false;
   if((db.deletedPermitIds||[]).includes(p.id)) return false;
-  if(_isRecentlyPushed(p.id) || _restoredPermitIds.has(p.id)) return false;
+  if(_isRecentlyPushed(p.id) || _restoredPermitIds.has(p.id) || _isPendingPush('permits',p.id)) return false;
   db.permits = db.permits || [];
   const i = db.permits.findIndex(x=>x.id===p.id);
   if(i>=0){
@@ -1571,6 +1571,7 @@ async function _smartPull(sinceTs){
       // Full pull — Firebase คือ source of truth แต่ preserve fields ที่ local set ไว้แล้วถ้า Firebase ยังไม่มี
       const localPermitMap = {};
       (db.permits||[]).forEach(p=>{ localPermitMap[p.id]=p; });
+      const _localBefore = {bookings:db.bookings||[], permits:db.permits||[], fuelCardBookings:db.fuelCardBookings||[], fuelCards:db.fuelCards||[], cars:db.cars||[]};
       db.bookings = fbBookings.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
       db.permits = fbPermits.map(p=>{
         const local = localPermitMap[p.id];
@@ -1586,6 +1587,19 @@ async function _smartPull(sinceTs){
       if(fbFcBk.length) db.fuelCardBookings = fbFcBk;
       if(fbFc.length) db.fuelCards = fbFc;
       if(fbCars && fbCars.length) db.cars = fbCars.filter(c=>!(db.deletedCarIds||[]).includes(c.id));
+      // รายการที่แก้ในเครื่องแล้วยังไม่ได้ยืนยันว่าส่งสำเร็จ → ใช้ของเครื่อง (ไม่ให้ข้อมูลเก่าจากระบบกลางทับ) แล้วส่งใหม่
+      PENDING_COLS.forEach(col=>{
+        const ids = db._pendingPush && db._pendingPush[col]; if(!ids) return;
+        Object.keys(ids).forEach(id=>{
+          if((col==='bookings'&&deletedBookings.has(id))||(col==='permits'&&deletedPermits.has(id))||(col==='cars'&&(db.deletedCarIds||[]).includes(id))){ delete ids[id]; return; }
+          const loc = _localBefore[col].find(x=>x.id===id); if(!loc) { delete ids[id]; return; }
+          const i = (db[col]||[]).findIndex(x=>x.id===id);
+          if(!db[col]) db[col]=[];
+          if(i>=0) db[col][i]=loc; else db[col].push(loc);
+        });
+      });
+      db.bookings.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      db.permits.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
       _mergeStaffFromFirebase(fbStaff, false, 'ทั้งหมด');
       if(fbConfig){
         if(fbConfig.adminPass) db.adminPass = fbConfig.adminPass;
@@ -1597,7 +1611,7 @@ async function _smartPull(sinceTs){
       // Incremental pull — merge local + Firebase
       const localBkMap = {};
       (db.bookings||[]).forEach(b=>{ localBkMap[b.id]=b; });
-      fbBookings.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localBkMap[b.id]=b; });
+      fbBookings.forEach(b=>{ if(!_isRecentlyPushed(b.id) && !_isPendingPush('bookings',b.id)) localBkMap[b.id]=b; });
       db.bookings = Object.values(localBkMap)
         .filter(b=>!deletedBookings.has(b.id))
         .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
@@ -1606,7 +1620,7 @@ async function _smartPull(sinceTs){
       (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
       fbPermits.forEach(p=>{
         // ไม่ทับใบที่เพิ่ง restore มา (กัน pull ทับ)
-        if(!_isRecentlyPushed(p.id) && !_restoredPermitIds.has(p.id)) localPMap[p.id]=p;
+        if(!_isRecentlyPushed(p.id) && !_restoredPermitIds.has(p.id) && !_isPendingPush('permits',p.id)) localPMap[p.id]=p;
       });
       db.permits = Object.values(localPMap)
         .filter(p=>!deletedPermits.has(p.id))
@@ -1615,19 +1629,19 @@ async function _smartPull(sinceTs){
       if(fbFcBk.length){
         const localFcBkMap = {};
         (db.fuelCardBookings||[]).forEach(b=>{ localFcBkMap[b.id]=b; });
-        fbFcBk.forEach(b=>{ if(!_isRecentlyPushed(b.id)) localFcBkMap[b.id]=b; });
+        fbFcBk.forEach(b=>{ if(!_isRecentlyPushed(b.id) && !_isPendingPush('fuelCardBookings',b.id)) localFcBkMap[b.id]=b; });
         db.fuelCardBookings = Object.values(localFcBkMap);
       }
       if(fbFc.length){
         const localFcMap = {};
         (db.fuelCards||[]).forEach(f=>{ localFcMap[f.id]=f; });
-        fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id)) localFcMap[f.id]=f; });
+        fbFc.forEach(f=>{ if(!_isRecentlyPushed(f.id) && !_isPendingPush('fuelCards',f.id)) localFcMap[f.id]=f; });
         db.fuelCards = Object.values(localFcMap);
       }
       if(fbCars && fbCars.length){
         const localCarMap = {};
         (db.cars||[]).forEach(c=>{ localCarMap[c.id]=c; });
-        fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id) && !(db.deletedCarIds||[]).includes(c.id)) localCarMap[c.id]=c; });
+        fbCars.forEach(c=>{ if(!_isRecentlyPushed(c.id) && !_isPendingPush('cars',c.id) && !(db.deletedCarIds||[]).includes(c.id)) localCarMap[c.id]=c; });
         db.cars = Object.values(localCarMap);
       }
       _mergeStaffFromFirebase(fbStaff, staffChanged, 'ตามแจ้งเตือน');   // ระบบกลางเป็นหลัก (รวมกรณีลบจนว่าง) แต่ไม่ทับรายการที่ยังไม่ได้ส่ง
@@ -1658,6 +1672,11 @@ async function _smartPull(sinceTs){
       console.log('✅ _lastPushed initialized');
     }
 
+    // รายการที่ยังค้างส่ง: ทำให้ตัวตรวจการเปลี่ยนแปลงเห็นว่า "ต่างจากระบบกลาง" แล้วส่งขึ้นไปใหม่
+    if(_hasPendingPush()){
+      PENDING_COLS.forEach(col=>{ const ids=db._pendingPush[col]||{}; Object.keys(ids).forEach(id=>{ if(_lastPushed[col]) delete _lastPushed[col][id]; }); });
+      setTimeout(()=>{ try{ _pushToFirebase(); }catch(e){} }, 400);
+    }
     try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     updateSync(false, true);
     checkPullChanges({bookings:db.bookings, fuelCardBookings:db.fuelCardBookings});
@@ -2682,14 +2701,28 @@ function submitStep2(){
   if(staff.code!==staffCode){errEl.textContent='รหัสเจ้าหน้าที่ไม่ถูกต้อง';errEl.style.display='flex';return;}
   const b=db.bookings.find(x=>x.id===returnBookingId);
   if(!b){return;}
+  if(window._returning) return;
+  const _prev={status:b.status,returnStep:b.returnStep,returnedBy:b.returnedBy,returnedAt:b.returnedAt,mileageOut:b.mileageOut,mileageIn:b.mileageIn};
   b.status='returned';b.returnStep='done';b.returnedBy=staff.name;b.returnedAt=nowISO();
   b.mileageOut=Number(mileageOut);
   b.mileageIn=Number(mileageIn);
   const car=db.cars.find(c=>c.id===b.carId);
+  const _prevMileage=car?car.mileage:undefined;
   if(car) car.mileage=Number(mileageIn);
-  syncNow(()=>showSyncToast(true), ()=>showSyncToast(false));
-  closeModal('modal-step2-return');renderReturnList();renderCars();
-  alert('✅ ยืนยันคืนรถสำเร็จ! สถานะรถเปลี่ยนเป็นว่างแล้ว');
+  _markAllChangedPending();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  // รอยืนยันว่าบันทึกขึ้นระบบกลางจริงก่อนขึ้นว่าสำเร็จ (กันกดแล้วปิดแอปทันที)
+  const btn=document.querySelector('#modal-step2-return .btn-success');
+  const btnTxt=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='⏳ กำลังบันทึก... อย่าเพิ่งปิดแอป';}
+  window._returning=true;
+  _syncConfirmed().then(ok=>{
+    window._returning=false;
+    if(btn){btn.disabled=false;btn.textContent=btnTxt;}
+    closeModal('modal-step2-return');renderReturnList();renderCars();
+    if(ok){ alert('✅ ยืนยันคืนรถสำเร็จ! บันทึกขึ้นระบบกลางแล้ว สถานะรถเปลี่ยนเป็นว่างแล้ว'); }
+    else { alert('⚠️ บันทึกในเครื่องแล้ว แต่ยังส่งขึ้นระบบกลางไม่สำเร็จ (สัญญาณมีปัญหา)\nกรุณาอย่าปิดแอป — ระบบจะลองส่งซ้ำเองเมื่อสัญญาณกลับมา และเช็กให้แน่ใจว่ารายการขึ้นสถานะ "คืนแล้ว"'); }
+  });
 }
 
 // ---- ADMIN ----
@@ -4700,6 +4733,7 @@ function buildSyncPayload(ts){
 function syncNow(onSuccess, onFail){
   const _ts = new Date().toISOString();
   db._lastSync = _ts;
+  _markAllChangedPending();   // จดไว้ว่ารายการไหนยังไม่ได้ส่ง (ถาวร)
   // บันทึกลง local ก่อนเสมอ
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   if(onSuccess) onSuccess(); // แจ้งสำเร็จทันที (optimistic)
@@ -4759,6 +4793,40 @@ function checkAndReRenderOnTimeChange(){
 setInterval(checkAndReRenderOnTimeChange, 60000); // ทุก 1 นาที
 setTimeout(checkAndReRenderOnTimeChange, 5000);   // รันครั้งแรกหลังเปิดแอป 5 วิ
 let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push ขึ้น Firebase
+
+// ---- รายการที่ "แก้ในเครื่องแล้วแต่ยังไม่ยืนยันว่าส่งขึ้นระบบกลางสำเร็จ" (เก็บถาวรใน db — รอดการปิดแอป/รีเฟรช) ----
+// กันกรณีรับคืนรถแล้วปิดแอปก่อนส่งเสร็จ แล้วตอนเปิดใหม่ข้อมูลเก่าจากระบบกลางมาเขียนทับ
+const PENDING_COLS = ['bookings','permits','fuelCardBookings','fuelCards','cars'];
+function _isPendingPush(col,id){ return !!(db._pendingPush && db._pendingPush[col] && db._pendingPush[col][id]); }
+function _hasPendingPush(){ return !!db._pendingPush && PENDING_COLS.some(c=>db._pendingPush[c] && Object.keys(db._pendingPush[c]).length); }
+function _markPending(col, items){
+  if(!items || !items.length) return;
+  db._pendingPush = db._pendingPush || {};
+  db._pendingPush[col] = db._pendingPush[col] || {};
+  items.forEach(it=>{ if(it && it.id) db._pendingPush[col][it.id] = Date.now(); });
+}
+function _clearPending(col, items){
+  if(!db._pendingPush || !db._pendingPush[col]) return;
+  items.forEach(it=>{ if(it && it.id) delete db._pendingPush[col][it.id]; });
+}
+function _markAllChangedPending(){
+  if(!_lastPushed['_initialized']) return;          // ยังไม่รู้ว่าอะไรต่างจากระบบกลาง
+  const gd=(k)=>new Set(db[k]||[]);
+  const dp=gd('deletedPermitIds'), dbk=gd('deletedBookingIds'), dc=gd('deletedCarIds');
+  _markPending('bookings', _getChanged((db.bookings||[]).filter(b=>!dbk.has(b.id)),'bookings'));
+  _markPending('permits', _getChanged((db.permits||[]).filter(p=>!dp.has(p.id)),'permits'));
+  _markPending('fuelCardBookings', _getChanged(db.fuelCardBookings||[],'fuelCardBookings'));
+  _markPending('fuelCards', _getChanged(db.fuelCards||[],'fuelCards'));
+  _markPending('cars', _getChanged((db.cars||[]).filter(c=>!dc.has(c.id)),'cars'));
+}
+// ส่งขึ้นระบบกลางและ "รอยืนยัน" จริง — คืน true เมื่อสำเร็จ
+async function _syncConfirmed(){
+  try{
+    if(!(await _waitFbReady(FB_READY_WAIT_MS))) return false;
+    const ok = await _withTimeout(_pushToFirebase(), APPROVE_TIMEOUT_MS);
+    return ok !== false;
+  }catch(e){ return false; }
+}
 
 // ---- Echo suppression — กัน pull ทับ record ที่เพิ่ง push เอง ----
 let _recentlyPushedAt = {}; // { id: timestamp } เวลาที่เพิ่ง push record นี้ล่าสุด
@@ -4851,6 +4919,9 @@ function _pushToFirebase(){
     }
   });
 
+  _markPending('bookings',changedBookings); _markPending('permits',changedPermits);
+  _markPending('fuelCardBookings',changedFcBk); _markPending('fuelCards',changedFc); _markPending('cars',changedCars);
+  if(changedBookings.length||changedPermits.length||changedFcBk.length||changedFc.length||changedCars.length){ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
   const ops = [];
   changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
   changedPermits.forEach(p=>ops.push(fbSetDoc('permits', p.id, p)));
@@ -4884,11 +4955,14 @@ function _pushToFirebase(){
      delStr === _lastPushed['deletedIds']){ 
     if(staffNow){ _staffDirty=false; db._staffPending=false; try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
     updateSync(false, true); 
-    return; 
+    return Promise.resolve(true); 
   }
 
   console.log(`📤 Push ${ops.length} changes to Firebase`);
-  Promise.all(ops).then(()=>{
+  return Promise.all(ops).then(()=>{
+    _clearPending('bookings',changedBookings); _clearPending('permits',changedPermits);
+    _clearPending('fuelCardBookings',changedFcBk); _clearPending('fuelCards',changedFc); _clearPending('cars',changedCars);
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     _updateLastPushed(bookingsToSync, 'bookings');
     _updateLastPushed(permitsToSync, 'permits');
     _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
@@ -4918,10 +4992,12 @@ function _pushToFirebase(){
   }).then(()=>{
     _lastPushError=null;
     updateSync(false, true);
+    return true;
   }).catch(err=>{
     console.error('Firebase push error:', err);
     _lastPushError=(err&&(err.code||err.message))||String(err);
     setTimeout(_pushToFirebase, 10000);
+    return false;
   });
 }
 
@@ -5499,27 +5575,22 @@ function submitFcStep2(){
     b.valueAfterDeduct = fc.value;
     fc.lastUsed = nowISO();
   }
-  // Force push ตรงๆ ขึ้น Firebase ทันที
-  const _now = new Date().toISOString();
-  if(_fbReady){
-    Promise.all([
-      fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt: _now}),
-      fc ? fbSetDoc('fuelCards', fc.id, {...fc, updatedAt: _now}) : Promise.resolve()
-    ]).then(()=>{
-      _fbDb.collection('config').doc('lastUpdate').set({
-        updatedAt: _now,
-        changedIds: {fuelCardBookings:[b.id], fuelCards: fc?[fc.id]:[]}
-      });
-    });
-  } else {
-    syncNow(()=>showSyncToast(true),()=>showSyncToast(false));
-  }
-  closeModal('modal-fc-step2');
-  renderFcReturnList();
-  renderFuelCards();
-  if(adminLoggedIn) renderSettings();
-  renderFcHistory();
-  alert('✅ รับคืนการ์ดสำเร็จ! มูลค่าคงเหลือ: ฿'+Number(fc?.value||0).toLocaleString('th-TH'));
+  _markAllChangedPending();
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  const btn=document.querySelector('#modal-fc-step2 .btn-success');
+  const btnTxt=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='⏳ กำลังบันทึก... อย่าเพิ่งปิดแอป';}
+  const _val=Number(fc?.value||0).toLocaleString('th-TH');
+  _syncConfirmed().then(ok=>{
+    if(btn){btn.disabled=false;btn.textContent=btnTxt;}
+    closeModal('modal-fc-step2');
+    renderFcReturnList();
+    renderFuelCards();
+    if(adminLoggedIn) renderSettings();
+    renderFcHistory();
+    if(ok) alert('✅ รับคืนการ์ดสำเร็จ! บันทึกขึ้นระบบกลางแล้ว มูลค่าคงเหลือ: ฿'+_val);
+    else alert('⚠️ บันทึกในเครื่องแล้ว แต่ยังส่งขึ้นระบบกลางไม่สำเร็จ (สัญญาณมีปัญหา)\nกรุณาอย่าปิดแอป — ระบบจะลองส่งซ้ำเอง');
+  });
 }
 
 function openFcAdminReturn(){
