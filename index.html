@@ -1129,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261118-001'; // Force reload version
+const APP_VERSION = '20261118-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -4800,10 +4800,12 @@ const PENDING_COLS = ['bookings','permits','fuelCardBookings','fuelCards','cars'
 function _isPendingPush(col,id){ return !!(db._pendingPush && db._pendingPush[col] && db._pendingPush[col][id]); }
 function _hasPendingPush(){ return !!db._pendingPush && PENDING_COLS.some(c=>db._pendingPush[c] && Object.keys(db._pendingPush[c]).length); }
 function _markPending(col, items){
-  if(!items || !items.length) return;
+  if(!items || !items.length) return false;
   db._pendingPush = db._pendingPush || {};
   db._pendingPush[col] = db._pendingPush[col] || {};
-  items.forEach(it=>{ if(it && it.id) db._pendingPush[col][it.id] = Date.now(); });
+  let added=false;
+  items.forEach(it=>{ if(it && it.id && !db._pendingPush[col][it.id]){ db._pendingPush[col][it.id] = Date.now(); added=true; } });
+  return added;
 }
 function _clearPending(col, items){
   if(!db._pendingPush || !db._pendingPush[col]) return;
@@ -4919,9 +4921,10 @@ function _pushToFirebase(){
     }
   });
 
-  _markPending('bookings',changedBookings); _markPending('permits',changedPermits);
-  _markPending('fuelCardBookings',changedFcBk); _markPending('fuelCards',changedFc); _markPending('cars',changedCars);
-  if(changedBookings.length||changedPermits.length||changedFcBk.length||changedFc.length||changedCars.length){ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
+  // จดว่าค้างส่ง — บันทึกลงเครื่องเฉพาะเมื่อมีรายการใหม่ที่ยังไม่เคยจด (กัน stringify ก้อนใหญ่ซ้ำๆ)
+  const _newPend = [_markPending('bookings',changedBookings), _markPending('permits',changedPermits),
+    _markPending('fuelCardBookings',changedFcBk), _markPending('fuelCards',changedFc), _markPending('cars',changedCars)].some(Boolean);
+  if(_newPend){ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
   const ops = [];
   changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
   changedPermits.forEach(p=>ops.push(fbSetDoc('permits', p.id, p)));
@@ -4962,7 +4965,6 @@ function _pushToFirebase(){
   return Promise.all(ops).then(()=>{
     _clearPending('bookings',changedBookings); _clearPending('permits',changedPermits);
     _clearPending('fuelCardBookings',changedFcBk); _clearPending('fuelCards',changedFc); _clearPending('cars',changedCars);
-    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
     _updateLastPushed(bookingsToSync, 'bookings');
     _updateLastPushed(permitsToSync, 'permits');
     _updateLastPushed(db.fuelCardBookings||[], 'fuelCardBookings');
@@ -4988,7 +4990,10 @@ function _pushToFirebase(){
     if(changedFc.length) changedIds.fuelCards = changedFc.map(x=>x.id);
     if(changedCars.length) changedIds.cars = changedCars.map(x=>x.id);
     if(changedStaff.length || staffToDelete.length) changedIds.staff = [...changedStaff.map(x=>x.id), ...staffToDelete];
-    return _notifyChanged(changedIds);
+    // บันทึกลงเครื่องและแจ้งเครื่องอื่น "ไม่ต้องให้ผู้ใช้รอ" — ข้อมูลหลักขึ้นระบบกลางแล้ว ถือว่าสำเร็จ
+    setTimeout(()=>{ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }, 0);
+    _notifyChanged(changedIds).catch(()=>{});
+    return true;
   }).then(()=>{
     _lastPushError=null;
     updateSync(false, true);
