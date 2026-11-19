@@ -1129,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261119-001'; // Force reload version
+const APP_VERSION = '20261119-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -2466,6 +2466,7 @@ function cancelReturnStep(bkId){
   if(!b) return;
   const car = db.cars.find(c=>c.id===b.carId);
   if(!confirm(`ยกเลิกการแจ้งคืน ${car?car.plate:''} ของ ${b.name}?\nรถจะกลับไปเป็นสถานะ "กำลังใช้งาน"`)) return;
+  _forceIds.add(b.id);
   b.returnStep = null;
   b.mileageIn = null;
   syncNow(()=>showSyncToast(true), ()=>showSyncToast(false));
@@ -2593,6 +2594,7 @@ function submitStep1(){
   if(_fbReady){
     fbSetDoc('bookings', b.id, {...b, updatedAt: new Date().toISOString()})
       .then(()=>{
+        try{ _updateLastPushed([b],'bookings'); }catch(e){}
         // push lastUpdate แจ้งทุกเครื่อง
         const cids = {bookings:[b.id]};
         _fbDb.collection('config').doc('lastUpdate').set({
@@ -4829,6 +4831,32 @@ async function _fbSetPermitGuarded(p){
   }catch(e){}
   return fbSetDoc('permits', p.id, p);
 }
+// ใบจอง/การจองการ์ด: ลำดับความคืบหน้า — ห้ามให้ข้อมูลเก่าในเครื่อง (ยังไม่แจ้งคืน/รอรับ) ไปทับสถานะที่ระบบกลางไปไกลกว่าแล้ว (รับคืนแล้ว/ยกเลิก)
+// ยกเว้นเจ้าหน้าที่/แอดมิน "ตั้งใจย้อนสถานะ" (ลงทะเบียนใน _forceIds) ซึ่งต้องเขียนได้
+const _forceIds = new Set();
+function _bkRank(b){
+  if(!b) return 0;
+  if(b.status==='returned' || b.status==='cancelled' || b.returnStep==='done') return 3;
+  if(b.returnStep==='pending') return 2;
+  return 1;
+}
+async function _fbSetBookingGuarded(col, b){
+  try{
+    if(!_forceIds.has(b.id) && _bkRank(b) < 3){
+      const snap = await _fbDb.collection(col).doc(b.id).get();
+      if(snap.exists){
+        const sv = snap.data();
+        if(_bkRank(sv) > _bkRank(b)){
+          Object.assign(b, sv);                      // รับของระบบกลาง ไม่เขียนทับ
+          try{ _clearPending(col,[b]); }catch(e){}
+          setTimeout(()=>{ try{ _updateLastPushed([b], col); if(typeof renderReturnList==='function') renderReturnList(); renderFcReturnList(); renderCars(); renderFuelCards(); renderHistory(); renderFcHistory(); }catch(e){} }, 0);
+          return;
+        }
+      }
+    }
+  }catch(e){}
+  return fbSetDoc(col, b.id, b);
+}
 function _markPending(col, items){
   if(!items || !items.length) return false;
   db._pendingPush = db._pendingPush || {};
@@ -4956,9 +4984,9 @@ function _pushToFirebase(){
     _markPending('fuelCardBookings',changedFcBk), _markPending('fuelCards',changedFc), _markPending('cars',changedCars)].some(Boolean);
   if(_newPend){ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
   const ops = [];
-  changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
+  changedBookings.forEach(b=>ops.push(_fbSetBookingGuarded('bookings', b)));
   changedPermits.forEach(p=>ops.push(_fbSetPermitGuarded(p)));
-  changedFcBk.forEach(b=>ops.push(fbSetDoc('fuelCardBookings', b.id, b)));
+  changedFcBk.forEach(b=>ops.push(_fbSetBookingGuarded('fuelCardBookings', b)));
   changedFc.forEach(f=>ops.push(fbSetDoc('fuelCards', f.id, f)));
   changedCars.forEach(c=>ops.push(fbSetDoc('cars', c.id, c)));
   changedStaff.forEach(s=>ops.push(fbSetDoc('staff', s.id, s)));
@@ -5005,6 +5033,7 @@ function _pushToFirebase(){
     _markPushed(changedFcBk);
     _markPushed(changedFc);
     _markPushed(changedCars);
+    changedBookings.forEach(b=>_forceIds.delete(b.id)); changedFcBk.forEach(b=>_forceIds.delete(b.id));
     if(staffNow){
       _updateLastPushed(db.staff||[], 'staff');
       staffToDelete.forEach(id=>{ if(_lastPushed['staff']) delete _lastPushed['staff'][id]; });
@@ -5561,6 +5590,7 @@ function submitFcStep1(){
   const _now3 = new Date().toISOString();
   if(_fbReady){
     fbSetDoc('fuelCardBookings', b.id, {...b, updatedAt: _now3}).then(()=>{
+      try{ _updateLastPushed([b],'fuelCardBookings'); }catch(e){}
       _fbDb.collection('config').doc('lastUpdate').set({
         updatedAt: _now3, changedIds: {fuelCardBookings:[b.id]}
       });
@@ -6403,6 +6433,7 @@ function adminRevertFcBooking(id){
   if(fc && b.valueBeforeDeduct != null){
     fc.value = b.valueBeforeDeduct;
   }
+  _forceIds.add(b.id);
   b.status = 'active';
   b.returnStep = null;
   b.returnedAt = null;
@@ -6436,6 +6467,7 @@ function cancelFcReturnStep(id){
   if(!b) return;
   const fc = (db.fuelCards||[]).find(x=>x.id===b.fcId);
   if(!confirm(`ยกเลิกการแจ้งคืนการ์ด ${fc?fc.name:'?'} ของ ${b.name}?\nการ์ดจะกลับไปเป็น "กำลังใช้งาน"`)) return;
+  _forceIds.add(b.id);
   b.returnStep = null;
   b.fueled = null;
   b.actualAmount = null;
@@ -6576,6 +6608,7 @@ function adminRevertBooking(id){
     ? `กู้คืนการจองของ "${b.name}"?\nการจองจะกลับเป็น "รอใช้งาน" อีกครั้ง`
     : `ย้อนสถานะ "${b.name}" กลับเป็น "รอใช้งาน"?\nเลขไมล์และข้อมูลการคืนจะถูกล้าง`;
   if(!confirm(msg))return;
+  _forceIds.add(b.id);
   b.status='booked';
   b.returnStep=null;
   b.returnedBy=null;
@@ -6717,6 +6750,7 @@ function adminRevertFcBooking(id){
     const deducted = b.actualAmount??b.fuelAmount??0;
     fc.value = (Number(fc.value)||0) + deducted;
   }
+  _forceIds.add(b.id);
   b.status='in-use';
   b.returnStep=null;
   b.returnedBy=null;
