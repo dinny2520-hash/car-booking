@@ -1129,7 +1129,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261118-002'; // Force reload version
+const APP_VERSION = '20261119-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1380,7 +1380,11 @@ function startRealtimeSync(){
 function _mergePermitDoc(p){
   if(!p || !p.id) return false;
   if((db.deletedPermitIds||[]).includes(p.id)) return false;
-  if(_isRecentlyPushed(p.id) || _restoredPermitIds.has(p.id) || _isPendingPush('permits',p.id)) return false;
+  if(_isPendingPush('permits',p.id)){
+    const cur0 = (db.permits||[]).find(x=>x.id===p.id);
+    if(_serverWinsPermit(cur0, p)) _clearPending('permits',[p]); else return false;
+  }
+  if(_isRecentlyPushed(p.id) || _restoredPermitIds.has(p.id)) return false;
   db.permits = db.permits || [];
   const i = db.permits.findIndex(x=>x.id===p.id);
   if(i>=0){
@@ -1594,6 +1598,7 @@ async function _smartPull(sinceTs){
           if((col==='bookings'&&deletedBookings.has(id))||(col==='permits'&&deletedPermits.has(id))||(col==='cars'&&(db.deletedCarIds||[]).includes(id))){ delete ids[id]; return; }
           const loc = _localBefore[col].find(x=>x.id===id); if(!loc) { delete ids[id]; return; }
           const i = (db[col]||[]).findIndex(x=>x.id===id);
+          if(col==='permits' && i>=0 && _serverWinsPermit(loc, db[col][i])){ delete ids[id]; return; }
           if(!db[col]) db[col]=[];
           if(i>=0) db[col][i]=loc; else db[col].push(loc);
         });
@@ -1620,7 +1625,10 @@ async function _smartPull(sinceTs){
       (db.permits||[]).forEach(p=>{ localPMap[p.id]=p; });
       fbPermits.forEach(p=>{
         // ไม่ทับใบที่เพิ่ง restore มา (กัน pull ทับ)
-        if(!_isRecentlyPushed(p.id) && !_restoredPermitIds.has(p.id) && !_isPendingPush('permits',p.id)) localPMap[p.id]=p;
+        if(!_isRecentlyPushed(p.id) && !_restoredPermitIds.has(p.id) && (!_isPendingPush('permits',p.id) || _serverWinsPermit(localPMap[p.id], p))){
+          if(_isPendingPush('permits',p.id)) _clearPending('permits',[p]);
+          localPMap[p.id]=p;
+        }
       });
       db.permits = Object.values(localPMap)
         .filter(p=>!deletedPermits.has(p.id))
@@ -4799,6 +4807,28 @@ let _lastPushed = {}; // เก็บ snapshot ล่าสุดที่ push 
 const PENDING_COLS = ['bookings','permits','fuelCardBookings','fuelCards','cars'];
 function _isPendingPush(col,id){ return !!(db._pendingPush && db._pendingPush[col] && db._pendingPush[col][id]); }
 function _hasPendingPush(){ return !!db._pendingPush && PENDING_COLS.some(c=>db._pendingPush[c] && Object.keys(db._pendingPush[c]).length); }
+// ใบ PM: ถ้าในเครื่องยังเป็น "รออนุมัติ" แต่ระบบกลางไปไกลกว่าแล้ว (อนุมัติ/ไม่อนุมัติ) → ระบบกลางชนะเสมอ
+// (กันข้อมูลค้างส่งเก่า เช่น ส่งไปแล้วแต่ไม่ได้รับตอบกลับ มาทับผลอนุมัติ)
+function _serverWinsPermit(local, server){
+  return !!(local && server && local.status==='pending' && server.status && server.status!=='pending');
+}
+async function _fbSetPermitGuarded(p){
+  try{
+    if(p.status==='pending'){
+      const snap = await _fbDb.collection('permits').doc(p.id).get();
+      if(snap.exists){
+        const sv = snap.data();
+        if(_serverWinsPermit(p, sv)){
+          Object.assign(p, sv);                 // รับของระบบกลางเข้ามา (แก้ในออบเจ็กต์เดิม)
+          try{ _clearPending('permits',[p]); }catch(e){}
+          setTimeout(()=>{ try{ _afterPermitMerge(); }catch(e){} }, 0);
+          return;                                // ไม่เขียนทับ
+        }
+      }
+    }
+  }catch(e){}
+  return fbSetDoc('permits', p.id, p);
+}
 function _markPending(col, items){
   if(!items || !items.length) return false;
   db._pendingPush = db._pendingPush || {};
@@ -4927,7 +4957,7 @@ function _pushToFirebase(){
   if(_newPend){ try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){} }
   const ops = [];
   changedBookings.forEach(b=>ops.push(fbSetDoc('bookings', b.id, b)));
-  changedPermits.forEach(p=>ops.push(fbSetDoc('permits', p.id, p)));
+  changedPermits.forEach(p=>ops.push(_fbSetPermitGuarded(p)));
   changedFcBk.forEach(b=>ops.push(fbSetDoc('fuelCardBookings', b.id, b)));
   changedFc.forEach(f=>ops.push(fbSetDoc('fuelCards', f.id, f)));
   changedCars.forEach(c=>ops.push(fbSetDoc('cars', c.id, c)));
