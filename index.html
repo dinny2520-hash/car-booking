@@ -787,6 +787,10 @@ tr:hover td{background:var(--g50)}
           <button class="btn btn-primary btn-sm" onclick="addCar()">+ เพิ่มรถ</button>
         </div>
         <div id="car-list-settings"></div>
+        <div id="car-retired-wrap" style="display:none;margin-top:14px;padding-top:12px;border-top:1px dashed var(--g200)">
+          <div style="font-size:13px;font-weight:700;color:var(--g600);margin-bottom:6px">📦 รถที่เลิกใช้งานแล้ว <span style="font-weight:400">(ไม่แสดงในหน้าจอง แต่ประวัติยังเห็นทะเบียนอยู่)</span></div>
+          <div id="car-retired-list"></div>
+        </div>
       </div>
 
       <div class="settings-section full-only" id="accident-section">
@@ -1129,7 +1133,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261120-001'; // Force reload version
+const APP_VERSION = '20261120-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -3020,8 +3024,10 @@ function renderSettings(){
       <button class="btn btn-outline btn-sm" onclick="toggleCarBranch('${c.id}')">📍 ย้ายไปสาขา${carBranch(c)==='PD'?'ระยอง':'ปลวกแดง'}</button>
       <button class="btn btn-sm" style="background:${c.inService?'#10b981':'#f59e0b'};color:#fff;border:none" onclick="toggleCarService('${c.id}')">${c.inService?'✅ คืนสู่ระบบ':'🔧 ส่งซ่อม/เช็ค'}</button>
       <button class="btn btn-sm" style="background:${c.accident?'#10b981':'#dc2626'};color:#fff;border:none" onclick="toggleCarAccident('${c.id}')">${c.accident?'✅ คืนสู่ระบบ (ซ่อมเสร็จ)':'💥 รถเกิดอุบัติเหตุ'}</button>
+      <button class="btn btn-sm" style="background:#6b7280;color:#fff;border:none" onclick="retireCar('${c.id}')">📦 เลิกใช้งาน</button>
       <button class="btn btn-danger btn-sm" onclick="removeCar('${c.id}')">ลบ</button>
     </div>`).join('')||'<p style="color:var(--g400);font-size:13px">ยังไม่มีรถ</p>';
+  renderRetiredCars();
   renderAccidents();
   renderAdmins();
   renderPerfReport();
@@ -3124,6 +3130,42 @@ function addCar(){
   try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
   syncNow();
   renderSettings();renderCars();
+}
+// ---- เลิกใช้งานรถ (ซ่อนจากหน้าจอง/ตั้งค่า แต่เก็บข้อมูลไว้ ประวัติยังเห็นทะเบียน และเปิดกลับได้) ----
+function renderRetiredCars(){
+  const wrap=document.getElementById('car-retired-wrap'), el=document.getElementById('car-retired-list');
+  if(!wrap||!el) return;
+  const list=(db.cars||[]).filter(c=>!c.active);
+  wrap.style.display=list.length?'block':'none';
+  el.innerHTML=list.map(c=>`
+    <div class="staff-item" style="opacity:.85">
+      <span class="staff-name">🚗 ${c.plate} <span style="font-size:11px;color:#6b7280">(เลิกใช้งาน)</span></span>
+      <button class="btn btn-sm" style="background:#10b981;color:#fff;border:none" onclick="reactivateCar('${c.id}')">↩️ เปิดใช้งานอีกครั้ง</button>
+    </div>`).join('');
+}
+function retireCar(id){
+  const c=(db.cars||[]).find(x=>x.id===id); if(!c) return;
+  const open=(db.bookings||[]).filter(b=>b.carId===id && b.status!=='returned' && b.status!=='cancelled');
+  if(open.length){
+    alert('❌ เลิกใช้งานไม่ได้ ยังมีการจองที่ไม่จบของรถ '+c.plate+' อีก '+open.length+' รายการ\n(กำลังใช้งาน/จองล่วงหน้า/รอรับกุญแจ)\nกรุณาคืนหรือยกเลิกให้เรียบร้อยก่อน');
+    return;
+  }
+  if(!confirm('เลิกใช้งานรถ '+c.plate+' ?\n• รถจะหายจากหน้าจองและหน้าตั้งค่า\n• ประวัติการจองเก่ายังเห็นทะเบียนตามเดิม\n• เปิดกลับมาใช้ได้ภายหลังจากหัวข้อ "รถที่เลิกใช้งานแล้ว"')) return;
+  c.active=false;
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
+  renderSettings(); renderCars();
+}
+function reactivateCar(id){
+  const c=(db.cars||[]).find(x=>x.id===id); if(!c) return;
+  if((db.cars||[]).some(x=>x.id!==id && x.active && x.plate===c.plate)){ alert('มีรถทะเบียน '+c.plate+' ที่ใช้งานอยู่แล้ว เปิดซ้ำไม่ได้'); return; }
+  if(!confirm('เปิดใช้งานรถ '+c.plate+' อีกครั้ง?')) return;
+  c.active=true;
+  const _ts=new Date().toISOString(); db._lastSync=_ts;
+  try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+  syncNow();
+  renderSettings(); renderCars();
 }
 function removeCar(id){
   if(!confirm('ยืนยันการลบรถคันนี้?'))return;
