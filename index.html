@@ -935,7 +935,11 @@ tr:hover td{background:var(--g50)}
           <input type="month" id="permit-archive-month" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
           <button class="btn btn-primary btn-sm" onclick="loadPermitArchive()">🔍 ดูรายการ</button>
           <button class="btn btn-outline btn-sm" onclick="exportPermitArchiveReport()">📊 ดึงรายงานเดือนนี้ (Excel)</button>
-          <button class="btn btn-danger btn-sm" onclick="permanentDeleteAllArchivedInMonth()">🗑️ ลบถาวรทั้งหมดในเดือนนี้</button>
+ <button class="btn btn-danger btn-sm" onclick="permanentDeleteAllArchivedInMonth()">🗑️ ลบถาวรทั้งหมดในเดือนนี้</button>
+        </div>
+        <div style="background:var(--g100);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;color:var(--g800);line-height:1.6">
+          🤖 <b>ลบอัตโนมัติ (วันละครั้ง)</b>: ใบที่อนุมัติแล้ว และ <b>รับบิลแล้ว</b> หรือ <b>ค่าน้ำมัน 0 บาท</b> เมื่อ <b>เลย 15 วัน</b> นับจาก<b>วันที่ใช้</b> (ไม่นับวันที่คีย์ใบ) — ย้ายมาไว้ที่นี่ ดู/กู้คืนได้<br>
+          <button class="btn btn-outline btn-sm" id="autodel-now-btn" style="margin-top:6px" onclick="autoDeleteOldPermitsNow()">🧹 ลบใบที่เข้าเกณฑ์ตอนนี้</button>
         </div>
         <div id="permit-archive-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
@@ -1133,7 +1137,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261120-002'; // Force reload version
+const APP_VERSION = '20261124-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1700,6 +1704,7 @@ async function _smartPull(sinceTs){
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
     _perfMark('แสดงข้อมูลล่าสุดบนหน้าจอเสร็จ ('+(doFull?'ดึงทั้งหมด':'ดึงเฉพาะที่เปลี่ยน')+')');
     _pullRetries = 0;
+    if(doFull && !window._pmAutoDelScheduled){ window._pmAutoDelScheduled = true; setTimeout(()=>{ try{ maybeAutoDeletePermits(); }catch(e){ console.warn('permit auto-delete failed', e); } }, 2500); }
   } catch(e){
     console.error('Smart pull error:', e);
     // พลาด: คืน ids เข้าคิว (และคืนเวลา full pull ถ้ารอบนั้นเป็น full) แล้วลองใหม่ ไม่ปล่อยให้ข้อมูลตกหล่น
@@ -5176,6 +5181,106 @@ function maybeRunCleanup(){
   autoCleanupOldBookings();
   autoCleanupOldFcBookings();
   autoArchiveOldPermits();
+}
+
+// ---- ลบใบ PM อัตโนมัติ (ย้ายไป "ใบ permit ที่ถูกลบ") ----
+// เกณฑ์: ใบที่อนุมัติแล้ว และ (รับบิลแล้ว หรือ ค่าน้ำมัน 0 บาท) และ "เลย 15 วัน นับจากวันที่ใช้ (p.date)" — ไม่นับวันที่คีย์ใบ
+// ทำเหมือนกดลบเอง: เก็บสำเนาไว้ที่ permitArchive (ดู/กู้คืนได้) + ประกาศลบให้ทุกเครื่องผ่าน config/deletedIds
+const PERMIT_AUTODEL_DAYS = 15;
+const PERMIT_AUTODEL_KEY = 'cbsys_last_permit_autodel';
+function _permitDaysSinceUse(p){
+  if(!p || !p.date) return NaN;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(p.date)); if(!m) return NaN;
+  const used = new Date(+m[1], +m[2]-1, +m[3]);
+  const t = new Date(), today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  return Math.round((today - used) / 86400000);
+}
+function _permitAutoDeleteReason(p){
+  if(!p || !p.id || p.status!=='approved') return null;
+  const d = _permitDaysSinceUse(p);
+  if(isNaN(d) || d <= PERMIT_AUTODEL_DAYS) return null;              // "เลย 15 วัน" = วันที่ 16 เป็นต้นไป
+  if(p.billReceived === true) return 'รับบิลแล้ว';
+  if(p.fuel !== null && p.fuel !== undefined && String(p.fuel).trim() !== '' && Number(p.fuel) === 0) return 'ค่าน้ำมัน 0 บาท';
+  return null;
+}
+let _autoDelBusy = false;
+async function autoDeleteOldPermits(opts){
+  opts = opts || {};
+  if(_autoDelBusy || !_fbReady) return 0;
+  let list = (db.permits||[]).filter(p=>_permitAutoDeleteReason(p));
+  if(!list.length) return 0;
+  if(opts.limit) list = list.slice(0, opts.limit);
+  _autoDelBusy = true;
+  const archived = [];
+  const nowIso = new Date().toISOString();
+  try{
+    for(let i=0;i<list.length;i+=8){
+      await Promise.all(list.slice(i,i+8).map(async p=>{
+        try{
+          // เช็คซ้ำกับ "ตัวจริงบนระบบกลาง" — กันเครื่องที่ข้อมูลเก่าลบผิด (เช่น รับบิลถูกยกเลิกไปแล้ว)
+          const snap = await _withTimeout(_fbDb.collection('permits').doc(p.id).get(), APPROVE_TIMEOUT_MS);
+          if(!snap.exists) return;
+          const sv = snap.data();
+          const reason = _permitAutoDeleteReason(sv); if(!reason) return;
+          const ref = _fbDb.collection('permitArchive').doc(p.id);
+          await _withTimeout(ref.set({...JSON.parse(JSON.stringify(sv)), archivedAt: nowIso, autoDeleted: true, autoDeleteReason: reason}), APPROVE_TIMEOUT_MS);
+          const chk = await _withTimeout(ref.get(), APPROVE_TIMEOUT_MS);
+          if(!chk.exists) throw new Error('archive-verify-failed');
+          archived.push(p.id);
+        }catch(e){ console.warn('auto-delete permit: archive failed', p.id, e); }
+      }));
+    }
+    if(!archived.length) return 0;
+    // ประกาศลบให้ทุกเครื่อง (รวมรายการกับของเดิมบนระบบกลาง ไม่เขียนทับ) — ถ้าไม่สำเร็จ จะไม่ลบใบจริง
+    const delRef = _fbDb.collection('config').doc('deletedIds');
+    try{
+      if(typeof _fbDb.runTransaction === 'function'){
+        await _fbDb.runTransaction(async tx=>{
+          const cur = await tx.get(delRef); const d = cur.exists ? cur.data() : {};
+          tx.set(delRef, {...d, deletedPermitIds:[...new Set([...(d.deletedPermitIds||[]), ...archived])], updatedAt: nowIso});
+        });
+      } else {
+        const cur = await delRef.get(); const d = cur.exists ? cur.data() : {};
+        await delRef.set({...d, deletedPermitIds:[...new Set([...(d.deletedPermitIds||[]), ...archived])], updatedAt: nowIso});
+      }
+    }catch(e){ console.warn('auto-delete permit: mark deleted failed', e); return 0; }
+    const removed = [];
+    for(const id of archived){
+      try{ await _withTimeout(_fbDb.collection('permits').doc(id).delete(), APPROVE_TIMEOUT_MS); removed.push(id); }
+      catch(e){ console.warn('auto-delete permit: delete failed', id, e); }
+    }
+    // ฝั่งเครื่องนี้
+    archived.forEach(id=>{
+      markDeleted('deletedPermitIds', id);
+      db.permits = (db.permits||[]).filter(x=>x.id!==id);
+      try{ deleteSigFromSheet(id); }catch(e){}
+      if(_lastPushed['permits']) delete _lastPushed['permits'][id];
+      if(db._pendingPush && db._pendingPush.permits) delete db._pendingPush.permits[id];
+    });
+    try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+    console.log('🧹 ลบใบ PM อัตโนมัติ '+archived.length+' ใบ (เลย '+PERMIT_AUTODEL_DAYS+' วันนับจากวันที่ใช้)');
+    try{ renderPermitList(); renderUcPermitList(); }catch(e){}
+    return archived.length;
+  } finally { _autoDelBusy = false; }
+}
+function maybeAutoDeletePermits(){
+  try{
+    const today = new Date().toISOString().slice(0,10);
+    if(localStorage.getItem(PERMIT_AUTODEL_KEY) === today) return;
+    localStorage.setItem(PERMIT_AUTODEL_KEY, today);
+  }catch(e){}
+  return autoDeleteOldPermits({limit:100});
+}
+async function autoDeleteOldPermitsNow(){
+  if(adminRole!=='master' && adminRole!=='full'){ alert('เฉพาะแอดมินหลักขึ้นไป'); return; }
+  const list = (db.permits||[]).filter(p=>_permitAutoDeleteReason(p));
+  if(!list.length){ alert('ไม่มีใบ PM ที่เข้าเกณฑ์ลบ\n(อนุมัติแล้ว + รับบิลแล้ว หรือค่าน้ำมัน 0 บาท + เลย '+PERMIT_AUTODEL_DAYS+' วันนับจากวันที่ใช้)'); return; }
+  const billN = list.filter(p=>_permitAutoDeleteReason(p)==='รับบิลแล้ว').length;
+  if(!confirm('จะลบใบ PM '+list.length+' ใบ (ย้ายไป "ใบ permit ที่ถูกลบ" ดู/กู้คืนได้)\n• รับบิลแล้ว: '+billN+' ใบ\n• ค่าน้ำมัน 0 บาท: '+(list.length-billN)+' ใบ\nเลย '+PERMIT_AUTODEL_DAYS+' วันนับจากวันที่ใช้ — ดำเนินการต่อ?')) return;
+  const btn = document.getElementById('autodel-now-btn'); if(btn){ btn.disabled=true; btn.textContent='⏳ กำลังลบ...'; }
+  const n = await autoDeleteOldPermits({});
+  if(btn){ btn.disabled=false; btn.textContent='🧹 ลบใบที่เข้าเกณฑ์ตอนนี้'; }
+  alert(n===list.length ? '✅ ลบสำเร็จ '+n+' ใบ' : '⚠️ ลบสำเร็จ '+n+' จาก '+list.length+' ใบ (ที่เหลือจะลองใหม่รอบถัดไป)');
 }
 
 function autoArchiveOldPermits(){
