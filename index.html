@@ -1147,7 +1147,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261125-002'; // Force reload version
+const APP_VERSION = '20261125-004'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1241,8 +1241,8 @@ function _rdWhere(){
       if(/_rd|firebase|gstatic|googleapis|node_modules|^\s*at (async )?(Promise|Array|new )/.test(ln)) continue;
       let m = /at (?:async )?([^\s(]+) \(.*?:(\d+):\d+\)/.exec(ln);               // Chrome/Node: at fn (url:line:col)
       if(m) return m[1].replace(/^.*\./,'').replace(/^_+/,'')+':'+m[2];
+      m = /^([^@\s]+)@.*?:(\d+):\d+/.exec(ln.trim()); if(m) return m[1].replace(/^_+/,'')+':'+m[2];  // Safari/Firefox: fn@url:line:col
       m = /:(\d+):\d+\)?\s*$/.exec(ln); if(m) return 'anon:'+m[1];                 // ฟังก์ชันไม่มีชื่อ → ใช้เลขบรรทัด
-      m = /^([^@\s]+)@.*?:(\d+):\d+/.exec(ln.trim()); if(m) return m[1].replace(/^_+/,'')+':'+m[2];  // Safari/Firefox
     }
   }catch(e){}
   return 'unknown';
@@ -5247,7 +5247,7 @@ function showSyncToast(success){
 }
 
 // ---- AUTO-CLEANUP: ลบ bookings เก่าที่จบงานแล้ว (cancelled/returned) เกิน 90 วัน ----
-const CLEANUP_DAYS = 30; // ลบอัตโนมัติเมื่อเกิน 30 วัน
+const CLEANUP_DAYS = 15; // ลบอัตโนมัติเมื่อเกิน 15 วัน (ลด reads)
 const CLEANUP_CHECK_KEY = 'cbsys_last_cleanup';
 
 function autoCleanupOldBookings(){
