@@ -929,6 +929,16 @@ tr:hover td{background:var(--g50)}
       </div>
 
       <div class="settings-section full-only">
+        <h3>📈 สถิติการอ่าน Firebase</h3>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ดูว่าการอ่านข้อมูล (ที่คิดค่าบริการ) มาจากส่วนไหนของแอป รวมทุกเครื่องที่ใช้เวอร์ชันนี้</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <input type="date" id="readstat-date" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit">
+          <button class="btn btn-primary btn-sm" onclick="loadReadStats()">🔍 ดูสถิติ</button>
+        </div>
+        <div id="readstat-box"></div>
+      </div>
+
+      <div class="settings-section full-only">
         <h3>🗄️ ใบ permit ที่ถูกลบ</h3>
         <div style="font-size:13px;color:var(--g600);margin-bottom:10px">ใบที่ถูกลบจากหน้าใช้งานจะถูกเก็บสำรองไว้ที่นี่ ดึงรายงานรายเดือนหรือลบถาวรได้</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
@@ -1137,7 +1147,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261124-001'; // Force reload version
+const APP_VERSION = '20261125-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1219,6 +1229,114 @@ const FIREBASE_CONFIG = {
   appId: "1:808801521966:web:5455250028d5f683776abf"
 };
 
+// ---- ตัวนับการอ่าน Firestore: แยกตาม collection + ฟังก์ชันที่เรียก (ไว้ดูว่าการอ่านมาจากไหน) ----
+// นับในเครื่อง แล้วส่งสรุปขึ้น readStats/{วันที่}_{รหัสเครื่อง} ทุก ~10 นาที (เป็นการเขียน ไม่ใช่การอ่าน) — แอดมินดูรวมได้ในหน้าตั้งค่า
+const _RD_DEV = (function(){ try{ let d=localStorage.getItem('cbsys_dev_id'); if(!d){ d='d'+Math.random().toString(36).slice(2,8); localStorage.setItem('cbsys_dev_id',d); } return d; }catch(e){ return 'dx'; } })();
+let _rdStat = {date:'', n:{}, total:0}, _rdDirty = false, _rdTimer = null;
+function _rdToday(){ const t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
+function _rdWhere(){
+  try{
+    const lines = String(new Error().stack||'').split('\n').slice(1);
+    for(const ln of lines){
+      if(/_rd|firebase|gstatic|googleapis|node_modules|^\s*at (async )?(Promise|Array|new )/.test(ln)) continue;
+      let m = /at (?:async )?([^\s(]+) \(.*?:(\d+):\d+\)/.exec(ln);               // Chrome/Node: at fn (url:line:col)
+      if(m) return m[1].replace(/^.*\./,'').replace(/^_+/,'')+':'+m[2];
+      m = /:(\d+):\d+\)?\s*$/.exec(ln); if(m) return 'anon:'+m[1];                 // ฟังก์ชันไม่มีชื่อ → ใช้เลขบรรทัด
+      m = /^([^@\s]+)@.*?:(\d+):\d+/.exec(ln.trim()); if(m) return m[1].replace(/^_+/,'')+':'+m[2];  // Safari/Firefox
+    }
+  }catch(e){}
+  return 'unknown';
+}
+function _rdLabel(ref, kind){
+  let col='?';
+  try{ const cs = x=>(x && x.canonicalString) ? x.canonicalString() : ''; const p = ref.path || cs(ref._query && ref._query.path) || cs(ref._delegate && ref._delegate._query && ref._delegate._query.path) || ''; col = String(p).split('/')[0] || '?'; }catch(e){}
+  return (col+'|'+kind+'|'+_rdWhere()).replace(/[.\[\]*`~\/]/g,'_');
+}
+function _rdAdd(label, n){
+  const d = _rdToday();
+  if(_rdStat.date !== d) _rdStat = {date:d, n:{}, total:0};
+  _rdStat.n[label] = (_rdStat.n[label]||0) + n; _rdStat.total += n;
+  _rdDirty = true;
+  if(!_rdTimer) _rdTimer = setTimeout(_rdFlush, 10*60*1000);
+}
+const RD_KEEP_DAYS = 10;
+async function _rdPrune(){
+  // ลบสถิติเก่ากว่า 10 วัน — ทำเฉพาะเครื่องแอดมินหลักขึ้นไป วันละครั้งต่อเครื่อง
+  try{
+    if(!_fbDb || !_fbReady) return;
+    if(typeof adminRole==='undefined' || (adminRole!=='master' && adminRole!=='full')) return;
+    const today = _rdToday();
+    if(localStorage.getItem('cbsys_rd_prune')===today) return;
+    localStorage.setItem('cbsys_rd_prune', today);
+    const c = new Date(); c.setDate(c.getDate()-RD_KEEP_DAYS);
+    const cutoff = c.getFullYear()+'-'+String(c.getMonth()+1).padStart(2,'0')+'-'+String(c.getDate()).padStart(2,'0');
+    const snap = await _withTimeout(_fbDb.collection('readStats').where('date','<',cutoff).limit(300).get(), 15000);
+    for(const d of snap.docs){ try{ await d.ref.delete(); }catch(e){} }
+  }catch(e){}
+}
+async function _rdFlush(){
+  _rdTimer = null;
+  if(!_rdDirty || !_fbDb || !_fbReady) return;
+  _rdDirty = false;
+  try{
+    await _fbDb.collection('readStats').doc(_rdStat.date+'_'+_RD_DEV).set({date:_rdStat.date, dev:_RD_DEV, total:_rdStat.total, n:_rdStat.n, ver:APP_VERSION, role:(typeof adminRole!=='undefined'?adminRole:'')||'', updatedAt:new Date().toISOString()});
+  }catch(e){ _rdDirty = true; return; }
+  _rdPrune();
+}
+function _rdInstall(){
+  try{
+    const F = firebase.firestore; if(!F || F._rdPatched) return; F._rdPatched = true;
+    [F.Query, F.DocumentReference].forEach(proto=>{
+      proto = proto && proto.prototype; if(!proto) return;
+      const og = proto.get;
+      if(og) proto.get = function _rdWrapGet(){
+        const lab = _rdLabel(this,'get'); const p = og.apply(this, arguments);
+        try{ p.then(s=>{ _rdAdd(lab, s && s.docs ? Math.max(1, s.size) : 1); }, ()=>{}); }catch(e){}
+        return p;
+      };
+      const os = proto.onSnapshot;
+      if(os) proto.onSnapshot = function _rdWrapSnap(){
+        const lab = _rdLabel(this,'snap'); const a = Array.prototype.slice.call(arguments); let first = true;
+        const idx = a.findIndex(x=> typeof x==='function' || (x && typeof x==='object' && typeof x.next==='function'));
+        if(idx >= 0){
+          const cnt = s=>{ try{
+            if(s.metadata && s.metadata.hasPendingWrites) return;                 // เสียงสะท้อนจากการเขียนของเครื่องเอง ไม่คิดเงิน
+            const n = s.docs ? (first ? s.size : s.docChanges().length) : 1; first = false; _rdAdd(lab, Math.max(1,n));
+          }catch(e){} };
+          const cb = a[idx];
+          if(typeof cb === 'function') a[idx] = function(s){ cnt(s); return cb.apply(this, arguments); };
+          else a[idx] = Object.assign({}, cb, {next:function(s){ cnt(s); return cb.next.apply(cb, arguments); }});
+        }
+        return os.apply(this, a);
+      };
+    });
+    document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') _rdFlush(); });
+  }catch(e){ console.warn('read counter install failed', e); }
+}
+async function loadReadStats(){
+  const box = document.getElementById('readstat-box'); if(!box) return;
+  const d = (document.getElementById('readstat-date')||{}).value || _rdToday();
+  box.innerHTML = '⏳ กำลังโหลด...';
+  const esc = x=>String(x).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let docs = [];
+  try{
+    await _rdFlush();
+    const snap = await _withTimeout(_fbDb.collection('readStats').where('date','==',d).get(), 15000);
+    docs = snap.docs.map(x=>x.data());
+  }catch(e){ box.innerHTML = '⚠️ โหลดสถิติรวมไม่สำเร็จ (อาจติดสิทธิ์ของ Firebase หรือเน็ต) — แสดงเฉพาะเครื่องนี้'; docs = _rdStat.date===d ? [{dev:_RD_DEV,total:_rdStat.total,n:_rdStat.n,ver:APP_VERSION}] : []; }
+  if(!docs.length){ box.innerHTML += '<div style="padding:8px;color:var(--g500)">ยังไม่มีข้อมูลของวันนี้</div>'; return; }
+  const agg = {}; let total = 0;
+  docs.forEach(x=>{ total += x.total||0; Object.keys(x.n||{}).forEach(k=>{ agg[k] = (agg[k]||0) + x.n[k]; }); });
+  const rows = Object.keys(agg).sort((a,b)=>agg[b]-agg[a]).slice(0,20);
+  const devs = docs.slice().sort((a,b)=>(b.total||0)-(a.total||0)).slice(0,8);
+  box.innerHTML =
+    '<div style="margin-bottom:8px"><b>วันที่ '+esc(d)+'</b> — นับได้รวม <b>'+total.toLocaleString()+'</b> ครั้ง จาก <b>'+docs.length+'</b> เครื่อง</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="background:var(--g100)"><th style="text-align:left;padding:5px">ที่มา (collection | ชนิด | ฟังก์ชัน:บรรทัด)</th><th style="text-align:right;padding:5px">ครั้ง</th><th style="text-align:right;padding:5px">%</th></tr>'+
+    rows.map(k=>'<tr style="border-top:1px solid var(--g200)"><td style="padding:5px;word-break:break-all">'+esc(k)+'</td><td style="text-align:right;padding:5px">'+agg[k].toLocaleString()+'</td><td style="text-align:right;padding:5px">'+Math.round(agg[k]*100/Math.max(1,total))+'%</td></tr>').join('')+'</table>'+
+    '<div style="margin-top:8px;font-size:12px;color:var(--g600)">เครื่องที่อ่านมากสุด: '+devs.map(x=>esc(x.dev||'?')+' '+(x.total||0).toLocaleString()+(x.ver?' ('+esc(x.ver)+')':'')).join(' • ')+'</div>'+
+    '<div style="margin-top:4px;font-size:11.5px;color:var(--g500)">นับเฉพาะการอ่านที่แอปนี้ทำ (get / ฟังการเปลี่ยนแปลง) อาจต่างจากตัวเลขของ Google เล็กน้อย เครื่องที่ยังไม่อัปเดตแอปหรือยังไม่ได้ส่งสถิติจะไม่ถูกนับ ส่งสถิติทุก ~10 นาที</div>';
+}
+
 let _fbApp = null, _fbDb = null, _fbReady = false;
 let _fbUnsub = null; // realtime listener
 let _fbListeners = []; // track all listeners
@@ -1234,6 +1352,7 @@ async function initFirebase(){
     if(!window.firebase) { console.warn('Firebase SDK not loaded yet'); return false; }
     try { firebase.initializeApp(FIREBASE_CONFIG); } catch(e) {} // ถ้า init ซ้ำข้ามไป
     _fbDb = firebase.firestore();
+    _rdInstall();
     _fbReady = true;
     _perfMark('เชื่อมต่อ Firebase พร้อม');
     db._firebaseVersion = true;
