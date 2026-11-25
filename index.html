@@ -914,7 +914,7 @@ tr:hover td{background:var(--g50)}
 
       <div class="settings-section full-only">
         <h3>🗄️ ประวัติการจองที่ถูกลบ (Archive)</h3>
-        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการจองรถและบัตรน้ำมันที่คืน/ยกเลิกเกิน 30 วัน จะถูกย้ายมาเก็บที่นี่อัตโนมัติ</div>
+        <div style="font-size:13px;color:var(--g600);margin-bottom:10px">รายการจองรถและบัตรน้ำมันที่คืน/ยกเลิกเกิน 15 วัน จะถูกย้ายมาเก็บที่นี่อัตโนมัติ</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <select id="booking-archive-type" style="padding:8px 12px;border:1.5px solid var(--g200);border-radius:7px;font-family:inherit;font-size:14px">
             <option value="booking">🚗 จองรถ</option>
@@ -924,6 +924,10 @@ tr:hover td{background:var(--g50)}
           <button class="btn btn-primary btn-sm" onclick="loadBookingArchive()">🔍 ดูรายการ</button>
           <button class="btn btn-outline btn-sm" onclick="exportBookingArchiveReport()">📊 ดึงรายงาน (Excel)</button>
           <button class="btn btn-danger btn-sm" onclick="permanentDeleteAllBookingArchiveInMonth()">🗑️ ลบถาวรทั้งหมดในเดือนนี้</button>
+        </div>
+        <div style="background:var(--g100);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;color:var(--g800);line-height:1.6">
+          🤖 ระบบย้ายให้เองวันละครั้ง (หลังเปิดแอปและดึงข้อมูลเสร็จ) — หรือกดย้ายทันที<br>
+          <button class="btn btn-outline btn-sm" id="bkclean-now-btn" style="margin-top:6px" onclick="cleanupOldBookingsNow()">🧹 ย้ายใบที่เข้าเกณฑ์ตอนนี้</button>
         </div>
         <div id="booking-archive-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
@@ -1147,7 +1151,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261125-004'; // Force reload version
+const APP_VERSION = '20261125-005'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1823,7 +1827,7 @@ async function _smartPull(sinceTs){
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
     _perfMark('แสดงข้อมูลล่าสุดบนหน้าจอเสร็จ ('+(doFull?'ดึงทั้งหมด':'ดึงเฉพาะที่เปลี่ยน')+')');
     _pullRetries = 0;
-    if(doFull && !window._pmAutoDelScheduled){ window._pmAutoDelScheduled = true; setTimeout(()=>{ try{ maybeAutoDeletePermits(); }catch(e){ console.warn('permit auto-delete failed', e); } }, 2500); }
+    if(doFull && !window._pmAutoDelScheduled){ window._pmAutoDelScheduled = true; setTimeout(()=>{ try{ maybeAutoDeletePermits(); }catch(e){ console.warn('permit auto-delete failed', e); } try{ maybeCleanupOldBookings(); }catch(e){ console.warn('booking cleanup failed', e); } }, 2500); }
   } catch(e){
     console.error('Smart pull error:', e);
     // พลาด: คืน ids เข้าคิว (และคืนเวลา full pull ถ้ารอบนั้นเป็น full) แล้วลองใหม่ ไม่ปล่อยให้ข้อมูลตกหล่น
@@ -5297,9 +5301,102 @@ function maybeRunCleanup(){
     if(last === today) return;
     localStorage.setItem(CLEANUP_CHECK_KEY, today);
   }catch(e){}
-  autoCleanupOldBookings();
-  autoCleanupOldFcBookings();
+  // (การย้ายใบจองเก่า → Archive ย้ายไปทำใน maybeCleanupOldBookings หลังดึงข้อมูลรอบแรกเสร็จ เพื่อให้ Firebase พร้อมก่อน)
   autoArchiveOldPermits();
+}
+
+// ---- ย้ายใบจอง (รถ/บัตรน้ำมัน) ที่ "รับคืนแล้ว/ยกเลิกแล้ว" และเลย CLEANUP_DAYS วันนับจากวันเริ่มใช้ ไป Archive ----
+// ทำเมื่อ Firebase พร้อมเท่านั้น: เช็คตัวจริงบนระบบกลาง → บันทึกสำเนา Archive + ตรวจว่าเขียนสำเร็จ → ประกาศลบ → ลบใบจริง
+const BKCLEAN_KEY = 'cbsys_last_bk_cleanup';
+let _bkCleanBusy = false;
+function _bkCleanable(b){
+  if(!b || !b.id || !(b.status==='cancelled' || b.status==='returned') || !b.startDt) return false;
+  const t = new Date(b.startDt).getTime(); if(isNaN(t)) return false;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - CLEANUP_DAYS);
+  return t < cutoff.getTime();
+}
+async function cleanupOldBookings(opts){
+  opts = opts || {};
+  if(_bkCleanBusy || !_fbReady) return {done:0, failed:0, skipped:true};
+  const kinds = [
+    {col:'bookings',         arch:'bookingArchive',   list:()=>db.bookings||[],         delKey:'deletedBookingIds'},
+    {col:'fuelCardBookings', arch:'fcBookingArchive', list:()=>db.fuelCardBookings||[], delKey:null}
+  ];
+  _bkCleanBusy = true;
+  let done = 0, failed = 0;
+  try{
+    for(const k of kinds){
+      let cands = k.list().filter(_bkCleanable);
+      if(opts.limit) cands = cands.slice(0, opts.limit);
+      const ok = [];
+      for(let i=0;i<cands.length;i+=8){
+        await Promise.all(cands.slice(i,i+8).map(async b=>{
+          try{
+            const snap = await _withTimeout(_fbDb.collection(k.col).doc(b.id).get(), APPROVE_TIMEOUT_MS);
+            if(snap.exists){
+              const sv = snap.data();
+              if(!_bkCleanable(sv)){ return; }                       // ตัวจริงบนระบบกลางไม่ตรงเกณฑ์ (เช่น ถูกแก้กลับ) → ไม่แตะ
+              const ref = _fbDb.collection(k.arch).doc(b.id);
+              await _withTimeout(ref.set({...JSON.parse(JSON.stringify(sv)), archivedAt:new Date().toISOString()}), APPROVE_TIMEOUT_MS);
+              const chk = await _withTimeout(ref.get(), APPROVE_TIMEOUT_MS);
+              if(!chk.exists) throw new Error('archive-verify-failed');
+            }
+            ok.push({id:b.id, onServer:snap.exists});
+          }catch(e){ failed++; console.warn('cleanup booking: archive failed', k.col, b.id, e); }
+        }));
+      }
+      if(!ok.length) continue;
+      if(k.delKey){                                                    // ประกาศลบให้ทุกเครื่อง (รวมกับของเดิมบนระบบกลาง ไม่เขียนทับ)
+        const delRef = _fbDb.collection('config').doc('deletedIds'); const ids = ok.map(x=>x.id);
+        try{
+          if(typeof _fbDb.runTransaction === 'function'){
+            await _fbDb.runTransaction(async tx=>{ const cur = await tx.get(delRef); const d = cur.exists?cur.data():{};
+              tx.set(delRef, {...d, [k.delKey]:[...new Set([...(d[k.delKey]||[]), ...ids])], updatedAt:new Date().toISOString()}); });
+          } else {
+            const cur = await delRef.get(); const d = cur.exists?cur.data():{};
+            await delRef.set({...d, [k.delKey]:[...new Set([...(d[k.delKey]||[]), ...ids])], updatedAt:new Date().toISOString()});
+          }
+        }catch(e){ failed += ok.length; console.warn('cleanup booking: mark deleted failed', e); continue; }
+      }
+      const removedIds = [];
+      for(const x of ok){
+        try{ if(x.onServer) await _withTimeout(_fbDb.collection(k.col).doc(x.id).delete(), APPROVE_TIMEOUT_MS); removedIds.push(x.id); }
+        catch(e){ failed++; console.warn('cleanup booking: delete failed', k.col, x.id, e); }
+      }
+      const rm = new Set(removedIds);
+      if(k.col==='bookings') db.bookings = (db.bookings||[]).filter(b=>!rm.has(b.id));
+      else db.fuelCardBookings = (db.fuelCardBookings||[]).filter(b=>!rm.has(b.id));
+      removedIds.forEach(id=>{
+        if(k.delKey) markDeleted(k.delKey, id);
+        if(_lastPushed[k.col]) delete _lastPushed[k.col][id];
+        if(db._pendingPush && db._pendingPush[k.col]) delete db._pendingPush[k.col][id];
+      });
+      done += removedIds.length;
+    }
+    if(done){
+      try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}
+      console.log('🧹 ย้ายใบจองเก่าไป Archive '+done+' ใบ (เลย '+CLEANUP_DAYS+' วัน)');
+      try{ renderHistory(); }catch(e){} try{ renderCars(); }catch(e){} try{ renderAdminBookingList(); }catch(e){}
+    }
+    return {done, failed};
+  } finally { _bkCleanBusy = false; }
+}
+async function maybeCleanupOldBookings(){
+  const today = new Date().toISOString().slice(0,10);
+  try{ if(localStorage.getItem(BKCLEAN_KEY) === today) return; }catch(e){}
+  const r = await cleanupOldBookings({limit:150});
+  // จดว่า "วันนี้ทำแล้ว" เฉพาะเมื่อทำครบโดยไม่มีข้อผิดพลาด (ไม่งั้นลองใหม่ตอนเปิดแอปรอบหน้า)
+  if(r && !r.skipped && !r.failed){ try{ localStorage.setItem(BKCLEAN_KEY, today); }catch(e){} }
+}
+async function cleanupOldBookingsNow(){
+  if(adminRole!=='master' && adminRole!=='full'){ alert('เฉพาะแอดมินหลักขึ้นไป'); return; }
+  const a = (db.bookings||[]).filter(_bkCleanable).length, b = (db.fuelCardBookings||[]).filter(_bkCleanable).length;
+  if(!a && !b){ alert('ไม่มีใบจองที่เข้าเกณฑ์\n(รับคืนแล้ว/ยกเลิกแล้ว และเลย '+CLEANUP_DAYS+' วันนับจากวันเริ่มใช้)'); return; }
+  if(!confirm('จะย้ายใบจองเข้า Archive\n• จองรถ: '+a+' ใบ\n• บัตรน้ำมัน: '+b+' ใบ\n(เลย '+CLEANUP_DAYS+' วัน, ดู/กู้คืนได้จาก Archive) — ดำเนินการต่อ?')) return;
+  const btn = document.getElementById('bkclean-now-btn'); if(btn){ btn.disabled=true; btn.textContent='⏳ กำลังย้าย...'; }
+  const r = await cleanupOldBookings({});
+  if(btn){ btn.disabled=false; btn.textContent='🧹 ย้ายใบที่เข้าเกณฑ์ตอนนี้'; }
+  alert(r.skipped ? '⚠️ ยังเชื่อมระบบกลางไม่ได้ ลองใหม่อีกครั้ง' : (r.failed ? '⚠️ ย้ายสำเร็จ '+r.done+' ใบ, ไม่สำเร็จ '+r.failed+' ใบ (ลองกดใหม่ได้)' : '✅ ย้ายสำเร็จ '+r.done+' ใบ'));
 }
 
 // ---- ลบใบ PM อัตโนมัติ (ย้ายไป "ใบ permit ที่ถูกลบ") ----
