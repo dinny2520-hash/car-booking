@@ -666,7 +666,10 @@ tr:hover td{background:var(--g50)}
 <div id="page-usecart" class="page">
   <div class="container">
     <div class="card">
-      <div class="card-title">📋 ใบออกนอกสถานที่/เบิกน้ำมัน</div>
+      <div class="card-title" style="flex-wrap:wrap">📋 ใบออกนอกสถานที่/เบิกน้ำมัน
+        <a href="https://dinny2520-hash.github.io/fuel-calculator/" target="_blank" rel="noopener" title="กดเพื่อคำนวณค่าน้ำมัน"
+           style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#b45309;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:999px;padding:5px 12px;text-decoration:none;white-space:nowrap"><span style="font-size:17px;line-height:1">⛽</span>กดเพื่อคำนวณค่าน้ำมัน</a>
+      </div>
       <div class="alert alert-info" style="margin-bottom:16px">กรอกข้อมูลด้านล่าง แล้วกดสร้างลิงก์ส่งให้หัวหน้าเซ็นอนุมัติได้เลย</div>
 
       <div class="form-grid-2">
@@ -1151,7 +1154,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261125-005'; // Force reload version
+const APP_VERSION = '20261126-001'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
