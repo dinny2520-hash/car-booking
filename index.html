@@ -1154,7 +1154,7 @@ tr:hover td{background:var(--g50)}
 </div>
 
 <script>
-const APP_VERSION = '20261126-001'; // Force reload version
+const APP_VERSION = '20261126-002'; // Force reload version
 const DB_KEY = 'cbsys_v2';
 
 // ---- บังคับ reload ถ้าใช้ข้อมูลเก่า (Apps Script) ----
@@ -1617,6 +1617,29 @@ try{
 const MIN_PULL_INTERVAL = 1000; // pull ได้ทุก 1 วินาที
 const FULL_PULL_INTERVAL = 30 * 60 * 1000; // full pull ทุก 30 นาที
 
+// ล้าง "ใบที่ลบไปแล้วแต่ยังตกค้างบนระบบกลาง" — ดูจากข้อมูลที่เพิ่งดึงมา (ไม่ต้องอ่านเพิ่ม) แล้วยืนยันกับรายการลบบนระบบกลางก่อนลบทุกครั้ง
+// (กันกรณีเครื่องที่รายการลบเก่า เห็นใบที่เพิ่งกู้คืนแล้วลบทับ)
+let _lastZombies = null;
+async function _sweepZombies(){
+  const z = _lastZombies; _lastZombies = null;
+  if(!z || !_fbReady) return 0;
+  if(!(z.bookings.length + z.permits.length + z.cars.length)) return 0;
+  let srv;
+  try{ const snap = await _withTimeout(_fbDb.collection('config').doc('deletedIds').get(), APPROVE_TIMEOUT_MS); if(!snap.exists) return 0; srv = snap.data() || {}; }
+  catch(e){ return 0; }
+  const keys = {bookings:'deletedBookingIds', permits:'deletedPermitIds', cars:'deletedCarIds'};
+  let n = 0;
+  for(const col of ['bookings','permits','cars']){
+    const allowed = new Set(srv[keys[col]] || []);
+    const ids = z[col].filter(id=> allowed.has(id) && !(col==='permits' && _restoredPermitIds.has(id))).slice(0, 200);
+    for(let i=0;i<ids.length;i+=10){
+      await Promise.all(ids.slice(i,i+10).map(id=>_fbDb.collection(col).doc(id).delete().then(()=>{ n++; }).catch(()=>{})));
+    }
+  }
+  if(n) console.log('🧹 ล้างใบที่ลบแล้วแต่ตกค้างบนระบบกลาง '+n+' รายการ');
+  return n;
+}
+
 async function _smartPull(sinceTs){
   const now = Date.now();
   // เดิม: ถ้ากำลังดึงอยู่/ถี่เกิน 1 วิ จะ "ทิ้ง" การแจ้งนั้นไปเลย → ใบที่อนุมัติไม่ถูกดึงจนรีเฟรช
@@ -1660,12 +1683,13 @@ async function _smartPull(sinceTs){
       _perfMark('เริ่มดึงข้อมูลทั้งหมด (full pull)');
       const _pullT0=performance.now();
       const _tm=(label,p)=>{ const st=performance.now(); return p.then(r=>{ let kb=0; try{kb=Math.round(JSON.stringify(r).length/1024);}catch(_){} _perfMark('ดึง '+label+': '+r.length+' รายการ ~'+kb+' KB', performance.now()-st); return r; }); };
+      const _zomb = {bookings:[], permits:[], cars:[]}; _lastZombies = _zomb;
       [fbBookings, fbPermits, fbFcBk, fbFc, fbCars, fbStaff] = await Promise.all([
-        _tm('การจองรถ', _fbDb.collection('bookings').get().then(s=>s.docs.map(d=>d.data()).filter(b=>!deletedBookings.has(b.id)))),
-        _tm('ใบ PM', _fbDb.collection('permits').get().then(s=>s.docs.map(d=>d.data()).filter(p=>!deletedPermits.has(p.id)))),
+        _tm('การจองรถ', _fbDb.collection('bookings').get().then(s=>{ const all=s.docs.map(d=>d.data()); _zomb.bookings=all.filter(b=>deletedBookings.has(b.id)).map(b=>b.id); return all.filter(b=>!deletedBookings.has(b.id)); })),
+        _tm('ใบ PM', _fbDb.collection('permits').get().then(s=>{ const all=s.docs.map(d=>d.data()); _zomb.permits=all.filter(p=>deletedPermits.has(p.id)).map(p=>p.id); return all.filter(p=>!deletedPermits.has(p.id)); })),
         _tm('จองการ์ด', _fbDb.collection('fuelCardBookings').get().then(s=>s.docs.map(d=>d.data()))),
         _tm('การ์ดน้ำมัน', _fbDb.collection('fuelCards').get().then(s=>s.docs.map(d=>d.data()))),
-        _tm('รถ', _fbDb.collection('cars').get().then(s=>s.docs.map(d=>d.data()))),
+        _tm('รถ', _fbDb.collection('cars').get().then(s=>{ const all=s.docs.map(d=>d.data()); const dc=new Set(db.deletedCarIds||[]); _zomb.cars=all.filter(c=>dc.has(c.id)).map(c=>c.id); return all; })),
         _tm('เจ้าหน้าที่', _fbDb.collection('staff').get().then(s=>s.docs.map(d=>d.data())))
       ]);
       _perfMark('ดึงข้อมูลทั้งหมดเสร็จ', performance.now()-_pullT0);
@@ -1830,6 +1854,7 @@ async function _smartPull(sinceTs){
     if(adminLoggedIn){ renderSettings(); renderAdminBookingList(); }
     _perfMark('แสดงข้อมูลล่าสุดบนหน้าจอเสร็จ ('+(doFull?'ดึงทั้งหมด':'ดึงเฉพาะที่เปลี่ยน')+')');
     _pullRetries = 0;
+    if(doFull){ try{ _sweepZombies(); }catch(e){} }
     if(doFull && !window._pmAutoDelScheduled){ window._pmAutoDelScheduled = true; setTimeout(()=>{ try{ maybeAutoDeletePermits(); }catch(e){ console.warn('permit auto-delete failed', e); } try{ maybeCleanupOldBookings(); }catch(e){ console.warn('booking cleanup failed', e); } }, 2500); }
   } catch(e){
     console.error('Smart pull error:', e);
@@ -4875,9 +4900,12 @@ function confirmDeletePermit(){
 
 
 // ---- DELETED ITEMS TRACKING (กันการคืนชีพข้อมูลที่ลบไปแล้ว) ----
+// รหัสที่ "เพิ่งลบในรอบการใช้งานนี้" — มีแค่พวกนี้ที่ต้องสั่งลบจากระบบกลาง (ของเก่าไม่ต้องสั่งลบซ้ำทุกครั้งที่เปิดแอป)
+const _freshDel = {deletedBookingIds:new Set(), deletedPermitIds:new Set(), deletedCarIds:new Set()};
 function markDeleted(listName, id){
   if(!db[listName]) db[listName]=[];
   if(!db[listName].includes(id)) db[listName].push(id);
+  if(_freshDel[listName]) _freshDel[listName].add(id);
 }
 
 function applyDeletedFilters(){
@@ -5130,26 +5158,18 @@ function _pushToFirebase(){
   if(!_lastPushed['_deletedCars']) _lastPushed['_deletedCars'] = new Set();
   const deletedCars = new Set(db.deletedCarIds||[]);
   // ลบรถออกจาก Firebase จริง (เดิมลบแค่ในเครื่อง รถจึงกลับมาจากระบบกลาง)
-  deletedCars.forEach(id=>{
-    if(!_lastPushed['_deletedCars'].has(id)){
-      fbDeleteDoc('cars', id).catch(e=>{ console.warn('delete car failed',id,e); _lastPushed['_deletedCars'].delete(id); });
-      _lastPushed['_deletedCars'].add(id);
-      if(_lastPushed['cars']) delete _lastPushed['cars'][id];
-    }
-  });
-  deletedPermits.forEach(id=>{
-    if(!_lastPushed['_deletedPermits'].has(id)){
-      fbDeleteDoc('permits', id);
-      _lastPushed['_deletedPermits'].add(id);
-      if(_lastPushed['permits']) delete _lastPushed['permits'][id];
-    }
-  });
-  deletedBookings.forEach(id=>{
-    if(!_lastPushed['_deletedBookings'].has(id)){
-      fbDeleteDoc('bookings', id);
-      _lastPushed['_deletedBookings'].add(id);
-      if(_lastPushed['bookings']) delete _lastPushed['bookings'][id];
-    }
+  // สั่งลบจากระบบกลางเฉพาะรหัสที่เพิ่งลบในรอบนี้ (เดิมสั่งลบทุกรหัสในรายการที่ลบแล้วซ้ำทุกครั้งที่เปิดแอป → Deletes หลายหมื่นครั้งต่อวัน)
+  // ใบที่ตกค้างบนระบบกลางจากรอบก่อนๆ จะถูกล้างตอนดึงข้อมูลทั้งหมด (_sweepZombies)
+  [['deletedCarIds','cars','_deletedCars',deletedCars],['deletedPermitIds','permits','_deletedPermits',deletedPermits],['deletedBookingIds','bookings','_deletedBookings',deletedBookings]].forEach(([listName,col,hk,curSet])=>{
+    if(!_fbReady) return;                                        // ยังไม่พร้อม → เก็บไว้ในรายการ "เพิ่งลบ" ส่งรอบหน้า
+    _freshDel[listName].forEach(id=>{
+      _freshDel[listName].delete(id);
+      if(!curSet.has(id)) return;                                 // ถูกกู้คืน/เอาออกจากรายการลบไปแล้ว
+      if(_lastPushed[hk].has(id)) return;
+      _lastPushed[hk].add(id);
+      if(_lastPushed[col]) delete _lastPushed[col][id];
+      Promise.resolve(fbDeleteDoc(col, id)).catch(e=>{ console.warn('delete '+col+' failed', id, e); _lastPushed[hk].delete(id); _freshDel[listName].add(id); });
+    });
   });
 
   // จดว่าค้างส่ง — บันทึกลงเครื่องเฉพาะเมื่อมีรายการใหม่ที่ยังไม่เคยจด (กัน stringify ก้อนใหญ่ซ้ำๆ)
